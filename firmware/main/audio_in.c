@@ -1,6 +1,6 @@
 /*
- * Thu 2 mic ES7210 ở 16 kHz, trộn thành mono, nén IMA ADPCM rồi gửi qua BLE.
- * Mỗi gói tự chứa trạng thái ADPCM nên mất một gói cũng không làm hỏng các gói sau.
+ * Captures both ES7210 mics at 16 kHz, mixes to mono, IMA ADPCM encodes and streams over BLE.
+ * Every packet carries its own ADPCM state, so a lost packet never corrupts the following ones.
  */
 #include <math.h>
 #include <string.h>
@@ -20,7 +20,7 @@ static const char *TAG = "audio";
 #define FRAME_SAMPLES 320          /* 20 ms */
 #define HEADER_BYTES  5
 #define MIC_GAIN_DB   36.0f
-#define WARMUP_FRAMES 10           /* bỏ 200 ms đầu: tiếng "bụp" khi codec vừa mở */
+#define WARMUP_FRAMES 10           /* drop the first 200 ms: codec start-up pop */
 
 static void put_header(uint8_t *pkt, uint16_t seq, const adpcm_state_t *st)
 {
@@ -95,7 +95,7 @@ static void audio_task(void *arg)
             energy += (double)s * s;
         }
 
-        /* Chia khung theo MTU đã thoả thuận (iPhone thường cho MTU >= 185, đủ cả khung 20 ms) */
+        /* Split by negotiated MTU (iPhones usually give >= 185, enough for a full 20 ms frame) */
         int chunk = (ble_link_payload_max() - HEADER_BYTES) * 2;
         if (chunk > FRAME_SAMPLES) {
             chunk = FRAME_SAMPLES;
@@ -110,7 +110,7 @@ static void audio_task(void *arg)
             }
         }
 
-        if (++frames % 50 == 0) {   /* mỗi giây log mức âm để kiểm tra mic */
+        if (++frames % 50 == 0) {   /* log level once per second to check the mic */
             double rms = sqrt(energy / (50.0 * FRAME_SAMPLES));
             ESP_LOGI(TAG, "level %.1f dBFS, dropped %lu, chunk %d",
                      20 * log10(rms / 32768.0 + 1e-9), (unsigned long)dropped, chunk);

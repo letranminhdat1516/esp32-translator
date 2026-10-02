@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Phiên dịch</string>
+	<string>Live Translator</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,11 +21,11 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Kết nối với màn hình ESP32 để nhận âm thanh và hiện phụ đề.</string>
+	<string>Connects to the ESP32 display to receive audio and show subtitles.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Nghe giọng bạn qua AirPods để dịch sang tiếng Anh.</string>
+	<string>Listens to you through your AirPods to translate into English.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Nhận dạng giọng nói ngay trên máy để dịch.</string>
+	<string>Recognizes speech on device for translation.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

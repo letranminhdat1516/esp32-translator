@@ -1,68 +1,87 @@
-# ESP32 Translator: phiên dịch Anh ↔ Việt trực tiếp
+# ESP32 Live Translator
 
-Board Waveshare ESP32-S3-Touch-AMOLED-1.75C + iPhone (iOS 26) + AirPods Pro.
+Real-time, two-way English ↔ Vietnamese conversation translator built from a
+Waveshare **ESP32-S3-Touch-AMOLED-1.75C** board, an **iPhone (iOS 26)** and **AirPods**.
 
-## Kiến trúc
+- The other person speaks English → you hear Vietnamese privately in your AirPods.
+- You answer in Vietnamese → they read live English subtitles on the round AMOLED screen.
+- Everything runs **on device**: no cloud and no network needed after the first model download.
+- No push-to-talk: both directions run continuously.
+
+## Architecture
 
 ```
-Họ → Bạn   Mic ESP32 ─ADPCM/BLE 20ms─► SpeechTranscriber en-US ─câu chốt─► dịch EN→VI ─► giọng đọc vi-VN ─► AirPods
-Bạn → Họ   Mic AirPods (khử vọng) ───► DictationTranscriber vi-VN ─từng phần─► dịch VI→EN ─BLE─► phụ đề trên ESP32
-Điều phối  Bạn đang nói (hoặc vừa ngừng < 1 s) → bỏ kết quả kênh Họ → Bạn, để mic board không dịch nhầm giọng bạn
+Them → You   Board mics ─ADPCM / BLE, 20 ms─► SpeechTranscriber en-US ─final phrase─► Translation EN→VI ─► vi-VN speech ─► AirPods
+You → Them   AirPods mic (echo-cancelled) ──► DictationTranscriber vi-VN ─partials─► Translation VI→EN ─BLE─► subtitles on AMOLED
+Arbiter      While you speak (and for 1 s after), "Them → You" results are dropped so the board mic never translates your own voice
 ```
 
-Những điểm giữ độ trễ thấp:
-- **Chạy trên máy, không cần mạng**: nhận dạng giọng nói (SpeechAnalyzer) và dịch (Translation, iOS 26.4+ dùng `.lowLatency`) đều chạy offline, sóng 4G yếu cũng không ảnh hưởng.
-- **Model nạp sẵn**: analyzer chạy suốt phiên (`modelRetention: .processLifetime`), giọng đọc được nạp sẵn lúc mở app.
-- **Phụ đề chạy theo lời nói**: kết quả nhận dạng tạm được dịch liền. Bản dịch cũ chưa kịp hiện sẽ bị bỏ (`LatestWinsTranslator`), nên chữ trên board luôn bám theo câu đang nói.
-- **Giọng đọc theo từng câu**: đọc ngay khi model chốt câu (`fastResults`), không đợi người kia nói hết lượt.
-- **BLE**: 2M PHY, khoảng kết nối 15–30 ms, MTU 247. Âm thanh gửi bằng notify không cần xác nhận, chữ gửi bằng write-without-response. Mỗi gói ADPCM tự mang trạng thái, nên mất một gói chỉ thành một khoảng lặng 20 ms.
+Latency design:
+- **On device**: speech recognition (`SpeechAnalyzer`) and translation (`Translation` framework, `.lowLatency` on iOS 26.4+) run offline, so a weak cellular signal doesn't matter.
+- **Models stay warm**: analyzers run for the whole session (`modelRetention: .processLifetime`), and the TTS voice is preloaded at launch.
+- **Subtitles follow your speech**: volatile (partial) results are translated immediately. A latest-wins translator (`LatestWinsTranslator`) drops stale requests, so the screen always tracks the current sentence.
+- **Phrase-level speech**: each phrase is spoken as soon as the recognizer finalizes it (`fastResults`), without waiting for the end of the turn.
+- **BLE**: 2M PHY, 15–30 ms connection interval, MTU 247. Audio uses notifications and text uses write-without-response. Each ADPCM packet is self-contained, so a lost packet costs only 20 ms of silence.
 
-## Thư mục
+Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 0 lost, and speech is about 30 dB above the noise floor.
+The phone-side end-to-end latency is expected to be around 1–2 s per phrase, but it has not been measured on an iPhone yet.
 
-| Đường dẫn | Nội dung |
+## Repository layout
+
+| Path | Contents |
 |---|---|
-| `firmware/` | ESP-IDF 5.5: `ble_link.c` (GATT), `audio_in.c` (2 mic → ADPCM), `ui.c` (LVGL, font Be Vietnam Pro) |
-| `ios/` | App SwiftUI, tạo project bằng `xcodegen generate` |
-| `fonts/` | Font Be Vietnam Pro (giấy phép OFL) |
+| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (LVGL UI) |
+| `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
+| `fonts/` | Be Vietnam Pro (OFL), converted to LVGL bitmap fonts with full Vietnamese diacritics |
 
-## Giao thức BLE (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
+## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
 
-| Char | Thuộc tính | Dữ liệu |
+| Characteristic | Properties | Payload |
 |---|---|---|
-| `…0002` audio | notify | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, nibble thấp trước]`, 16 kHz mono |
-| `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = chunk đầu, bit1 = chunk cuối. kind 0 = phụ đề, 1 = trạng thái |
-| `…0004` control | read / write / notify | 1 byte: 0 = tắt mic board, 1 = bật |
+| `…0002` audio | notify | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
+| `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status |
+| `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
 
-## Chạy
+## Getting started
 
-Firmware:
+### Firmware
+
+Requires [ESP-IDF v5.5](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32s3/get-started/).
+
 ```sh
 . ~/esp/esp-idf/export.sh
-cd firmware && idf.py -p /dev/cu.usbmodem1101 flash monitor
+cd firmware
+idf.py -p /dev/cu.usbmodem1101 flash monitor
 ```
 
-App iPhone:
-1. Xcode → Settings → Components: tải **iOS 26.4 Platform**.
-2. Mở `ios/ESPTranslator.xcodeproj` → target ESPTranslator → Signing & Capabilities: chọn Team (Apple ID cá nhân là đủ).
-3. Cắm iPhone, bật Developer Mode trên iPhone (Cài đặt → Quyền riêng tư & Bảo mật), rồi bấm Run.
-4. Lần đầu mở app: tải gói dịch Anh ↔ Việt và model nhận dạng. Sau đó dùng offline.
+> Flashing replaces the factory demo. Back it up first if you want to keep it:
+> `esptool -p <port> read-flash 0 0x2000000 backup.bin`. Restore it with `esptool write-flash 0 backup.bin`.
+> `backup/` is git-ignored because a flash dump may contain Wi-Fi credentials.
 
-Khôi phục firmware demo gốc: tải bản factory từ [repo của Waveshare](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.75) rồi nạp lại.
-Nếu đã tự sao lưu toàn bộ flash (`esptool read-flash 0 0x2000000 backup.bin`) thì nạp lại bằng `esptool write-flash 0 backup.bin`.
-Thư mục `backup/` nằm trong `.gitignore`, vì bản sao lưu có thể chứa mật khẩu Wi-Fi.
+### iOS app
 
-## Tinh chỉnh
+Requires Xcode 26 and an iPhone on iOS 26.
 
-Trong `ios/Sources/App/ConversationEngine.swift`:
-- `echoHold` (mặc định 1 s): thời gian vẫn bỏ kết quả mic board sau khi bạn ngừng nói. Tăng lên nếu board vẫn dịch nhầm giọng bạn.
-- `turnGap` (mặc định 2 s): ngừng nói lâu hơn khoảng này thì board bắt đầu màn phụ đề mới.
+1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`.
+2. Under Signing & Capabilities, set your own **Team** and a unique **Bundle Identifier**.
+3. Connect the iPhone, enable Developer Mode, then Run.
+4. On first launch, download the English ↔ Vietnamese translation models and allow microphone access. After that it works offline.
 
-Trong `ios/Sources/Speech/Speaker.swift`:
-- `rate`: tốc độ giọng đọc.
+## Tuning
 
-Trong `firmware/main/audio_in.c`:
-- `MIC_GAIN_DB`: độ khuếch đại mic board.
+| Setting | File | Default | Effect |
+|---|---|---|---|
+| `echoHold` | `ios/Sources/App/ConversationEngine.swift` | 1 s | How long board-mic results are ignored after you stop speaking. Raise it if the board still picks up your voice |
+| `turnGap` | same | 2 s | A pause longer than this starts a fresh subtitle screen |
+| `rate` | `ios/Sources/Speech/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
+| `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 
-## Giấy phép
+## Known limitations
 
-Code: MIT. Font Be Vietnam Pro: SIL OFL 1.1 (`fonts/OFL.txt`).
+- Using the AirPods microphone switches the AirPods to the call (HFP) profile. Speech output stays clear, but it is not music quality.
+- The ESP32-S3 has BLE only (no Bluetooth Classic), so it cannot stream audio to the AirPods directly. The iPhone handles that leg.
+- Only one language pair (EN ↔ VI) is wired up. Other pairs are a matter of changing the locales in `ConversationEngine`.
+
+## License
+
+Code: MIT. Be Vietnam Pro font: SIL Open Font License 1.1 (`fonts/OFL.txt`).

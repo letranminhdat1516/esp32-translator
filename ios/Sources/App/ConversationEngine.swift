@@ -3,12 +3,12 @@ import Foundation
 import Observation
 import UIKit
 
-/// Điều phối hai kênh dịch chạy song song:
+/// Orchestrates two translation channels running in parallel:
 ///
-///   Họ → Bạn:  mic ESP32 ─BLE─► nhận dạng EN ─câu chốt─► dịch EN→VI ─► đọc vào AirPods
-///   Bạn → Họ:  mic AirPods ───► nhận dạng VI ─từng phần─► dịch VI→EN ─BLE─► phụ đề trên ESP32
+///   Them → You:  ESP32 mic ─BLE─► EN recognition ─final phrase─► EN→VI ─► spoken into AirPods
+///   You → Them:  AirPods mic ───► VI recognition ─partials─► VI→EN ─BLE─► subtitles on the ESP32
 ///
-/// Khi bạn đang nói, kết quả kênh "Họ → Bạn" bị bỏ qua, vì mic ESP32 cũng thu giọng bạn.
+/// While you are speaking, "Them → You" results are dropped, because the ESP32 mic hears you too.
 @MainActor
 @Observable
 final class ConversationEngine {
@@ -40,14 +40,14 @@ final class ConversationEngine {
     private(set) var mySubtitle = ""
     private(set) var voiceName = ""
 
-    // MARK: Điều chỉnh độ nhạy
+    // MARK: Tuning
 
-    /// Bạn ngừng nói quá khoảng này thì câu tiếp theo bắt đầu màn phụ đề mới
+    /// A pause longer than this starts a new subtitle screen
     private let turnGap: TimeInterval = 2.0
-    /// Sau khi bạn ngừng nói, vẫn bỏ kết quả mic ESP32 thêm một lúc (model chốt câu hơi trễ)
+    /// Keep dropping ESP32 mic results this long after you stop (finalization lags slightly)
     private let echoHold: TimeInterval = 1.0
 
-    // MARK: Thành phần
+    // MARK: Components
 
     private let link = ESPLink()
     private var speaker: Speaker?
@@ -70,7 +70,7 @@ final class ConversationEngine {
         }
     }
 
-    // MARK: Khởi động
+    // MARK: Startup
 
     func start() async {
         guard phase == .idle || phase == .needsTranslationModels || isFailed else { return }
@@ -83,21 +83,21 @@ final class ConversationEngine {
         }
 
         do {
-            phase = .preparing("Xin quyền micro…")
+            phase = .preparing("Requesting microphone access…")
             guard await AVAudioApplication.requestRecordPermission() else {
-                phase = .failed("Chưa cho phép dùng micro. Vào Cài đặt → Phiên dịch để bật.")
+                phase = .failed("Microphone access denied. Enable it in Settings → Live Translator.")
                 return
             }
             try configureAudioSession()
 
             let english = LiveTranscriber(locale: Locale(identifier: "en-US"), engine: .speech)
             let vietnamese = LiveTranscriber(locale: Locale(identifier: "vi-VN"), engine: .dictation)
-            phase = .preparing("Tải model nhận dạng tiếng Anh…")
+            phase = .preparing("Downloading English speech model…")
             try await english.installAssetsIfNeeded()
-            phase = .preparing("Tải model nhận dạng tiếng Việt…")
+            phase = .preparing("Downloading Vietnamese speech model…")
             try await vietnamese.installAssetsIfNeeded()
 
-            phase = .preparing("Nạp model…")
+            phase = .preparing("Loading models…")
             try await english.start { [weak self] event in
                 Task { @MainActor in self?.handleTheirs(event) }
             }
@@ -161,14 +161,14 @@ final class ConversationEngine {
 
     private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        // voiceChat: khử tiếng vọng, đi qua mic AirPods; giọng đọc vẫn phát vào tai nghe
+        // voiceChat: echo cancellation, routes through the AirPods mic; speech still plays in the earbuds
         try session.setCategory(.playAndRecord, mode: .voiceChat,
                                 options: [.allowBluetoothHFP, .duckOthers])
         try session.setPreferredIOBufferDuration(0.01)
         try session.setActive(true)
     }
 
-    // MARK: Họ → Bạn
+    // MARK: Them → You
 
     private var userIsSpeaking: Bool {
         !myPartial.isEmpty || Date().timeIntervalSince(myLastSpeech) < echoHold
@@ -188,7 +188,7 @@ final class ConversationEngine {
         }
     }
 
-    /// Dịch và đọc từng câu theo đúng thứ tự, không để câu sau chen lên câu trước
+    /// Translate and speak phrases strictly in order, never letting a later one overtake
     private func startTheirPipeline(_ translator: Translator) {
         let (stream, continuation) = AsyncStream.makeStream(of: String.self)
         theirFinals = continuation
@@ -202,7 +202,7 @@ final class ConversationEngine {
         }
     }
 
-    // MARK: Bạn → Họ
+    // MARK: You → Them
 
     private func handleMine(_ event: TranscriptEvent) {
         let now = Date()
@@ -243,6 +243,6 @@ final class ConversationEngine {
 
     enum EngineError: LocalizedError {
         case noAudioFormat
-        var errorDescription: String? { "Không lấy được định dạng âm thanh cho model nhận dạng." }
+        var errorDescription: String? { "Could not get an audio format for the speech model." }
     }
 }

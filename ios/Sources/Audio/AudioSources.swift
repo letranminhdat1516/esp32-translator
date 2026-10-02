@@ -1,6 +1,6 @@
 import AVFAudio
 
-/// Chuyển buffer sang định dạng mà SpeechAnalyzer muốn (thường 16 kHz mono Int16)
+/// Converts buffers to the format SpeechAnalyzer wants (usually 16 kHz mono Int16)
 final class BufferConverter {
     let target: AVAudioFormat
     private var converter: AVAudioConverter?
@@ -32,7 +32,7 @@ final class BufferConverter {
     }
 }
 
-/// Âm thanh từ mic board ESP32 (gói BLE ADPCM, 16 kHz mono)
+/// Audio from the ESP32 board mics (BLE ADPCM packets, 16 kHz mono)
 final class ESPAudioSource: @unchecked Sendable {
     private static let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000,
                                               channels: 1, interleaved: true)!
@@ -45,7 +45,7 @@ final class ESPAudioSource: @unchecked Sendable {
         self.sink = sink
     }
 
-    /// Gọi trên hàng đợi BLE
+    /// Called on the BLE queue
     func handle(packet: Data) {
         let samples = decoder.decode(packet)
         guard !samples.isEmpty,
@@ -61,7 +61,7 @@ final class ESPAudioSource: @unchecked Sendable {
     func reset() { decoder.reset() }
 }
 
-/// Mic AirPods (hoặc mic iPhone nếu không đeo tai nghe), có khử tiếng vọng của giọng đọc
+/// AirPods mic (or the iPhone mic without earbuds), with echo cancellation of the spoken output
 final class MicSource {
     private let engine = AVAudioEngine()
     private let converter: BufferConverter

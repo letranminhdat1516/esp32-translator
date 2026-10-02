@@ -1,12 +1,12 @@
 import AVFAudio
 
-/// Đọc bản dịch tiếng Việt vào AirPods bằng giọng tốt nhất có trên máy.
+/// Speaks the Vietnamese translation into the AirPods with the best voice on the device.
 @MainActor
 final class Speaker {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice: AVSpeechSynthesisVoice?
 
-    /// Nhanh hơn mặc định một chút để theo kịp hội thoại
+    /// Slightly faster than default to keep up with the conversation
     private let rate: Float = 0.54
 
     init(language: String = "vi-VN") {
@@ -26,7 +26,7 @@ final class Speaker {
         synthesizer.speak(utterance)
     }
 
-    /// Nạp sẵn giọng đọc để câu đầu tiên không bị chậm
+    /// Preloads the voice so the first phrase isn't delayed
     func warmUp() {
         let utterance = AVSpeechUtterance(string: " ")
         utterance.voice = voice
@@ -34,5 +34,5 @@ final class Speaker {
         synthesizer.speak(utterance)
     }
 
-    var voiceName: String { voice?.name ?? "mặc định" }
+    var voiceName: String { voice?.name ?? "default" }
 }

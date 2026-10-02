@@ -1,8 +1,8 @@
 import CoreBluetooth
 import Foundation
 
-/// Kết nối BLE tới board ESP32 (xem firmware/main/ble_link.c để biết giao thức).
-/// Mọi callback CoreBluetooth chạy trên một hàng đợi riêng để gói âm thanh không phải chờ main thread.
+/// BLE link to the ESP32 board (protocol: see firmware/main/ble_link.c).
+/// CoreBluetooth callbacks run on a dedicated queue so audio packets never wait for the main thread.
 final class ESPLink: NSObject, @unchecked Sendable {
     enum State: Equatable { case off, scanning, connecting, ready }
 
@@ -13,10 +13,10 @@ final class ESPLink: NSObject, @unchecked Sendable {
 
     enum TextKind: UInt8 { case subtitle = 0, status = 1 }
 
-    /// Gọi trên hàng đợi BLE cho từng gói âm thanh
+    /// Called on the BLE queue for every audio packet
     var onAudioPacket: (@Sendable (Data) -> Void)?
     var onStateChange: (@Sendable (State) -> Void)?
-    /// Trạng thái mic trên board (0 tắt, 1 bật) khi người dùng bấm nút trên màn hình
+    /// Board mic state (off/on) when the user taps the on-screen button
     var onMicChange: (@Sendable (Bool) -> Void)?
 
     private let queue = DispatchQueue(label: "esp.ble", qos: .userInteractive)
@@ -26,7 +26,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
     private var controlCharacteristic: CBCharacteristic?
     private var pendingChunks: [Data] = []
 
-    /// Màn tròn hiện được khoảng 6 dòng chữ 26px, gửi phần cuối là đủ
+    /// The round screen fits about 6 lines of 26 px text, so only the tail is sent
     private let maxTextBytes = 240
 
     override init() {
@@ -34,7 +34,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
         central = CBCentralManager(delegate: self, queue: queue)
     }
 
-    /// Gửi chữ lên màn hình. Tin mới thay tin cũ chưa gửi xong (board xoá bộ đệm khi gặp chunk đầu).
+    /// Sends text to the screen. A new message replaces an unsent one (the board resets its buffer on a first chunk).
     func send(text: String, kind: TextKind) {
         queue.async { [self] in
             guard let peripheral, let textCharacteristic else { return }
@@ -68,7 +68,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Cắt lấy phần cuối của chuỗi trong giới hạn byte, không cắt giữa ký tự
+    /// Takes the tail of a string within a byte budget, never splitting a character
     private static func tail(of text: String, maxBytes: Int) -> String {
         guard text.utf8.count > maxBytes else { return text }
         var result = Substring(text)
@@ -144,7 +144,7 @@ extension ESPLink: CBPeripheralDelegate {
             default: break
             }
         }
-        // Vừa kết nối thì bật mic board luôn: hội thoại bắt đầu không cần bấm gì
+        // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {
             peripheral.writeValue(Data([1]), for: controlCharacteristic, type: .withResponse)
         }

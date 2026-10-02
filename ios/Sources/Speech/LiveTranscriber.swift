@@ -2,19 +2,19 @@ import AVFAudio
 import Speech
 
 enum TranscriptEvent: Sendable {
-    /// Kết quả tạm, còn có thể đổi; mỗi lần thay thế toàn bộ phần tạm trước đó
+    /// Volatile result that may still change; each one replaces the previous volatile text
     case partial(String)
-    /// Đoạn đã chốt, không đổi nữa
+    /// Finalized phrase, will not change
     case final(String)
 }
 
-/// Nhận dạng giọng nói liên tục, chạy hoàn toàn trên máy bằng SpeechAnalyzer (iOS 26).
-/// Analyzer chạy suốt phiên, không bật/tắt theo từng câu, để không mất thời gian khởi động lại model.
+/// Continuous, fully on-device speech recognition with SpeechAnalyzer (iOS 26).
+/// The analyzer runs for the whole session instead of per utterance, so models never reload.
 final class LiveTranscriber: @unchecked Sendable {
     enum Engine {
-        /// Model mới, nhanh nhất; tiếng Anh dùng cái này
+        /// Newest and fastest model; used for English
         case speech
-        /// Model đọc chính tả; tiếng Việt chỉ có ở đây
+        /// Dictation model; the only one that supports Vietnamese
         case dictation
     }
 
@@ -40,7 +40,7 @@ final class LiveTranscriber: @unchecked Sendable {
         }
     }
 
-    /// Tải model nhận dạng nếu chưa có (một lần, sau đó dùng offline)
+    /// Downloads the speech model if missing (once, then works offline)
     func installAssetsIfNeeded() async throws {
         _ = try? await AssetInventory.reserve(locale: locale)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
@@ -77,7 +77,7 @@ final class LiveTranscriber: @unchecked Sendable {
         try await analyzer.start(inputSequence: stream)
     }
 
-    /// An toàn khi gọi từ luồng âm thanh hoặc hàng đợi BLE
+    /// Safe to call from the audio thread or the BLE queue
     func feed(_ buffer: AVAudioPCMBuffer) {
         input?.yield(AnalyzerInput(buffer: buffer))
     }

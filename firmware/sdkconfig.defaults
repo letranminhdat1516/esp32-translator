@@ -1,6 +1,6 @@
 CONFIG_IDF_TARGET="esp32s3"
 
-# Flash 32MB, PSRAM octal 8MB (đọc từ esptool / log khởi động)
+# Flash 32MB, PSRAM octal 8MB (read via esptool / boot log)
 CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
 CONFIG_SPIRAM=y

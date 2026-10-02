@@ -1,7 +1,7 @@
 import Foundation
 import Translation
 
-/// Dịch offline bằng model của Apple đã tải về máy.
+/// Offline translation with Apple's on-device models.
 actor Translator {
     private let session: TranslationSession
 
@@ -22,8 +22,8 @@ actor Translator {
     }
 }
 
-/// Chạy bản dịch mới nhất, bỏ các bản cũ đã lỗi thời.
-/// Dùng cho phụ đề trực tiếp: chữ thay đổi liên tục, chỉ cần bản dịch của câu hiện tại.
+/// Runs only the latest translation request and drops stale ones.
+/// Used for live subtitles: the text changes constantly and only the current sentence matters.
 @MainActor
 final class LatestWinsTranslator {
     private let translator: Translator

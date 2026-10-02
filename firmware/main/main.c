@@ -49,14 +49,14 @@ void app_main(void)
     ble_link_init();
     audio_in_start();
 
-    /* Mọi yêu cầu bật/tắt thu âm (từ nút trên màn hình hoặc từ app) được xử lý tại đây */
+    /* All mic on/off requests (from the on-screen button or the app) are handled here */
     rec_lang_t lang;
     while (true) {
         if (xQueueReceive(s_cmd_queue, &lang, portMAX_DELAY) != pdTRUE) {
             continue;
         }
         if (lang != REC_NONE && !s_connected) {
-            ui_show_status("Chưa kết nối iPhone");
+            ui_show_status("iPhone not connected");
             continue;
         }
         if (lang == s_recording) {

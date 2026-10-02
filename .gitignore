@@ -1,4 +1,4 @@
-# Bản sao lưu firmware gốc: có thể chứa mật khẩu Wi-Fi (NVS) và là firmware của Waveshare
+# Full flash backups: may contain Wi-Fi credentials (NVS) and are Waveshare's firmware
 backup/
 
 # ESP-IDF

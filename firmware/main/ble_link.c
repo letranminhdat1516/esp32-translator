@@ -3,9 +3,9 @@
  *
  * Service  A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A
  *   audio   ...0002  notify  : [seq u16][predictor i16][index u8][ADPCM...] (16 kHz mono)
- *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = chunk đầu, bit1 = chunk cuối
- *                              kind 0 = bản dịch hiện to, kind 1 = dòng trạng thái
- *   control ...0004  r/w/notify : 1 byte rec_lang_t (0 dừng, 1 EN, 2 VI)
+ *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
+ *                              kind 0 = subtitle (large), kind 1 = status line
+ *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on
  */
 #include <string.h>
 
@@ -145,7 +145,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         s_conn_handle = event->connect.conn_handle;
         ESP_LOGI(TAG, "connected");
-        /* 2M PHY + khoảng kết nối ngắn để đủ băng thông cho âm thanh */
+        /* 2M PHY + short connection interval for enough audio bandwidth */
         ble_gap_set_prefered_le_phy(s_conn_handle, BLE_GAP_LE_PHY_2M_MASK,
                                     BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_CODED_ANY);
         struct ble_gap_upd_params params = {
@@ -287,7 +287,7 @@ bool ble_link_send_audio(const uint8_t *data, uint16_t len)
 
 void ble_link_notify_control(uint8_t state)
 {
-    (void)state; /* giá trị được đọc lại qua chr_access */
+    (void)state; /* the value is read back through chr_access */
     if (s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
         ble_gatts_chr_updated(s_ctrl_handle);
     }

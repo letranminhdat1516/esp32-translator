@@ -17,20 +17,20 @@ struct ContentView: View {
                     Spacer()
                 case .failed(let message):
                     Spacer()
-                    ContentUnavailableView("Không khởi động được", systemImage: "exclamationmark.triangle",
+                    ContentUnavailableView("Couldn't start", systemImage: "exclamationmark.triangle",
                                            description: Text(message))
-                    Button("Thử lại") { Task { await engine.start() } }
+                    Button("Try again") { Task { await engine.start() } }
                         .buttonStyle(.borderedProminent)
                     Spacer()
                 case .idle, .running:
                     ConversationView(engine: engine)
                 }
             }
-            .navigationTitle("Phiên dịch")
+            .navigationTitle("Live Translator")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Xoá", systemImage: "trash") { engine.clearHistory() }
+                    Button("Clear", systemImage: "trash") { engine.clearHistory() }
                         .disabled(engine.phase != .running)
                 }
             }
@@ -47,7 +47,7 @@ private struct StatusBar: View {
                 .foregroundStyle(engine.board == .ready ? .green : .secondary)
             Spacer()
             if engine.board == .ready {
-                Button(engine.boardMicOn ? "Mic board: bật" : "Mic board: tắt",
+                Button(engine.boardMicOn ? "Board mic: on" : "Board mic: off",
                        systemImage: engine.boardMicOn ? "mic.fill" : "mic.slash.fill") {
                     engine.toggleBoardMic()
                 }
@@ -62,10 +62,10 @@ private struct StatusBar: View {
 
     private var boardText: String {
         switch engine.board {
-        case .off: "Bluetooth tắt"
-        case .scanning: "Đang tìm board…"
-        case .connecting: "Đang kết nối…"
-        case .ready: "Board đã kết nối"
+        case .off: "Bluetooth off"
+        case .scanning: "Searching for board…"
+        case .connecting: "Connecting…"
+        case .ready: "Board connected"
         }
     }
 }
@@ -75,10 +75,10 @@ private struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Panel(title: "Họ nói", systemImage: "person.wave.2", tint: .blue,
+            Panel(title: "They say", systemImage: "person.wave.2", tint: .blue,
                   lines: engine.theirLines, partial: engine.theirPartial)
             Divider()
-            Panel(title: "Bạn nói → phụ đề trên board", systemImage: "airpodspro", tint: .green,
+            Panel(title: "You say → board subtitles", systemImage: "airpodspro", tint: .green,
                   lines: engine.myLines, partial: "")
         }
     }
@@ -132,7 +132,7 @@ private struct Panel: View {
     }
 }
 
-/// Tải gói dịch Anh ↔ Việt một lần (hệ thống hiện hộp thoại tải), sau đó dịch offline
+/// Downloads the English ↔ Vietnamese translation models once (system download sheet), then works offline
 private struct ModelDownloadView: View {
     let engine: ConversationEngine
     @State private var config: TranslationSession.Configuration?
@@ -142,10 +142,10 @@ private struct ModelDownloadView: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(.tint)
-            Text("Cần tải gói dịch Anh ↔ Việt").font(.headline)
-            Text("Tải một lần, sau đó dịch hoàn toàn trên máy, không cần mạng và nhanh hơn.")
+            Text("English ↔ Vietnamese models needed").font(.headline)
+            Text("Download once, then translation runs entirely on device: no network needed, and faster.")
                 .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Button("Tải gói dịch") {
+            Button("Download models") {
                 step = 1
                 config = .init(source: ConversationEngine.english, target: ConversationEngine.vietnamese)
             }

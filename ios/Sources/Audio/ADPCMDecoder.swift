@@ -1,7 +1,7 @@
 import Foundation
 
-/// Giải mã gói IMA ADPCM từ board: [seq u16][predictor i16][index u8][dữ liệu, nibble thấp trước].
-/// Mỗi gói tự mang trạng thái nên mất gói chỉ cần chèn khoảng lặng tương ứng.
+/// Decodes IMA ADPCM packets from the board: [seq u16][predictor i16][index u8][data, low nibble first].
+/// Every packet carries its own state, so a lost packet only needs matching silence inserted.
 struct ADPCMDecoder {
     private static let indexTable: [Int] = [-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8]
     private static let stepTable: [Int] = [

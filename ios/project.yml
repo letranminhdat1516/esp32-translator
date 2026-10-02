@@ -11,18 +11,19 @@ targets:
     info:
       path: Sources/Info.plist
       properties:
-        CFBundleDisplayName: Phiên dịch
+        CFBundleDisplayName: Live Translator
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIBackgroundModes: [audio, bluetooth-central]
-        NSMicrophoneUsageDescription: Nghe giọng bạn qua AirPods để dịch sang tiếng Anh.
-        NSSpeechRecognitionUsageDescription: Nhận dạng giọng nói ngay trên máy để dịch.
-        NSBluetoothAlwaysUsageDescription: Kết nối với màn hình ESP32 để nhận âm thanh và hiện phụ đề.
+        NSMicrophoneUsageDescription: Listens to you through your AirPods to translate into English.
+        NSSpeechRecognitionUsageDescription: Recognizes speech on device for translation.
+        NSBluetoothAlwaysUsageDescription: Connects to the ESP32 display to receive audio and show subtitles.
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.personal.esptranslator
+        PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.esptranslator
+        DEVELOPMENT_TEAM: G79B3VPVR9  # replace with your own team ID
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic

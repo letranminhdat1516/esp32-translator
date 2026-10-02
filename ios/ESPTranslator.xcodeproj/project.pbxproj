@@ -144,6 +144,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					9DA66EC2B48EF4CB91B63D40 = {
+						DevelopmentTeam = G79B3VPVR9;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -250,13 +251,14 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G79B3VPVR9;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.personal.esptranslator;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.cicca.esptranslator;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -333,13 +335,14 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G79B3VPVR9;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.personal.esptranslator;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.cicca.esptranslator;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;

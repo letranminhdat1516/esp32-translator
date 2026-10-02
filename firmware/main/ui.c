@@ -1,8 +1,8 @@
 /*
- * Giao diện màn tròn 466x466:
- *   trên  : dòng trạng thái (kết nối / đang nghe)
- *   giữa  : phụ đề tiếng Anh cho người đối diện đọc (app gửi liên tục khi bạn nói)
- *   dưới  : nút bật/tắt mic của board
+ * Round 466x466 screen:
+ *   top    : status line (connection / listening)
+ *   middle : live English subtitles for the other person (streamed by the app while you speak)
+ *   bottom : board mic on/off button
  */
 #include "bsp/esp-bsp.h"
 #include "lvgl.h"
@@ -35,7 +35,7 @@ static void unlock(void)
 
 static void on_button(lv_event_t *e)
 {
-    /* Chỉ đẩy yêu cầu vào hàng đợi; đang ở trong task LVGL nên không đụng UI tại đây */
+    /* Only queue the request: we are inside the LVGL task, so don't touch the UI here */
     app_request_recording(app_get_recording() == REC_NONE ? REC_EN : REC_NONE);
 }
 
@@ -68,7 +68,7 @@ void ui_init(void)
     lv_label_set_long_mode(s_text, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_set_style_text_font(s_text, &font_vi_26, 0);
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(s_text, "Xin chào!\nMở app trên iPhone để kết nối.");
+    lv_label_set_text(s_text, "Hello!\nOpen the iPhone app to connect.");
 
     s_btn_mic = lv_button_create(scr);
     lv_obj_set_size(s_btn_mic, 170, 64);
@@ -80,21 +80,21 @@ void ui_init(void)
 
     s_btn_label = lv_label_create(s_btn_mic);
     lv_obj_set_style_text_font(s_btn_label, &font_vi_20, 0);
-    lv_label_set_text(s_btn_label, "Mic tắt");
+    lv_label_set_text(s_btn_label, "Mic off");
     lv_obj_center(s_btn_label);
 
-    lv_label_set_text(s_status, "Đang chờ iPhone…");
+    lv_label_set_text(s_status, "Waiting for iPhone…");
     unlock();
 }
 
 static void refresh_status(rec_lang_t lang)
 {
     if (!s_connected) {
-        lv_label_set_text(s_status, "Đang chờ iPhone…");
+        lv_label_set_text(s_status, "Waiting for iPhone…");
     } else if (lang != REC_NONE) {
-        lv_label_set_text(s_status, "Đang dịch trực tiếp");
+        lv_label_set_text(s_status, "Live translation");
     } else {
-        lv_label_set_text(s_status, "Mic board đang tắt");
+        lv_label_set_text(s_status, "Board mic is off");
     }
 }
 
@@ -110,7 +110,7 @@ void ui_set_recording(rec_lang_t lang)
 {
     lock();
     lv_obj_set_style_bg_color(s_btn_mic, lv_color_hex(lang != REC_NONE ? COLOR_EN : COLOR_IDLE), 0);
-    lv_label_set_text(s_btn_label, lang != REC_NONE ? "Mic bật" : "Mic tắt");
+    lv_label_set_text(s_btn_label, lang != REC_NONE ? "Mic on" : "Mic off");
     refresh_status(lang);
     unlock();
 }
@@ -119,7 +119,7 @@ void ui_show_text(const char *utf8)
 {
     lock();
     lv_label_set_text(s_text, utf8);
-    /* Phụ đề trực tiếp: luôn hiện dòng mới nhất ở cuối */
+    /* Live subtitles: always keep the newest line in view */
     lv_obj_update_layout(s_text_box);
     lv_obj_scroll_to_y(s_text_box, lv_obj_get_scroll_y(s_text_box) + lv_obj_get_scroll_bottom(s_text_box),
                        LV_ANIM_OFF);
