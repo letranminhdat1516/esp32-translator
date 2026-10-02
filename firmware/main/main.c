@@ -44,6 +44,7 @@ void app_main(void)
 
     bsp_display_start();
     bsp_display_backlight_on();
+    bsp_display_brightness_set(100);
     ui_init();
 
     ble_link_init();

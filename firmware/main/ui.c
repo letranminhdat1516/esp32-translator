@@ -9,12 +9,12 @@
 
 #include "app.h"
 
-LV_FONT_DECLARE(font_vi_20);
-LV_FONT_DECLARE(font_vi_26);
+LV_FONT_DECLARE(font_vi_22);
+LV_FONT_DECLARE(font_vi_36);
 
 #define COLOR_IDLE  0x2a2a2a
 #define COLOR_EN    0x1e6fd9
-#define COLOR_MUTED 0x9a9a9a
+#define COLOR_MUTED 0xc8c8c8
 
 static lv_obj_t *s_status;
 static lv_obj_t *s_text_box;
@@ -48,15 +48,15 @@ void ui_init(void)
 
     s_status = lv_label_create(scr);
     lv_obj_set_width(s_status, 300);
-    lv_obj_set_style_text_font(s_status, &font_vi_20, 0);
+    lv_obj_set_style_text_font(s_status, &font_vi_22, 0);
     lv_obj_set_style_text_color(s_status, lv_color_hex(COLOR_MUTED), 0);
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 48);
 
     s_text_box = lv_obj_create(scr);
-    lv_obj_set_size(s_text_box, 380, 220);
-    lv_obj_align(s_text_box, LV_ALIGN_CENTER, 0, -18);
+    lv_obj_set_size(s_text_box, 400, 236);
+    lv_obj_align(s_text_box, LV_ALIGN_CENTER, 0, -14);
     lv_obj_set_style_bg_opa(s_text_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_text_box, 0, 0);
     lv_obj_set_style_pad_all(s_text_box, 0, 0);
@@ -66,8 +66,11 @@ void ui_init(void)
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, lv_pct(100));
     lv_label_set_long_mode(s_text, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_style_text_font(s_text, &font_vi_26, 0);
+    lv_obj_set_style_text_font(s_text, &font_vi_36, 0);
+    /* The container gets the theme's dark text colour; force full white on the AMOLED */
+    lv_obj_set_style_text_color(s_text, lv_color_white(), 0);
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(s_text, 2, 0);
     lv_label_set_text(s_text, "Hello!\nOpen the iPhone app to connect.");
 
     s_btn_mic = lv_button_create(scr);
@@ -79,7 +82,8 @@ void ui_init(void)
     lv_obj_add_event_cb(s_btn_mic, on_button, LV_EVENT_CLICKED, NULL);
 
     s_btn_label = lv_label_create(s_btn_mic);
-    lv_obj_set_style_text_font(s_btn_label, &font_vi_20, 0);
+    lv_obj_set_style_text_font(s_btn_label, &font_vi_22, 0);
+    lv_obj_set_style_text_color(s_btn_label, lv_color_white(), 0);
     lv_label_set_text(s_btn_label, "Mic off");
     lv_obj_center(s_btn_label);
 

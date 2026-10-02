@@ -32,7 +32,7 @@ The phone-side end-to-end latency is expected to be around 1–2 s per phrase, b
 |---|---|
 | `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (LVGL UI) |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
-| `fonts/` | Be Vietnam Pro (OFL), converted to LVGL bitmap fonts with full Vietnamese diacritics |
+| `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
 ## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
 

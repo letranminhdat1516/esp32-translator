@@ -26,8 +26,8 @@ final class ESPLink: NSObject, @unchecked Sendable {
     private var controlCharacteristic: CBCharacteristic?
     private var pendingChunks: [Data] = []
 
-    /// The round screen fits about 6 lines of 26 px text, so only the tail is sent
-    private let maxTextBytes = 240
+    /// The round screen fits about 5 lines of 36 px text, so only the tail is sent
+    private let maxTextBytes = 150
 
     override init() {
         super.init()
