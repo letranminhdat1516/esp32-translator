@@ -1,0 +1,17 @@
+# Bản sao lưu firmware gốc: có thể chứa mật khẩu Wi-Fi (NVS) và là firmware của Waveshare
+backup/
+
+# ESP-IDF
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+
+# Xcode
+ios/build/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+.DS_Store

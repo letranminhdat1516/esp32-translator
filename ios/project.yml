@@ -1,0 +1,30 @@
+name: ESPTranslator
+options:
+  bundleIdPrefix: dev.personal
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  ESPTranslator:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Phiên dịch
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [audio, bluetooth-central]
+        NSMicrophoneUsageDescription: Nghe giọng bạn qua AirPods để dịch sang tiếng Anh.
+        NSSpeechRecognitionUsageDescription: Nhận dạng giọng nói ngay trên máy để dịch.
+        NSBluetoothAlwaysUsageDescription: Kết nối với màn hình ESP32 để nhận âm thanh và hiện phụ đề.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.personal.esptranslator
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
