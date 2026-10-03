@@ -126,12 +126,15 @@ final class ConversationEngine {
             link.onAudioPacket = { espSource.handle(packet: $0) }
             self.espSource = espSource
 
-            let mic = MicSource(target: micFormat) { vietnamese.feed($0) }
+            let mic = MicSource(target: micFormat, sink: { vietnamese.feed($0) },
+                                onSpeechEnd: { vietnamese.finalizeNow() })
             try mic.start()
             self.mic = mic
 
-            UIApplication.shared.isIdleTimerDisabled = true
+            startPhraseEndWatcher()
+            startDiagnostics()
             phase = .running
+            Diag.log("engine: running")
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -175,6 +178,7 @@ final class ConversationEngine {
     }
 
     private func handleTheirs(_ event: TranscriptEvent) {
+        Diag.log("EN \(Self.describe(event)) gate=\(userIsSpeaking) myPartial=\(myPartial.count)ch sinceMine=\(String(format: "%.1f", Date().timeIntervalSince(myLastSpeech)))s")
         if userIsSpeaking {
             theirPartial = ""
             return
@@ -194,7 +198,15 @@ final class ConversationEngine {
         theirFinals = continuation
         Task { [weak self] in
             for await english in stream {
-                guard let vietnamese = try? await translator.translate(english) else { continue }
+                let t0 = Date()
+                let vietnamese: String
+                do {
+                    vietnamese = try await translator.translate(english)
+                } catch {
+                    Diag.log("translate EN→VI FAILED: \(error)")
+                    continue
+                }
+                Diag.log(String(format: "translate EN→VI %.0f ms", Date().timeIntervalSince(t0) * 1000))
                 guard let self else { return }
                 self.theirLines.append(Line(source: english, target: vietnamese))
                 self.speaker?.speak(vietnamese)
@@ -205,6 +217,7 @@ final class ConversationEngine {
     // MARK: You → Them
 
     private func handleMine(_ event: TranscriptEvent) {
+        Diag.log("VI \(Self.describe(event))")
         let now = Date()
         let text: String
         switch event {
@@ -239,6 +252,67 @@ final class ConversationEngine {
         mySubtitle = english
         if !myLines.isEmpty { myLines[myLines.count - 1].target = english }
         link.send(text: english, kind: .subtitle)
+    }
+
+    // MARK: Phrase end
+
+    private var phraseEndTask: Task<Void, Never>?
+
+    /// The board stops streaming in silence; once packets pause, finalize the English phrase right away
+    /// so it is translated and spoken without waiting for the next utterance.
+    private func startPhraseEndWatcher() {
+        phraseEndTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard let self, let espSource = self.espSource else { continue }
+                if espSource.streamEnded(after: 0.25) {
+                    Diag.log("EN stream paused → finalize")
+                    self.englishIn?.finalizeNow()
+                }
+            }
+        }
+    }
+
+    // MARK: Diagnostics
+
+    private var diagnosticsTask: Task<Void, Never>?
+
+    private func startDiagnostics() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { note in
+            Diag.log("session: INTERRUPTION \(note.userInfo ?? [:])")
+        }
+        center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil) { note in
+            let route = AVAudioSession.sharedInstance().currentRoute
+            Diag.log("session: route change \(note.userInfo?[AVAudioSessionRouteChangeReasonKey] ?? "?") in=\(route.inputs.map(\.portName)) out=\(route.outputs.map(\.portName))")
+        }
+        center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { _ in
+            Diag.log("session: MEDIA SERVICES RESET")
+        }
+        center.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: nil) { _ in
+            Diag.log("engine: AVAudioEngine CONFIGURATION CHANGE")
+        }
+        center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: nil) { _ in
+            Diag.log("app: background")
+        }
+        center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil) { _ in
+            Diag.log("app: foreground")
+        }
+        diagnosticsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard let self else { return }
+                let c = Diag.drain()
+                Diag.log("stats/5s board=\(self.board) pkts=\(c["esp.packets"] ?? 0) micBufs=\(c["mic.buffers"] ?? 0) feedEN=\(c["feed.en-US"] ?? 0) feedVI=\(c["feed.vi-VN"] ?? 0) rmsEN=\((c["rms.en-US"] ?? 0) / max(1, c["bufs.en-US"] ?? 1))‰ rmsVI=\((c["rms.vi-VN"] ?? 0) / max(1, c["bufs.vi-VN"] ?? 1))‰ fedEN=\(Int(self.englishIn?.fed ?? 0))s fedVI=\(Int(self.vietnameseIn?.fed ?? 0))s gate=\(self.userIsSpeaking) myPartial=\"\(self.myPartial.prefix(30))\" ttsQueue=\(self.speaker?.queued ?? -1)")
+            }
+        }
+    }
+
+    private static func describe(_ event: TranscriptEvent) -> String {
+        switch event {
+        case .partial(let t): "partial(\(t.count)) \"\(t.suffix(40))\""
+        case .final(let t): "FINAL(\(t.count)) \"\(t.suffix(40))\""
+        }
     }
 
     enum EngineError: LocalizedError {

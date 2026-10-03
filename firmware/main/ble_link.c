@@ -145,12 +145,12 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         s_conn_handle = event->connect.conn_handle;
         ESP_LOGI(TAG, "connected");
-        /* 2M PHY + short connection interval for enough audio bandwidth */
+        /* 2M PHY + a connection interval that fits real-time audio without waking the radio too often */
         ble_gap_set_prefered_le_phy(s_conn_handle, BLE_GAP_LE_PHY_2M_MASK,
                                     BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_CODED_ANY);
         struct ble_gap_upd_params params = {
-            .itvl_min = 12,   /* 15 ms */
-            .itvl_max = 24,   /* 30 ms */
+            .itvl_min = 24,   /* 30 ms: two 20 ms audio packets per event, half the radio wake-ups of 15 ms */
+            .itvl_max = 36,   /* 45 ms */
             .latency = 0,
             .supervision_timeout = 400,
         };

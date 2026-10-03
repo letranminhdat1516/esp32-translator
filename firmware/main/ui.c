@@ -5,6 +5,7 @@
  *   bottom : board mic on/off button
  */
 #include "bsp/esp-bsp.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 
 #include "app.h"
@@ -23,6 +24,12 @@ static lv_obj_t *s_btn_mic;
 static lv_obj_t *s_btn_label;
 static bool s_connected;
 
+/* The AMOLED draws power per lit pixel and per brightness step: turn it off when nobody needs it */
+#define SCREEN_OFF_AFTER_MS 30000
+
+static volatile int64_t s_last_activity_us;
+static bool s_screen_on = true;
+
 static void lock(void)
 {
     bsp_display_lock((uint32_t)-1);
@@ -39,8 +46,52 @@ static void on_button(lv_event_t *e)
     app_request_recording(app_get_recording() == REC_NONE ? REC_EN : REC_NONE);
 }
 
+static void set_screen(bool on)
+{
+    if (on == s_screen_on) {
+        return;
+    }
+    s_screen_on = on;
+    bsp_display_brightness_set(on ? 100 : 0);
+    /* While dark, a tap only wakes the screen; it must not toggle the mic */
+    if (on) {
+        lv_obj_add_flag(s_btn_mic, LV_OBJ_FLAG_CLICKABLE);
+    } else {
+        lv_obj_remove_flag(s_btn_mic, LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+/* Runs inside the LVGL task every 250 ms */
+static void screen_timer_cb(lv_timer_t *t)
+{
+    int64_t idle_ms = (esp_timer_get_time() - s_last_activity_us) / 1000;
+    uint32_t touch_idle_ms = lv_display_get_inactive_time(NULL);
+    if (touch_idle_ms < idle_ms) {
+        idle_ms = touch_idle_ms;
+    }
+    set_screen(idle_ms < SCREEN_OFF_AFTER_MS);
+}
+
+void ui_mark_activity(void)
+{
+    s_last_activity_us = esp_timer_get_time();
+}
+
+void ui_prepare_sleep(void)
+{
+    lock();
+    lv_label_set_text(s_status, "Sleeping");
+    lv_label_set_text(s_text, "Touch the screen\nto wake up");
+    unlock();
+    vTaskDelay(pdMS_TO_TICKS(2500));
+    lock();
+    bsp_display_brightness_set(0);
+    unlock();
+}
+
 void ui_init(void)
 {
+    s_last_activity_us = esp_timer_get_time();
     lock();
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -88,6 +139,7 @@ void ui_init(void)
     lv_obj_center(s_btn_label);
 
     lv_label_set_text(s_status, "Waiting for iPhone…");
+    lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
 }
 
@@ -121,6 +173,7 @@ void ui_set_recording(rec_lang_t lang)
 
 void ui_show_text(const char *utf8)
 {
+    ui_mark_activity();
     lock();
     lv_label_set_text(s_text, utf8);
     /* Live subtitles: always keep the newest line in view */

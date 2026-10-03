@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		03A084A0E7876AC97885C3AF /* ADPCMDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */; };
+		0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D91563831394399DEB8B628 /* Diagnostics.swift */; };
 		2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A95279E4169D54A6DBEF7 /* ContentView.swift */; };
 		45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8370A481AE6CA850A659C829 /* ConversationEngine.swift */; };
 		6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458050A752F26BCC732FE5C8 /* AudioSources.swift */; };
@@ -19,6 +20,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0D91563831394399DEB8B628 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
 		15691D33531FFAA79141FCBC /* ESPTranslator.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ESPTranslator.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DDB2EF9FEDBFA4E8197D1E9 /* Speaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speaker.swift; sourceTree = "<group>"; };
 		458050A752F26BCC732FE5C8 /* AudioSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSources.swift; sourceTree = "<group>"; };
@@ -91,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				8370A481AE6CA850A659C829 /* ConversationEngine.swift */,
+				0D91563831394399DEB8B628 /* Diagnostics.swift */,
 				79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */,
 			);
 			path = App;
@@ -177,6 +180,7 @@
 				6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */,
 				2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */,
 				45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */,
+				0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */,
 				F540FDA55B26986EABBABCF6 /* ESPLink.swift in Sources */,
 				DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */,
 				EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */,

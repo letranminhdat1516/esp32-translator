@@ -1,4 +1,6 @@
 import AVFAudio
+import CoreMedia
+import os
 import Speech
 
 enum TranscriptEvent: Sendable {
@@ -24,6 +26,8 @@ final class LiveTranscriber: @unchecked Sendable {
     private var analyzer: SpeechAnalyzer?
     private var input: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
+    /// Seconds of audio fed so far (diagnostics: lag = fed - result end)
+    private let fedSeconds = OSAllocatedUnfairLock(initialState: 0.0)
 
     init(locale: Locale, engine: Engine) {
         self.locale = locale
@@ -63,15 +67,18 @@ final class LiveTranscriber: @unchecked Sendable {
             do {
                 if let t = module as? SpeechTranscriber {
                     for try await r in t.results {
+                        self.logLag(r.range)
                         onEvent(Self.event(text: r.text, isFinal: r.isFinal))
                     }
                 } else if let t = module as? DictationTranscriber {
                     for try await r in t.results {
+                        self.logLag(r.range)
                         onEvent(Self.event(text: r.text, isFinal: r.isFinal))
                     }
                 }
+                Diag.log("[\(self.locale.identifier)] results stream FINISHED without error")
             } catch {
-                print("[\(self.locale.identifier)] results ended: \(error)")
+                Diag.log("[\(self.locale.identifier)] results stream ENDED with error: \(error)")
             }
         }
         try await analyzer.start(inputSequence: stream)
@@ -79,13 +86,46 @@ final class LiveTranscriber: @unchecked Sendable {
 
     /// Safe to call from the audio thread or the BLE queue
     func feed(_ buffer: AVAudioPCMBuffer) {
+        Diag.count("feed.\(locale.identifier)", Int(buffer.frameLength))
+        Diag.count("rms.\(locale.identifier)", Self.rmsMilli(buffer))
+        Diag.count("bufs.\(locale.identifier)")
+        let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
+        fedSeconds.withLock { $0 += seconds }
         input?.yield(AnalyzerInput(buffer: buffer))
+    }
+
+    /// Finalizes everything fed so far. Called when speech ends: input pauses during silence, and without
+    /// this the recognizer would hold the last phrase as volatile until the next utterance arrives.
+    func finalizeNow() {
+        Task { [analyzer] in
+            try? await analyzer?.finalize(through: nil)
+        }
     }
 
     func stop() async {
         input?.finish()
         resultsTask?.cancel()
         await analyzer?.cancelAndFinishNow()
+    }
+
+    var fed: Double { fedSeconds.withLock { $0 } }
+
+    private func logLag(_ range: CMTimeRange) {
+        let end = CMTimeGetSeconds(CMTimeRangeGetEnd(range))
+        Diag.log(String(format: "[%@] result audio end %.2fs, fed %.2fs, LAG %.2fs", locale.identifier, end, fed, fed - end))
+    }
+
+    /// RMS of a buffer in thousandths of full scale (summed per 5 s window, divided by buffer count in stats)
+    private static func rmsMilli(_ buffer: AVAudioPCMBuffer) -> Int {
+        let n = Int(buffer.frameLength)
+        guard n > 0 else { return 0 }
+        var sum = 0.0
+        if let p = buffer.int16ChannelData?[0] {
+            for i in 0..<n { let v = Double(p[i]) / 32768; sum += v * v }
+        } else if let p = buffer.floatChannelData?[0] {
+            for i in 0..<n { let v = Double(p[i]); sum += v * v }
+        }
+        return Int((sum / Double(n)).squareRoot() * 1000)
     }
 
     private static func event(text: AttributedString, isFinal: Bool) -> TranscriptEvent {
