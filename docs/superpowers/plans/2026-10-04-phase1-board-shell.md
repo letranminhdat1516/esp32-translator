@@ -2317,6 +2317,12 @@ Run: `idf.py -p /dev/cu.usbmodem1101 flash monitor`, then check each row; the lo
 | 11 | Unlocked translator, double tap | Manual screen-off as before; double tap again wakes |
 | 12 | Claude screen, double tap | Nothing happens |
 | 13 | Hold PWR 3 s on battery | "Powering off" message visible even from the lock screen, then power off; on USB: "On USB power: screen off" toast and dark panel |
+| 14 | After rows 1–13 (and a few requests), read the shell task stack high-water mark (temporarily log `uxTaskGetStackHighWaterMark(NULL)` after each event in `shell_task`, or use the FreeRTOS task list) | At least 512 bytes of the 3072-byte stack never used; raise the stack size otherwise |
+| 15 | Locked, triple-tap quickly on the lower part of the screen (where the translator Mic button sits) | Unlocks into the translator on the double tap; the third tap does not toggle the mic |
+| 16 | Request shown, PWR ×1 (locks, dark), then PWR ×1 again; repeat with a double tap on the lock screen instead | Each unlock brings the request back on top; a tap within 700 ms is ignored |
+| 17 | On USB, Claude screen, hold PWR 3 s (screen off), then tap the dark panel (also with a request pending) | Panel wakes; that tap never answers; Allow/Deny work once 700 ms have passed |
+| 18 | Request shown, then stop the Mac daemon (`launchctl` or kill it) so no cancel arrives | After 100 s: "Timed out", then the previous screen (or dark if locked) |
+| 19 | Mac daemon connected, change the Mac's time zone; iPhone app connected, change the phone's time zone | Board log `clock: time set: ...` with the new offset each time; lock face shows the new local time |
 
 - [ ] **Step 10: Commit**
 
