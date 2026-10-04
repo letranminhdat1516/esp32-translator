@@ -1,0 +1,39 @@
+#!/bin/bash
+# cb — start Claude Code inside tmux so the claude-board daemon can type voice commands into it.
+#   cb [claude arguments...]
+# Outside tmux: runs `claude "$@"` in a tmux session named after the current directory, or attaches to that
+# session if it already exists (the arguments are then not used). Inside tmux: runs claude in the current pane.
+# Either way the pane gets the option @claude_board=1: the daemon only types into marked panes that still run
+# the session's own Claude Code. Remote Control and everything else work as usual.
+# Test hooks: CB_TMUX (tmux binary), CB_NO_ATTACH=1 (print the pane id instead of attaching)
+set -euo pipefail
+
+TMUX_BIN=${CB_TMUX:-$(command -v tmux || true)}
+for candidate in /opt/homebrew/bin/tmux /usr/local/bin/tmux; do
+  if [ -z "$TMUX_BIN" ] && [ -x "$candidate" ]; then TMUX_BIN=$candidate; fi
+done
+[ -n "$TMUX_BIN" ] || { echo "cb: tmux not found (brew install tmux)" >&2; exit 1; }
+CLAUDE_BIN=$(command -v claude || true)
+[ -n "$CLAUDE_BIN" ] || { echo "cb: claude not found in PATH" >&2; exit 1; }
+
+if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]; then
+  "$TMUX_BIN" set-option -p -t "$TMUX_PANE" @claude_board 1
+  exec "$CLAUDE_BIN" "$@"
+fi
+
+# tmux session names cannot contain "." or ":"
+name=$(printf '%s' "$(basename "$PWD")" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_')
+[ -n "$name" ] || name=claude
+if "$TMUX_BIN" has-session -t "=$name" 2>/dev/null; then
+  pane=$("$TMUX_BIN" display-message -p -t "=$name:" '#{pane_id}')
+else
+  # One argument would go through `sh -c`: exec the quoted path so the pane process is claude itself
+  if [ $# -eq 0 ]; then cmd=("$(printf 'exec %q' "$CLAUDE_BIN")"); else cmd=("$CLAUDE_BIN" "$@"); fi
+  pane=$("$TMUX_BIN" new-session -d -P -F '#{pane_id}' -s "$name" -c "$PWD" -e "PATH=$PATH" -- "${cmd[@]}")
+  "$TMUX_BIN" set-option -p -t "$pane" @claude_board 1
+fi
+if [ "${CB_NO_ATTACH:-0}" = 1 ]; then
+  echo "$pane"
+  exit 0
+fi
+exec "$TMUX_BIN" attach-session -t "=$name"

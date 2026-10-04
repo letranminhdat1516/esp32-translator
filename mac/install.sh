@@ -1,6 +1,6 @@
 #!/bin/bash
 # mac/install.sh — build and install the Claude board bridge for the current user.
-# Test overrides: BIN, CLAUDE_SETTINGS, CLAUDE_BOARD_SKIP_LAUNCHD=1
+# Test overrides: BIN, CLAUDE_SETTINGS, LOCAL_BIN, CLAUDE_BOARD_SKIP_LAUNCHD=1
 set -euo pipefail
 cd "$(dirname "$0")"
 swift build -c release
@@ -21,6 +21,12 @@ install_bin() {
 }
 install_bin claude-board
 install_bin claude-board-hook
+# cb: starts claude inside a marked tmux pane so the board can type voice commands into it
+tmp="$BIN/.cb.tmp.$$"
+cp cb "$tmp"
+chmod 755 "$tmp"
+mv -f "$tmp" "$BIN/cb"
+python3 claude_settings.py link-cb "$BIN/cb" "${LOCAL_BIN:-$HOME/.local/bin}"
 
 # Settings first: an invalid settings.json aborts before the daemon starts.
 python3 claude_settings.py install "$SETTINGS" "$BIN/claude-board-hook"

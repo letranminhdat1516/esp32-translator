@@ -4,6 +4,8 @@
 usage: claude_settings.py install   SETTINGS HOOK_PATH
        claude_settings.py uninstall SETTINGS
        claude_settings.py plist TEMPLATE OUT BIN HOME
+       claude_settings.py link-cb   TARGET LINK_DIR    (symlink LINK_DIR/cb -> TARGET, never over another cb)
+       claude_settings.py unlink-cb TARGET LINK_DIR    (remove LINK_DIR/cb only if it points to TARGET)
 """
 import json, os, plistlib, sys, tempfile, time
 
@@ -87,8 +89,36 @@ def atomic_write(path, text):
         raise
 
 
+def link_cb(target, link_dir):
+    """Symlinks LINK_DIR/cb to TARGET when LINK_DIR exists and holds no other cb. Returns what happened."""
+    link = os.path.join(link_dir, "cb")
+    if not os.path.isdir(link_dir):
+        return "cb: %s does not exist; run %s, or add %s to PATH" % (link_dir, target, os.path.dirname(target))
+    if os.path.islink(link):
+        if os.readlink(link) == target:
+            return "cb: %s already links to %s" % (link, target)
+        return "cb: %s points elsewhere (%s); left untouched" % (link, os.readlink(link))
+    if os.path.exists(link):
+        return "cb: %s already exists; left untouched" % link
+    os.symlink(target, link)
+    return "cb: linked %s -> %s" % (link, target)
+
+
+def unlink_cb(target, link_dir):
+    link = os.path.join(link_dir, "cb")
+    if os.path.islink(link) and os.readlink(link) == target:
+        os.unlink(link)
+        return "cb: removed %s" % link
+    return None
+
+
 def main(argv):
     mode = argv[1]
+    if mode in ("link-cb", "unlink-cb"):
+        msg = (link_cb if mode == "link-cb" else unlink_cb)(argv[2], argv[3])
+        if msg:
+            print(msg)
+        return
     if mode == "plist":
         tmpl, out, binp, home = argv[2:6]
         with open(tmpl, "rb") as f:

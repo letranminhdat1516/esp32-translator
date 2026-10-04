@@ -72,5 +72,41 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(s["hooks"]["Stop"], [{"hooks": [{"type": "command", "command": "other-tool"}]}])
 
 
+class LinkCbTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.target = os.path.join(self.dir, "bin", "cb")
+        os.makedirs(os.path.dirname(self.target))
+        open(self.target, "w").close()
+        self.links = os.path.join(self.dir, "local-bin")
+        self.link = os.path.join(self.links, "cb")
+
+    def test_no_link_directory_no_link(self):
+        run("link-cb", self.target, self.links)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_links_once_and_unlinks(self):
+        os.makedirs(self.links)
+        run("link-cb", self.target, self.links)
+        run("link-cb", self.target, self.links)           # again: still the same link
+        self.assertEqual(os.readlink(self.link), self.target)
+        run("unlink-cb", self.target, self.links)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_never_replaces_or_removes_another_cb(self):
+        os.makedirs(self.links)
+        with open(self.link, "w") as f:
+            f.write("#!/bin/sh\necho mine\n")
+        run("link-cb", self.target, self.links)
+        run("unlink-cb", self.target, self.links)
+        with open(self.link) as f:
+            self.assertIn("mine", f.read())
+        os.unlink(self.link)
+        os.symlink("/elsewhere/cb", self.link)
+        run("link-cb", self.target, self.links)
+        run("unlink-cb", self.target, self.links)
+        self.assertEqual(os.readlink(self.link), "/elsewhere/cb")
+
+
 if __name__ == "__main__":
     unittest.main()
