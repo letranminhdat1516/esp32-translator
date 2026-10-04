@@ -30,6 +30,7 @@ typedef struct {
     board_mode_t mode;       /* mode in use; shown when unlocked, restored on unlock */
     bool locked;
     bool urgent;             /* a Claude request is shown over the mode (or over the lock) */
+    bool pending;            /* a Claude request awaits an answer (shown or left behind); unlocking shows it again */
     int64_t face_until_us;   /* lock face visible until this time; 0 = hidden */
 } modes_t;
 
@@ -41,7 +42,7 @@ modes_panel_t modes_panel(const modes_t *m, int64_t now_us);
 bool modes_face_visible(const modes_t *m, int64_t now_us);
 
 /* PWR button press counting, fed from the PMU interrupt poll (pmu.c, every 100 ms). */
-#define MODES_CLICK_WINDOW_MS 450    /* a press ends a series once this long passes after its release */
+#define MODES_CLICK_WINDOW_MS 450    /* a series ends once this long passes after the last release (~0.5 s at 100 ms polls) */
 #define MODES_HOLD_MS         3000
 #define MODES_CLICKS_HOLD     (-1)
 

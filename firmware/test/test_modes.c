@@ -150,6 +150,82 @@ static void urgent_done_without_takeover_is_harmless(void)
     assert(modes_screen(&m) == SCREEN_PICKER && !m.locked);
 }
 
+static void left_behind_request_reappears_on_unlock(void)
+{
+    /* Locking over a shown request: dark, lock face works, the request stays pending */
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(!modes_handle(&m, MODES_EV_PWR_1, 1 * SEC));
+    assert(m.locked && !m.urgent && m.pending && modes_screen(&m) == SCREEN_LOCK);
+    assert(modes_panel(&m, 1 * SEC) == MODES_PANEL_OFF);
+    /* PWR x1 unlocks straight onto the request (the Claude screen re-arms Allow/Deny when it loads) */
+    assert(modes_handle(&m, MODES_EV_PWR_1, 2 * SEC));
+    assert(!m.locked && m.urgent && modes_screen(&m) == SCREEN_CLAUDE);
+    modes_handle(&m, MODES_EV_URGENT_DONE, 3 * SEC);
+    assert(!m.pending && modes_screen(&m) == SCREEN_PICKER);   /* the mode in use comes back */
+
+    /* Same through the lock-screen double tap */
+    m = fresh();
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_TAP_1, 1 * SEC);
+    assert(modes_face_visible(&m, 1 * SEC));
+    assert(modes_handle(&m, MODES_EV_TAP_2, 1 * SEC));
+    assert(!m.locked && m.urgent && modes_screen(&m) == SCREEN_CLAUDE);
+
+    /* Left with BOOT x1 while unlocked, then lock and unlock: back on the request */
+    m = fresh();
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    modes_handle(&m, MODES_EV_BOOT_1, 0);
+    assert(!m.urgent && m.pending && modes_screen(&m) == SCREEN_TRANSLATOR);
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    assert(modes_handle(&m, MODES_EV_PWR_1, 1 * SEC));
+    assert(m.urgent && modes_screen(&m) == SCREEN_CLAUDE);
+
+    /* Answered or dropped while locked: unlocking returns to the mode, nothing pending */
+    m = fresh();
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_URGENT_DONE, 1 * SEC);
+    assert(m.locked && !m.pending && modes_panel(&m, 1 * SEC) == MODES_PANEL_OFF);
+    modes_handle(&m, MODES_EV_PWR_1, 2 * SEC);
+    assert(!m.urgent && modes_screen(&m) == SCREEN_TRANSLATOR);
+}
+
+static void urgent_gated_inputs(void)
+{
+    /* Unlocked, request shown: tap x1 does nothing; PWR x2 / x3 are explicit choices that end the takeover */
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(!modes_handle(&m, MODES_EV_TAP_1, 1 * SEC));
+    assert(m.urgent && m.face_until_us == 0 && modes_screen(&m) == SCREEN_CLAUDE);
+    assert(modes_handle(&m, MODES_EV_PWR_2, 1 * SEC));
+    assert(!m.urgent && m.pending && m.mode == BOARD_CLAUDE && modes_screen(&m) == SCREEN_CLAUDE);
+    modes_handle(&m, MODES_EV_URGENT, 2 * SEC);
+    assert(modes_handle(&m, MODES_EV_PWR_3, 2 * SEC));
+    assert(!m.urgent && m.pending && !m.locked && modes_screen(&m) == SCREEN_PICKER);
+
+    /* Locked, request shown: tap x1 neither shows the face nor hides the request */
+    m = fresh();
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(!modes_handle(&m, MODES_EV_TAP_1, 1 * SEC));
+    assert(m.locked && m.urgent && m.face_until_us == 0 && !modes_face_visible(&m, 1 * SEC));
+    assert(modes_screen(&m) == SCREEN_CLAUDE && modes_panel(&m, 1 * SEC) == MODES_PANEL_ON);
+    /* PWR x2 unlocks into Claude mode (the request is on that screen) */
+    assert(modes_handle(&m, MODES_EV_PWR_2, 2 * SEC));
+    assert(!m.locked && !m.urgent && m.pending && modes_screen(&m) == SCREEN_CLAUDE);
+
+    /* Locked, request shown: PWR x3 unlocks into the picker */
+    m = fresh();
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(modes_handle(&m, MODES_EV_PWR_3, 1 * SEC));
+    assert(!m.locked && !m.urgent && m.pending && modes_screen(&m) == SCREEN_PICKER);
+    assert(modes_panel(&m, 1 * SEC) == MODES_PANEL_AUTO);
+}
+
 /* Feeds a press/release script: each entry is one 100 ms poll. Returns the first non-zero result. */
 static int run_clicks(modes_clicks_t *c, const char *polls, uint32_t *t)
 {
@@ -174,6 +250,18 @@ static void counts_single_double_triple(void)
     assert(run_clicks(&c, "BB.B.....", &t) == 3);
     c = (modes_clicks_t){ 0 };
     assert(run_clicks(&c, "BBBBB.....", &t) == 3);             /* 5 quick presses still mean x3 */
+}
+
+static void release_and_next_press_in_one_poll(void)
+{
+    /* Down on entry and a poll sees both edges: the release of that press, then the next press */
+    modes_clicks_t c = { 0 };
+    uint32_t t = 0;
+    assert(run_clicks(&c, "PBR.....", &t) == 2);
+    c = (modes_clicks_t){ 0 };
+    assert(run_clicks(&c, "PBBR.....", &t) == 3);
+    c = (modes_clicks_t){ 0 };
+    assert(run_clicks(&c, "BB.B.....", &t) == 3);              /* up on entry: press then release, as before */
 }
 
 static void window_is_450_ms(void)
@@ -218,7 +306,10 @@ int main(void)
     unlocking_over_a_request_keeps_it_shown();
     explicit_choices_end_the_takeover();
     urgent_done_without_takeover_is_harmless();
+    left_behind_request_reappears_on_unlock();
+    urgent_gated_inputs();
     counts_single_double_triple();
+    release_and_next_press_in_one_poll();
     window_is_450_ms();
     hold_powers_off_once_and_eats_clicks();
     timer_wraparound();
