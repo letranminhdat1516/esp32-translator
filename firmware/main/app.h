@@ -59,6 +59,12 @@ bool ble_link_voice_ready(void);
 uint16_t ble_link_voice_payload_max(void);
 bool ble_link_send_voice(const uint8_t *data, uint16_t len);
 
+/* ancs_client.c: iPhone notifications (ANCS), NimBLE host task: a link finished encrypting, a GATT notification
+ * arrived (true when it was ANCS), a link went away */
+void ancs_client_on_encrypted(uint16_t conn);
+bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len);
+void ancs_client_on_disconnect(uint16_t conn);
+
 /* audio_in.c */
 void audio_in_start(void);
 /* One voice capture at a time (voice_ui.c). start: false without the Mac voice link. stop: the audio task sends

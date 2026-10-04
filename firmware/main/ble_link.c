@@ -7,6 +7,9 @@
  *                              kind 0 = subtitle (large), kind 1 = status line,
  *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect)
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on
+ *
+ * On the iPhone's link the board is also a GATT client of Apple's Notification Center Service (ancs_client.c):
+ * ANCS needs an encrypted, bonded link, so the board asks for encryption (one-time pairing prompt on the iPhone).
  */
 #include <string.h>
 
@@ -42,6 +45,9 @@ static const char *TAG = "ble";
 #endif
 #if !defined(CONFIG_BT_NIMBLE_MAX_CCCDS) || CONFIG_BT_NIMBLE_MAX_CCCDS < 16
 #error "Stale sdkconfig (NimBLE CCCDs < 16): delete firmware/sdkconfig and rebuild"
+#endif
+#if !defined(CONFIG_BT_NIMBLE_GATT_CLIENT)
+#error "Stale sdkconfig (no NimBLE GATT client for iPhone notifications): delete firmware/sdkconfig and rebuild"
 #endif
 
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
@@ -93,6 +99,18 @@ static char s_text_buf[TEXT_MAX + 1];
 static size_t s_text_len;
 
 static void start_advertising(void);
+
+/* ANCS (iPhone notifications) is only served over an encrypted link: ask for it. Unbonded: iOS shows its pairing
+ * prompt once; bonded: the link re-encrypts silently. */
+static void request_encryption(uint16_t conn)
+{
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) != 0 || desc.sec_state.encrypted) {
+        return;
+    }
+    int rc = ble_gap_security_initiate(conn);
+    ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
+}
 
 static void handle_text_write(const uint8_t *data, uint16_t len)
 {
@@ -262,18 +280,27 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             s_claude_rx.len = 0;
             app_on_claude_link(false);   /* also ends voice (main.c) */
         }
+        ancs_client_on_disconnect(event->disconnect.conn.conn_handle);
         start_advertising();
         break;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == s_audio_handle) {
             bool on = event->subscribe.cur_notify;
-            if (on && s_phone_conn != BLE_HS_CONN_HANDLE_NONE && s_phone_conn != event->subscribe.conn_handle) {
+            if (on && event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_RESTORE) {
+                /* The iPhone is bonded now (ANCS): NimBLE restores its old audio CCCD when the link encrypts, also
+                 * when iOS connects without the translator app. Only the app's own CCCD write (every connect,
+                 * ESPLink setNotifyValue) means it is there to stream. */
+                ESP_LOGI(TAG, "iPhone audio subscription restored from the bond: waiting for the app");
+            } else if (on && s_phone_conn != BLE_HS_CONN_HANDLE_NONE && s_phone_conn != event->subscribe.conn_handle) {
                 ESP_LOGW(TAG, "audio role already held, ignoring second subscriber");
             } else if (on || event->subscribe.conn_handle == s_phone_conn) {
                 s_phone_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
                 ESP_LOGI(TAG, "iPhone audio %s", on ? "on" : "off");
                 app_on_connection_changed(on);
+                if (on) {
+                    request_encryption(event->subscribe.conn_handle);   /* the translator app: ANCS needs it */
+                }
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
             bool on = event->subscribe.cur_notify;
@@ -322,6 +349,24 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             app_on_claude_voice_link(true);   /* voice waits for a full-frame MTU: Speak may appear now */
         }
         break;
+
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        ESP_LOGI(TAG, "link %d: encryption %s (status %d)", event->enc_change.conn_handle,
+                 event->enc_change.status == 0 ? "on" : "failed", event->enc_change.status);
+        if (event->enc_change.status == 0) {
+            ancs_client_on_encrypted(event->enc_change.conn_handle);
+        }
+        break;
+
+    case BLE_GAP_EVENT_NOTIFY_RX: {
+        /* Notifications from a GATT server we subscribed to (the iPhone's ANCS). Static: host task stack. */
+        static uint8_t rx[256];
+        uint16_t n = 0;
+        if (ble_hs_mbuf_to_flat(event->notify_rx.om, rx, sizeof(rx), &n) == 0) {
+            ancs_client_on_notify(event->notify_rx.conn_handle, event->notify_rx.attr_handle, rx, n);
+        }
+        break;   /* the host frees the mbuf */
+    }
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
         start_advertising();

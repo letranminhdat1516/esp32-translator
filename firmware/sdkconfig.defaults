@@ -16,7 +16,11 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # BLE peripheral (NimBLE)
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
+# The central role only compiles NimBLE's GATT client (ESP-IDF gates it on CENTRAL): the board reads the iPhone's
+# notifications (ANCS) as a GATT client on the iPhone's own link. It never scans or initiates a connection.
+# ble_link.c refuses to build with a stale sdkconfig without the GATT client.
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_GATT_CLIENT=y
 CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
