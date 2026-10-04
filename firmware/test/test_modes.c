@@ -292,6 +292,61 @@ static void timer_wraparound(void)
     assert(run_clicks(&c, "PR.....", &t) == 1);
 }
 
+static void pick_goes_to_claude_mode(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    assert(modes_report(&m) == 2);
+    assert(modes_handle(&m, MODES_EV_PICK, 0));
+    assert(modes_screen(&m) == SCREEN_CLAUDE && modes_report(&m) == 1);
+}
+
+static void pick_is_ignored_when_locked_or_over_a_request(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    modes_handle(&m, MODES_EV_PWR_1, 0);                  /* locked */
+    assert(!modes_handle(&m, MODES_EV_PICK, 0));
+    assert(m.locked && m.mode == BOARD_PICKER);
+    modes_handle(&m, MODES_EV_PWR_3, 0);                  /* unlocked into the picker */
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(!modes_handle(&m, MODES_EV_PICK, 0));
+    assert(m.mode == BOARD_PICKER && m.urgent);
+}
+
+static void report_follows_mode_and_lock(void)
+{
+    modes_t m = fresh();
+    assert(modes_report(&m) == 0);
+    modes_handle(&m, MODES_EV_PWR_2, 0);
+    assert(modes_report(&m) == 1);
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    assert(modes_report(&m) == 0);                        /* locked: nothing to show */
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(modes_report(&m) == 0);                        /* a request over the lock is not Claude mode */
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    assert(modes_report(&m) == 2);
+    modes_handle(&m, MODES_EV_BOOT_1, 0);
+    assert(modes_report(&m) == 0);
+}
+
+static void report_due_covers_link_up_and_mode_changes(void)
+{
+    modes_t m = fresh();
+    int last = MODES_REPORT_UNSENT;                       /* Mac link just came up (or came back) */
+    assert(modes_report_due(&last, &m) && last == 0);     /* (a) report even though nothing changed yet */
+    assert(!modes_report_due(&last, &m));                 /* nothing new: stay quiet */
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    assert(modes_report_due(&last, &m) && last == 2);     /* (b) a mode change */
+    assert(!modes_report_due(&last, &m));
+    modes_handle(&m, MODES_EV_PICK, 0);
+    assert(modes_report_due(&last, &m) && last == 1);
+    modes_handle(&m, MODES_EV_PWR_1, 0);                  /* locked: other */
+    assert(modes_report_due(&last, &m) && last == 0);
+    last = MODES_REPORT_UNSENT;                           /* the Mac reconnects: report again, even 'other' */
+    assert(modes_report_due(&last, &m) && last == 0);
+}
+
 int main(void)
 {
     starts_unlocked_in_translator();
@@ -313,6 +368,10 @@ int main(void)
     window_is_450_ms();
     hold_powers_off_once_and_eats_clicks();
     timer_wraparound();
+    pick_goes_to_claude_mode();
+    pick_is_ignored_when_locked_or_over_a_request();
+    report_follows_mode_and_lock();
+    report_due_covers_link_up_and_mode_changes();
     puts("modes: all tests passed");
     return 0;
 }

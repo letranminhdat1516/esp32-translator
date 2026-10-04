@@ -28,8 +28,9 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static const char *const EV_NAMES[] = {
     "PWR x1", "PWR x2", "PWR x3", "BOOT x1", "tap x1", "tap x2", "Claude request", "Claude request done",
+    "session picked",
 };
-_Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_URGENT_DONE + 1, "EV_NAMES out of sync");
+_Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_PICK + 1, "EV_NAMES out of sync");
 
 void shell_post(modes_event_t ev)
 {

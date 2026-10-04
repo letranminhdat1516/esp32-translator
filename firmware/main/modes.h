@@ -19,6 +19,7 @@ typedef enum {
     MODES_EV_TAP_2,        /* double tap on the lock screen */
     MODES_EV_URGENT,       /* a Claude request needs the user: show it, wake the panel */
     MODES_EV_URGENT_DONE,  /* that request was answered, cancelled or dropped */
+    MODES_EV_PICK,         /* a session was tapped in the picker: Claude mode */
 } modes_event_t;
 
 /* Panel power policy: AUTO = the usual idle timer / manual screen-off decide */
@@ -40,6 +41,18 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us);
 board_screen_t modes_screen(const modes_t *m);
 modes_panel_t modes_panel(const modes_t *m, int64_t now_us);
 bool modes_face_visible(const modes_t *m, int64_t now_us);
+
+/* What the board shows, for the Mac (claude_proto.h CLAUDE_BOARD_*): 0 other (translator, or locked),
+ * 1 Claude mode, 2 picker. Session rows are pushed only while this is 1 or 2. */
+int modes_report(const modes_t *m);
+
+/* The Mac sends session rows only after the board reports its mode, so the report must go out (a) every time
+ * the Mac Claude link comes up or reconnects and (b) on every change. Caller contract (Task 10): keep one
+ * `int last` per link, set it to MODES_REPORT_UNSENT in app_on_claude_link(true), and call
+ * modes_report_due() right there and after every modes_handle() that returned true (shell.c, under s_mux);
+ * when it returns true, send claude_encode_mode(modes_report(m)) on the answer characteristic. */
+#define MODES_REPORT_UNSENT (-1)
+bool modes_report_due(int *last, const modes_t *m);
 
 /* PWR button press counting, fed from the PMU interrupt poll (pmu.c, every 100 ms). */
 #define MODES_CLICK_WINDOW_MS 450    /* a series ends once this long passes after the last release (~0.5 s at 100 ms polls) */

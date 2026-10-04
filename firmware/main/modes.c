@@ -65,6 +65,12 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
         m->urgent = false;
         m->pending = false;
         return false;
+    case MODES_EV_PICK:
+        if (m->locked || m->urgent) {
+            return false;   /* the picker is not on screen then */
+        }
+        m->mode = BOARD_CLAUDE;
+        return true;
     }
     return false;
 }
@@ -144,4 +150,29 @@ int modes_clicks_step(modes_clicks_t *c, bool pressed, bool released, uint32_t n
         return n;
     }
     return 0;
+}
+
+int modes_report(const modes_t *m)
+{
+    if (m->locked) {
+        return 0;
+    }
+    switch (m->mode) {
+    case BOARD_CLAUDE:
+        return 1;
+    case BOARD_PICKER:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+bool modes_report_due(int *last, const modes_t *m)
+{
+    int now = modes_report(m);
+    if (now == *last) {
+        return false;
+    }
+    *last = now;
+    return true;
 }
