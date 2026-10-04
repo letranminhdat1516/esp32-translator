@@ -55,6 +55,9 @@ static volatile uint32_t s_pending_id;   /* 0 = none */
 static bool s_always_offered;            /* the pending permission carries a rule */
 static bool s_touch_on = true;           /* false while the panel is dark */
 static bool s_link;
+/* The link that is (or was last) up came through the iPhone relay: read at link-up, because ble_link.c has
+ * already moved to the new state when it reports the link down */
+static bool s_link_relayed;
 static question_set_t s_qset;            /* pages of the question shown (or still arriving) */
 static claude_question_t s_page;         /* parse buffer: NimBLE host task only, ~0.4 KB off its 6 KB stack */
 
@@ -434,11 +437,14 @@ void claude_ui_set_link(bool connected)
 {
     bsp_display_lock((uint32_t)-1);
     s_link = connected;
-    if (!connected) {
+    if (connected) {
+        s_link_relayed = ble_link_claude_relayed();
+    } else {
         question_reset(&s_qset);   /* the Mac falls back to the terminal; drop pages still arriving */
     }
     if (!connected && s_pending_id) {
-        show_idle("No requests", "Mac disconnected.\nAnswer in the terminal.");
+        show_idle("No requests", s_link_relayed ? "iPhone relay disconnected.\nAnswer in the terminal."
+                                                : "Mac disconnected.\nAnswer in the terminal.");
         schedule_restore();
     }
     claude_ui_refresh_session_locked();

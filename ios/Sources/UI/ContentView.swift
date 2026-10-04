@@ -85,7 +85,7 @@ private struct ListeningLine: View {
         Button {
             engine.startConversation()
         } label: {
-            Label(engine.listening ? "Listening" : "Idle — speak or tap to start",
+            Label(engine.listening ? "Listening" : "Idle — tap here or the board mic before you speak",
                   systemImage: engine.listening ? "waveform" : "pause.circle")
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

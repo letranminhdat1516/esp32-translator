@@ -11,9 +11,10 @@ import UIKit
 ///
 /// While you are speaking, "Them → You" results are dropped, because the ESP32 mic hears you too.
 ///
-/// The AirPods mic is held only during a conversation (`ConversationActivity`): board speech, your voice, a
-/// translation to speak or a tap starts one; two minutes without speech ends it and gives the audio back to
-/// other apps (YouTube, TikTok…), which are only ducked while it lasts.
+/// The AirPods mic is held only during a conversation (`ConversationActivity`): board speech, a translation to
+/// speak or a tap starts one (your voice can't: the mic is off while idle, so tap before you speak); ten minutes
+/// without speech ends it and gives the audio back to other apps (YouTube, TikTok…), which are only ducked
+/// while it lasts.
 @MainActor
 @Observable
 final class ConversationEngine {
@@ -238,17 +239,31 @@ final class ConversationEngine {
         }
     }
 
-    /// Takes the AirPods mic: session in voice chat (other audio ducked), mic engine on
+    /// Takes the AirPods mic: session in voice chat (other audio ducked), mic engine on.
+    /// The idle silence keeps playing until the mic runs: if taking the mic fails (common when starting it from
+    /// the background) the app must still be playing audio, or iOS suspends it and the board link goes quiet.
     private func beginConversation(after event: ConversationActivity.Event) {
         Diag.log("conversation: start (\(event))")
         listening = true
-        silence.stop()
         do {
             try configureAudioSession()
             try startMic()
+            silence.stop()
         } catch {
-            Diag.log("conversation: mic start failed: \(error.localizedDescription)")
+            Diag.log("conversation: mic start failed (\(error.localizedDescription)), staying idle")
+            fallBackToIdle()
         }
+    }
+
+    /// The mic could not be taken: back to idle in the mixable playback session. Silence keeps the app alive
+    /// in the background (the board link's keepalive) and translations of board speech still play through it.
+    private func fallBackToIdle() {
+        listening = false
+        activity.startFailed(at: Date())
+        mic?.stop()
+        mic = nil
+        myPartial = ""
+        startSilence()
     }
 
     /// Gives the mic and the session back: other apps return to full volume and the AirPods to A2DP.
@@ -269,7 +284,7 @@ final class ConversationEngine {
     }
 
     private func startMic() throws {
-        guard let vietnamese = vietnameseIn, let micFormat else { return }
+        guard let vietnamese = vietnameseIn, let micFormat else { throw EngineError.noAudioFormat }
         mic?.stop()
         let fresh = MicSource(target: micFormat, gate: gate, sink: { vietnamese.feed($0) },
                               onSpeechStart: { [weak self] in Task { @MainActor in self?.note(.gateOpen) } },
@@ -303,7 +318,8 @@ final class ConversationEngine {
         }
     }
 
-    /// Every translation is spoken through here: the session must be active (it starts a conversation if idle)
+    /// Every translation is spoken through here: it starts a conversation if idle; if the mic can't be taken the
+    /// session stays in idle playback (mixable), which plays speech too
     private func say(_ text: String, quiet: Bool = false) {
         note(.ttsStart)
         speaker?.speak(text, quiet: quiet)
@@ -474,7 +490,8 @@ final class ConversationEngine {
             try startMic()
             Diag.log("mic: restarted (\(reason))")
         } catch {
-            Diag.log("mic: restart failed (\(reason)): \(error.localizedDescription)")
+            Diag.log("conversation: mic start failed (restart after \(reason): \(error.localizedDescription)), staying idle")
+            fallBackToIdle()
         }
     }
 

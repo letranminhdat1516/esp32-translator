@@ -84,10 +84,11 @@ Battery life has not been measured yet.
 
 The app takes the AirPods mic only while a conversation is going on, so it does not block YouTube, TikTok or music:
 
-- **Starts** when the board streams speech, when you start speaking into the AirPods (once a conversation is on), when a translation has to be spoken, when you turn the board mic on, when you tap the status line in the app ("Idle — speak or tap to start"), and when the app opens.
+- **Starts** when the board streams speech, when a translation has to be spoken, when you turn the board mic on, when you tap the status line in the app ("Idle — tap here or the board mic before you speak"), and when the app opens. Your own voice cannot start one: while idle the AirPods mic is off, so tap first. Once a conversation is on, your speech keeps it going.
 - **During** a conversation the session is voice chat (`.playAndRecord`, AirPods mic over HFP) with `.mixWithOthers` + `.duckOthers`: a video in another app keeps playing, only quieter. The status line reads "Listening".
-- **Ends** after 2 minutes with no speech from either side (no board audio, own-voice gate closed, nothing being spoken). The mic engine stops and the session is deactivated with `.notifyOthersOnDeactivation`: other apps return to full volume and the AirPods to A2DP.
+- **Ends** after 10 minutes with no speech from either side (long enough that the pauses of a normal conversation don't turn the mic off before your next sentence) (no board audio, own-voice gate closed, nothing being spoken). The mic engine stops and the session is deactivated with `.notifyOthersOnDeactivation`: other apps return to full volume and the AirPods to A2DP.
 - **Idle**, "You say" does not listen: speak to the board (English), turn the board mic on, or tap the status line first. The app plays mixable silence (no mic, no ducking) so iOS keeps it running in the background: it still receives board audio, keeps the board link alive (keepalive every 20 s) and starts a conversation on English speech.
+- **Mic unavailable** (iOS often refuses the mic to an app starting it from the background): the app stays idle, keeps the mixable silence playing (so it is not suspended and the board link stays alive) and still speaks translations of board speech through that playback session. It logs `conversation: mic start failed (…), staying idle` and retries automatically after 30 s; a tap retries at once.
 - **Interruptions** (a call, Siri): the mic comes back only if a conversation was on and iOS says to resume; otherwise the conversation ends. While idle the app never takes the mic back.
 
 ### Vietnamese recognition (You → Them)
@@ -146,6 +147,11 @@ heartbeat (0..2 are the mic states): the board leaves the iPhone audio role afte
 app, because a bonded iPhone keeps the link up for notifications after the app is gone.
 
 ## Getting started
+
+> **Update the iOS app, the Mac daemon and the board firmware together.** They depend on each other's
+> heartbeat and link hello: the board drops the iPhone translator role after 60 s without the app's 20 s
+> heartbeat, and tells the Mac from the iPhone relay by the hello (kind 9) each side sends on connect. Mixing
+> an older app, daemon or firmware with a newer one breaks the translator role or the relay.
 
 ### Firmware
 
@@ -394,7 +400,7 @@ still pending).
 | `turnGap` | same | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
 | `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
 | `rate` | `ios/Sources/Speech/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
-| `idleTimeout` | `ios/Sources/App/ConversationActivity.swift` | 2 min | Silence after which the app releases the AirPods mic and other apps' audio returns to full volume |
+| `idleTimeout` | `ios/Sources/App/ConversationActivity.swift` | 10 min | Silence after which the app releases the AirPods mic and other apps' audio returns to full volume |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 | `VAD_HANGOVER_FRAMES` | same | 40 (800 ms) | Lower = faster phrase end, but long pauses split sentences |
 | `SCREEN_OFF_AFTER_MS` | `firmware/main/ui.c` | 30 s | Screen timeout |
