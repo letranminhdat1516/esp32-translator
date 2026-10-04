@@ -1,6 +1,7 @@
 import AVFAudio
 import Foundation
 import Observation
+import os
 import UIKit
 
 /// Orchestrates two translation channels running in parallel:
@@ -9,6 +10,10 @@ import UIKit
 ///   You → Them:  AirPods mic ───► VI recognition ─partials─► VI→EN ─BLE─► subtitles on the ESP32
 ///
 /// While you are speaking, "Them → You" results are dropped, because the ESP32 mic hears you too.
+///
+/// The AirPods mic is held only during a conversation (`ConversationActivity`): board speech, your voice, a
+/// translation to speak or a tap starts one; two minutes without speech ends it and gives the audio back to
+/// other apps (YouTube, TikTok…), which are only ducked while it lasts.
 @MainActor
 @Observable
 final class ConversationEngine {
@@ -43,6 +48,8 @@ final class ConversationEngine {
     private(set) var myPartial = ""
     private(set) var mySubtitle = ""
     private(set) var voiceName = ""
+    /// A conversation is going on: the AirPods mic is on ("You say" listens)
+    private(set) var listening = false
 
     // MARK: Tuning
 
@@ -64,6 +71,10 @@ final class ConversationEngine {
     private var vietnameseIn: LiveTranscriber?
     private var espSource: ESPAudioSource?
     private var mic: MicSource?
+    private let gate = VoiceGate()
+    private var activity = ConversationActivity()
+    private let silence = SilencePlayer()
+    private let boardAudioStamp = OSAllocatedUnfairLock<Date>(initialState: .distantPast)
     private var micFormat: AVAudioFormat?
     private var subtitleTranslator: SubtitleTranslator?
     private var theirFinals: AsyncStream<String>.Continuation?
@@ -75,7 +86,12 @@ final class ConversationEngine {
             Task { @MainActor in self?.board = state }
         }
         link.onMicChange = { [weak self] on in
-            Task { @MainActor in self?.boardMicOn = on }
+            Task { @MainActor in
+                guard let self else { return }
+                // A tap on the board mic (off → on) starts a conversation
+                if on && !self.boardMicOn { self.note(.userStart) }
+                self.boardMicOn = on
+            }
         }
         // Midnight, a time zone or daylight-saving change, or a clock set: keep the board's lock-face clock right
         NotificationCenter.default.addObserver(forName: UIApplication.significantTimeChangeNotification,
@@ -108,7 +124,6 @@ final class ConversationEngine {
                 phase = .failed("Microphone access denied. Enable it in Settings → Live Translator.")
                 return
             }
-            try configureAudioSession()
 
             let english = LiveTranscriber(locale: Locale(identifier: "en-US"), engine: .speech)
             let vietnamese = LiveTranscriber(locale: Locale(identifier: "vi-VN"), engine: .dictation)
@@ -133,28 +148,38 @@ final class ConversationEngine {
                 self?.showSubtitle(english, turn: turn)
             }
 
-            let speaker = Speaker()
-            speaker.warmUp()
-            voiceName = speaker.voiceName
-            self.speaker = speaker
-
             guard let espFormat = english.audioFormat, let micFormat = vietnamese.audioFormat else {
                 throw EngineError.noAudioFormat
             }
             let espSource = ESPAudioSource(target: espFormat) { english.feed($0) }
-            link.onAudioPacket = { espSource.handle(packet: $0) }
+            let stamp = boardAudioStamp
+            link.onAudioPacket = { [weak self] packet in
+                espSource.handle(packet: packet)
+                // Board speech keeps (or starts) the conversation; the main actor hears about it once a second
+                let now = Date()
+                let due = stamp.withLock { last in
+                    guard now.timeIntervalSince(last) >= 1 else { return false }
+                    last = now
+                    return true
+                }
+                if due { Task { @MainActor in self?.note(.boardAudio) } }
+            }
             self.espSource = espSource
-
-            let mic = MicSource(target: micFormat, sink: { vietnamese.feed($0) },
-                                onSpeechEnd: { vietnamese.finalizeNow() })
-            try mic.start()
-            self.mic = mic
             self.micFormat = micFormat
 
             observeAudioSession()
             startPhraseEndWatcher()
             startDiagnostics()
+            startIdleTimer()
             phase = .running
+            // Opening the app starts a conversation; the session is set up before the synthesizer touches it
+            note(.userStart)
+
+            let speaker = Speaker()
+            speaker.onBusyChange = { [weak self] busy in self?.note(busy ? .ttsStart : .ttsEnd) }
+            voiceName = speaker.voiceName
+            self.speaker = speaker
+            speaker.warmUp()
             Diag.log("engine: running")
         } catch {
             phase = .failed(error.localizedDescription)
@@ -169,6 +194,12 @@ final class ConversationEngine {
     func toggleBoardMic() {
         boardMicOn.toggle()
         link.setBoardMic(boardMicOn)
+        if boardMicOn { note(.userStart) }
+    }
+
+    /// The "tap to start" control
+    func startConversation() {
+        note(.userStart)
     }
 
     func clearHistory() {
@@ -188,11 +219,94 @@ final class ConversationEngine {
 
     private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
-        // voiceChat: echo cancellation, routes through the AirPods mic; speech still plays in the earbuds
+        // voiceChat: echo cancellation, routes through the AirPods mic; speech still plays in the earbuds.
+        // mixWithOthers + duckOthers: a video playing in another app gets quieter instead of stopping.
         try session.setCategory(.playAndRecord, mode: .voiceChat,
-                                options: [.allowBluetoothHFP, .duckOthers])
+                                options: [.allowBluetoothHFP, .mixWithOthers, .duckOthers])
         try session.setPreferredIOBufferDuration(0.01)
         try session.setActive(true)
+    }
+
+    // MARK: Conversation on / off
+
+    private func note(_ event: ConversationActivity.Event) {
+        guard phase == .running else { return }
+        switch activity.handle(event, at: Date()) {
+        case .start?: beginConversation(after: event)
+        case .stop?: endConversation(after: event)
+        case nil: break
+        }
+    }
+
+    /// Takes the AirPods mic: session in voice chat (other audio ducked), mic engine on
+    private func beginConversation(after event: ConversationActivity.Event) {
+        Diag.log("conversation: start (\(event))")
+        listening = true
+        silence.stop()
+        do {
+            try configureAudioSession()
+            try startMic()
+        } catch {
+            Diag.log("conversation: mic start failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Gives the mic and the session back: other apps return to full volume and the AirPods to A2DP.
+    /// Silence keeps playing (mixable, no mic) so the app stays alive in the background for the board.
+    private func endConversation(after event: ConversationActivity.Event) {
+        Diag.log("conversation: end (\(event))")
+        listening = false
+        mic?.stop()
+        mic = nil
+        myPartial = ""
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            Diag.log("conversation: session deactivate failed: \(error.localizedDescription)")
+        }
+        startSilence()
+    }
+
+    private func startMic() throws {
+        guard let vietnamese = vietnameseIn, let micFormat else { return }
+        mic?.stop()
+        let fresh = MicSource(target: micFormat, gate: gate, sink: { vietnamese.feed($0) },
+                              onSpeechStart: { [weak self] in Task { @MainActor in self?.note(.gateOpen) } },
+                              onSpeechEnd: { [weak self] in
+                                  vietnamese.finalizeNow()
+                                  Task { @MainActor in self?.note(.gateClosed) }
+                              })
+        try fresh.start()
+        mic = fresh
+    }
+
+    private func startSilence() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            try silence.start()
+        } catch {
+            Diag.log("idle: silence start failed: \(error.localizedDescription)")
+        }
+    }
+
+    private var idleTimerTask: Task<Void, Never>?
+
+    private func startIdleTimer() {
+        idleTimerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                self?.note(.tick)
+            }
+        }
+    }
+
+    /// Every translation is spoken through here: the session must be active (it starts a conversation if idle)
+    private func say(_ text: String, quiet: Bool = false) {
+        note(.ttsStart)
+        speaker?.speak(text, quiet: quiet)
     }
 
     // MARK: Them → You
@@ -230,7 +344,7 @@ final class ConversationEngine {
         let now = Date()
         if now.timeIntervalSince(lastUnclearCue) > unclearCooldown {
             lastUnclearCue = now
-            speaker?.speak("Không nghe rõ", quiet: true)
+            say("Không nghe rõ", quiet: true)
         }
     }
 
@@ -252,7 +366,7 @@ final class ConversationEngine {
                 guard let self else { return }
                 self.theirLines.append(Line(source: english, target: vietnamese))
                 Self.trim(&self.theirLines)
-                self.speaker?.speak(vietnamese)
+                self.say(vietnamese)
             }
         }
     }
@@ -313,34 +427,51 @@ final class ConversationEngine {
 
     // MARK: Audio session recovery
 
-    /// A phone call or Siri interrupts the session and stops the mic engine; iOS may then suspend the app in the
-    /// background. Restart the mic when the interruption ends (and rebuild it after a media services reset), so
-    /// the app keeps running and keeps the board's translator link alive (ESPLink keepalive).
+    /// A phone call or Siri interrupts the session and stops the mic engine. When it ends the mic comes back only
+    /// if a conversation is going on and iOS says to resume; otherwise the conversation ends, so the app never
+    /// grabs the mic back while you watch a video. While idle only the mixable silence is restarted (it keeps the
+    /// app alive for the board without touching other audio). A media services reset rebuilds whichever runs.
     private func observeAudioSession() {
         let center = NotificationCenter.default
         center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { note in
             guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
-            Task { @MainActor [weak self] in self?.restartMic(rebuild: false, reason: "interruption ended") }
+            let options = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt)
+                .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            let shouldResume = options.contains(.shouldResume)
+            Task { @MainActor [weak self] in self?.interruptionEnded(shouldResume: shouldResume) }
         }
         center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { _ in
-            Task { @MainActor [weak self] in self?.restartMic(rebuild: true, reason: "media services reset") }
+            Task { @MainActor [weak self] in self?.mediaServicesReset() }
         }
     }
 
-    private func restartMic(rebuild: Bool, reason: String) {
-        guard phase == .running, let vietnamese = vietnameseIn, let micFormat else { return }
+    private func interruptionEnded(shouldResume: Bool) {
+        guard phase == .running else { return }
+        if !activity.isActive {
+            Diag.log("idle: interruption ended → silence back on")
+            startSilence()
+        } else if shouldResume {
+            restartMic(reason: "interruption ended")
+        } else {
+            Diag.log("conversation: interruption ended without resume")
+            note(.stop)
+        }
+    }
+
+    private func mediaServicesReset() {
+        guard phase == .running else { return }
+        if activity.isActive {
+            restartMic(reason: "media services reset")
+        } else {
+            startSilence()
+        }
+    }
+
+    private func restartMic(reason: String) {
         do {
             try configureAudioSession()
-            if rebuild || mic == nil {
-                mic?.stop()
-                let fresh = MicSource(target: micFormat, sink: { vietnamese.feed($0) },
-                                      onSpeechEnd: { vietnamese.finalizeNow() })
-                try fresh.start()
-                mic = fresh
-            } else {
-                try mic?.resume()
-            }
+            try startMic()
             Diag.log("mic: restarted (\(reason))")
         } catch {
             Diag.log("mic: restart failed (\(reason)): \(error.localizedDescription)")
@@ -377,7 +508,7 @@ final class ConversationEngine {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self else { return }
                 let c = Diag.drain()
-                Diag.log("stats/5s board=\(self.board) pkts=\(c["esp.packets"] ?? 0) micBufs=\(c["mic.buffers"] ?? 0) feedEN=\(c["feed.en-US"] ?? 0) feedVI=\(c["feed.vi-VN"] ?? 0) rmsEN=\((c["rms.en-US"] ?? 0) / max(1, c["bufs.en-US"] ?? 1))‰ rmsVI=\((c["rms.vi-VN"] ?? 0) / max(1, c["bufs.vi-VN"] ?? 1))‰ fedEN=\(Int(self.englishIn?.fed ?? 0))s fedVI=\(Int(self.vietnameseIn?.fed ?? 0))s gate=\(self.userIsSpeaking) myPartial=\"\(self.myPartial.prefix(30))\" ttsQueue=\(self.speaker?.queued ?? -1)")
+                Diag.log("stats/5s board=\(self.board) pkts=\(c["esp.packets"] ?? 0) micBufs=\(c["mic.buffers"] ?? 0) feedEN=\(c["feed.en-US"] ?? 0) feedVI=\(c["feed.vi-VN"] ?? 0) rmsEN=\((c["rms.en-US"] ?? 0) / max(1, c["bufs.en-US"] ?? 1))‰ rmsVI=\((c["rms.vi-VN"] ?? 0) / max(1, c["bufs.vi-VN"] ?? 1))‰ fedEN=\(Int(self.englishIn?.fed ?? 0))s fedVI=\(Int(self.vietnameseIn?.fed ?? 0))s gate=\(self.userIsSpeaking) myPartial=\"\(self.myPartial.prefix(30))\" ttsQueue=\(self.speaker?.queued ?? -1) listening=\(self.listening)")
             }
         }
     }

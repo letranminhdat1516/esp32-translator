@@ -23,6 +23,7 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                     Spacer()
                 case .idle, .running:
+                    if engine.phase == .running { ListeningLine(engine: engine) }
                     ConversationView(engine: engine)
                 }
             }
@@ -67,6 +68,27 @@ private struct StatusBar: View {
         case .connecting: "Connecting…"
         case .ready: "Board connected"
         }
+    }
+}
+
+/// The AirPods mic is on only during a conversation; idle, other apps' audio plays normally
+private struct ListeningLine: View {
+    let engine: ConversationEngine
+
+    var body: some View {
+        Button {
+            engine.startConversation()
+        } label: {
+            Label(engine.listening ? "Listening" : "Idle — speak or tap to start",
+                  systemImage: engine.listening ? "waveform" : "pause.circle")
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .disabled(engine.listening)
+        .font(.footnote)
+        .foregroundStyle(engine.listening ? .green : .secondary)
+        .padding(.horizontal)
+        .padding(.bottom, 6)
     }
 }
 

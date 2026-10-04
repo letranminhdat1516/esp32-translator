@@ -77,19 +77,24 @@ final class ESPAudioSource: @unchecked Sendable {
 }
 
 /// AirPods mic (or the iPhone mic without earbuds), with echo cancellation of the spoken output.
-/// Only the wearer's speech reaches the recognizer (see `VoiceGate`); `onSpeechEnd` fires when they pause.
+/// Only the wearer's speech reaches the recognizer (see `VoiceGate`); `onSpeechStart` fires when the gate opens
+/// and `onSpeechEnd` when they pause (both on the audio thread).
 final class MicSource {
     private let engine = AVAudioEngine()
     private let converter: BufferConverter
     private let gate: VoiceGate
     private let sink: (AVAudioPCMBuffer) -> Void
+    private let onSpeechStart: () -> Void
     private let onSpeechEnd: () -> Void
+    private var gateOpen = false
 
     init(target: AVAudioFormat, gate: VoiceGate = VoiceGate(),
-         sink: @escaping (AVAudioPCMBuffer) -> Void, onSpeechEnd: @escaping () -> Void) {
+         sink: @escaping (AVAudioPCMBuffer) -> Void, onSpeechStart: @escaping () -> Void = {},
+         onSpeechEnd: @escaping () -> Void) {
         converter = BufferConverter(target: target)
         self.gate = gate
         self.sink = sink
+        self.onSpeechStart = onSpeechStart
         self.onSpeechEnd = onSpeechEnd
     }
 
@@ -125,23 +130,75 @@ final class MicSource {
         guard let converted = converter.convert(buffer) else { return }
         for event in gate.process(converted) {
             switch event {
-            case .audio(let b): sink(b)
-            case .ended: onSpeechEnd()
+            case .audio(let b):
+                if !gateOpen {
+                    gateOpen = true
+                    onSpeechStart()
+                }
+                sink(b)
+            case .ended:
+                gateOpen = false
+                onSpeechEnd()
             }
         }
-    }
-
-    /// After an audio session interruption (phone call, Siri) the engine is stopped but keeps its tap: start it again
-    func resume() throws {
-        guard !engine.isRunning else { return }
-        engine.prepare()
-        try engine.start()
     }
 
     func stop() {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        if gateOpen {
+            gateOpen = false
+            onSpeechEnd()
+        }
+    }
+}
+
+/// Plays silence while no conversation is going on, so iOS keeps the app running in the background (the BLE
+/// keepalive timer, board audio, the idle timeout). Mixable output only: no mic, no ducking, so other apps'
+/// audio is untouched and the AirPods stay in high-quality A2DP.
+final class SilencePlayer {
+    private let engine = AVAudioEngine()
+
+    init() {
+        let silence = AVAudioSourceNode { _, _, _, buffers in
+            for buffer in UnsafeMutableAudioBufferListPointer(buffers) {
+                if let data = buffer.mData { memset(data, 0, Int(buffer.mDataByteSize)) }
+            }
+            return noErr
+        }
+        engine.attach(silence)
+        engine.connect(silence, to: engine.mainMixerNode,
+                       format: AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1))
+    }
+
+    private let wanted = OSAllocatedUnfairLock(initialState: false)
+    private var observer: NSObjectProtocol?
+
+    func start() throws {
+        wanted.withLock { $0 = true }
+        // A route change (AirPods in or out) stops the engine: start it again while silence is wanted
+        if observer == nil {
+            observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange,
+                                                              object: engine, queue: nil) { [weak self] _ in
+                guard let self, self.wanted.withLock({ $0 }), !self.engine.isRunning else { return }
+                do {
+                    self.engine.prepare()
+                    try self.engine.start()
+                    Diag.log("idle: silence restarted after a configuration change")
+                } catch {
+                    Diag.log("idle: silence restart failed: \(error.localizedDescription)")
+                }
+            }
+        }
+        guard !engine.isRunning else { return }
+        engine.prepare()
+        try engine.start()
+    }
+
+    func stop() {
+        wanted.withLock { $0 = false }
         engine.stop()
     }
 }

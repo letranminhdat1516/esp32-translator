@@ -9,7 +9,16 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     /// Slightly faster than default to keep up with the conversation
     private let rate: Float = 0.54
 
-    private(set) var queued = 0
+    /// Utterances queued or being spoken
+    private(set) var queued = 0 {
+        didSet {
+            if oldValue == 0 && queued > 0 { onBusyChange?(true) }
+            if oldValue > 0 && queued <= 0 { onBusyChange?(false) }
+        }
+    }
+
+    /// Called when the synthesizer starts speaking (true) and when its queue runs empty (false)
+    var onBusyChange: ((Bool) -> Void)?
 
     init(language: String = "vi-VN") {
         synthesizer.usesApplicationAudioSession = true
