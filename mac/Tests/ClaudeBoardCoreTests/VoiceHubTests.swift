@@ -114,7 +114,7 @@ private func rig(engine: FakeEngine? = FakeEngine(finals: ["  chạy\ncác bài 
 
 private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
 
-@Test func commandIsTypedOnlyAfterSend() async {
+@Test func commandIsTypedOnlyAfterSend() async throws {
     let r = rig()
     await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7))
     await r.hub.audio(packet(0))
@@ -123,7 +123,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     await r.hub.audio(packet(2))                                  // after stop: ignored
     await settle()
     #expect(await r.sent.updates(9) == [.final("chạy các bài kiểm tra")])
-    #expect(r.engine!.streams[0].fed == 4)
+    #expect(try #require(r.engine!.streams.first).fed == 4)
     #expect(r.typer.typed.isEmpty)                                // nothing before an explicit Send
     await r.hub.input(.voiceSend(voice: 9))
     await settle()
@@ -133,7 +133,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     #expect(r.typer.typed.count == 1)
 }
 
-@Test func stopBeforeTheEngineIsReadyStillFinishes() async {
+@Test func stopBeforeTheEngineIsReadyStillFinishes() async throws {
     let r = rig(engine: FakeEngine(finals: ["xin chào"], beginDelay: .milliseconds(100)))
     let starting = Task { await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7)) }
     try? await Task.sleep(for: .milliseconds(30))
@@ -141,7 +141,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     await r.hub.input(.voiceStop(voice: 9))
     await starting.value
     await settle()
-    #expect(r.engine!.streams[0].fed == 2)
+    #expect(try #require(r.engine!.streams.first).fed == 2)
     #expect(await r.sent.updates(9) == [.final("xin chào")])
 }
 
@@ -225,11 +225,11 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     #expect(await r.sent.updates(9) == [.final("một")])
 }
 
-@Test func aNewStartCancelsTheRunningCapture() async {
+@Test func aNewStartCancelsTheRunningCapture() async throws {
     let r = rig(engine: FakeEngine(finals: ["một", "hai"]))
     await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7))
     await r.hub.input(.voiceStart(voice: 10, purpose: .command, target: 7))
-    #expect(r.engine!.streams[0].cancelled)
+    #expect(try #require(r.engine!.streams.first).cancelled)
 }
 
 @Test func sendBeforeTheFinalIsIgnored() async {
@@ -242,7 +242,7 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     #expect(r.typer.typed == ["chạy các bài kiểm tra"])
 }
 
-@Test func cancelWhileFinishingDropsTheText() async {
+@Test func cancelWhileFinishingDropsTheText() async throws {
     let r = rig(engine: FakeEngine(finals: ["xin chào"], finishDelay: .milliseconds(150)))
     await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7))
     let stopping = Task { await r.hub.input(.voiceStop(voice: 9)) }
@@ -251,18 +251,18 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     await stopping.value
     await r.hub.input(.voiceSend(voice: 9))
     await settle()
-    #expect(r.engine!.streams[0].cancelled)
+    #expect(try #require(r.engine!.streams.first).cancelled)
     #expect(await r.sent.updates(9).isEmpty)
     #expect(r.typer.typed.isEmpty)
 }
 
-@Test func disconnectDropsTheCapture() async {
+@Test func disconnectDropsTheCapture() async throws {
     let r = rig()
     await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7))
     await r.hub.boardDisconnected()
     await r.hub.input(.voiceStop(voice: 9))
     await r.hub.input(.voiceSend(voice: 9))
-    #expect(r.engine!.streams[0].cancelled && r.typer.typed.isEmpty)
+    #expect(try #require(r.engine!.streams.first).cancelled && r.typer.typed.isEmpty)
 }
 
 @Test func partialsAreThrottledAndStopAtStop() async {
@@ -281,12 +281,12 @@ private func settle() async { try? await Task.sleep(for: .milliseconds(40)) }
     #expect(await r.sent.updates(9) == [.partial("chạy"), .partial("chạy các bài"), .final("chạy các bài kiểm tra")])
 }
 
-@Test func captureThatNeverStopsTimesOut() async {
+@Test func captureThatNeverStopsTimesOut() async throws {
     let r = rig(maxCapture: .milliseconds(80))
     await r.hub.input(.voiceStart(voice: 9, purpose: .command, target: 7))
     try? await Task.sleep(for: .milliseconds(200))
     #expect(await r.sent.updates(9) == [.error("Timed out — say it again")])
-    #expect(r.engine!.streams[0].cancelled)
+    #expect(try #require(r.engine!.streams.first).cancelled)
 }
 
 private let colour = AskQuestion(question: "Which colour?", header: "Colour",
@@ -416,7 +416,7 @@ private func askTwo(_ q: RequestQueue) async -> BoardResponse? {
 
 /// The daemon's wiring (main.swift): voice inputs and audio packets go through ONE AsyncStream of events drained by
 /// one task, so a stop never overtakes audio and packets sent while start awaits engine.begin are kept, in order.
-@Test func serialFeedKeepsAudioSentWhileTheEngineStarts() async {
+@Test func serialFeedKeepsAudioSentWhileTheEngineStarts() async throws {
     let r = rig(engine: FakeEngine(finals: ["xin chào"], beginDelay: .milliseconds(100)))
     let (events, feed) = AsyncStream<@Sendable () async -> Void>.makeStream()
     let drain = Task { for await event in events { await event() } }
@@ -429,7 +429,8 @@ private func askTwo(_ q: RequestQueue) async -> BoardResponse? {
     feed.yield { await hub.input(.voiceSend(voice: 9)) }
     feed.finish()
     await drain.value
-    #expect(r.engine!.streams[0].fed == 6)
-    #expect(await r.sent.updates(9) == [.final("xin chào")])
-    #expect(r.engine!.streams[0].cancelled && r.typer.typed.isEmpty)
+    let stream = try await eventually { r.engine!.streams.first }
+    #expect(await within { stream.fed == 6 })
+    #expect(await within { await r.sent.updates(9) == [.final("xin chào")] })
+    #expect(await within { stream.cancelled } && r.typer.typed.isEmpty)
 }

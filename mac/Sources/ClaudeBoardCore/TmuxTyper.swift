@@ -242,8 +242,7 @@ public struct TmuxTyper: PaneTyping {
     /// Blocks until tmux exits; stdin and stderr are /dev/null, stdout is returned.
     static func spawn(_ path: String, _ args: [String], environment: [String: String],
                       timeout: TimeInterval = 5) -> (status: Int32, output: String) {
-        var fds: [Int32] = [-1, -1]
-        guard pipe(&fds) == 0 else { return (-1, "") }
+        guard let fds = cloexecPipe() else { return (-1, "") }
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
@@ -270,20 +269,17 @@ public struct TmuxTyper: PaneTyping {
         close(fds[1])
         guard spawned == 0 else { close(fds[0]); return (-1, "") }
 
-        // The kill never hits a reused pid: tmux is reaped only after `exited` is set (waitid WNOWAIT below)
+        // SIGTERM at the timeout, SIGKILL `killGrace` later. The kill never hits a reused pid: tmux is reaped only
+        // after `exited` is set (waitid WNOWAIT below).
         let child = pid
         let exited = OSAllocatedUnfairLock(initialState: false)
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
             exited.withLock { if !$0 { kill(child, SIGTERM) } }
         }
-        var output = Data()
-        var chunk = [UInt8](repeating: 0, count: 4096)
-        while true {
-            let n = read(fds[0], &chunk, chunk.count)
-            if n > 0 { output.append(contentsOf: chunk[0..<n]); continue }
-            if n < 0 && errno == EINTR { continue }
-            break
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout + killGrace) {
+            exited.withLock { if !$0 { kill(child, SIGKILL) } }
         }
+        let output = readOutput(fds[0], of: pid, until: .now() + timeout + killGrace + 1)
         close(fds[0])
         var info = siginfo_t()
         while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) != 0 && errno == EINTR {}
@@ -292,6 +288,48 @@ public struct TmuxTyper: PaneTyping {
         while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
         let signalled = status & 0x7f != 0
         return (signalled ? timedOut : (status >> 8) & 0xff, String(decoding: output, as: UTF8.self))
+    }
+
+    /// After SIGTERM, how long tmux has before SIGKILL
+    static let killGrace: TimeInterval = 1
+
+    /// Reads the child's stdout until EOF, until the child has exited and the pipe has gone quiet (a process it
+    /// left behind may hold the pipe open), or until `deadline`
+    private static func readOutput(_ fd: Int32, of pid: pid_t, until deadline: DispatchTime) -> Data {
+        _ = HookSocketServer.setNonBlocking(fd)
+        var output = Data()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        var childExited = false
+        while DispatchTime.now() < deadline {
+            let left = Double(deadline.uptimeNanoseconds - DispatchTime.now().uptimeNanoseconds) / 1_000_000
+            var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&p, 1, Int32(max(1, min(50, left))))
+            if ready > 0 {
+                let n = read(fd, &chunk, chunk.count)
+                if n > 0 { output.append(contentsOf: chunk[0..<n]); continue }
+                if n < 0 && (errno == EINTR || errno == EAGAIN) { continue }
+                break                                   // EOF
+            }
+            if ready < 0 && errno != EINTR { break }
+            if childExited { break }                    // exited, and nothing more came: done
+            var info = siginfo_t()
+            if waitid(P_PID, id_t(pid), &info, WEXITED | WNOHANG | WNOWAIT) == 0 && info.si_pid == pid {
+                childExited = true                      // one more quiet poll to take what is left
+            }
+        }
+        return output
+    }
+
+    /// A pipe whose ends are never inherited by a process another thread starts meanwhile
+    static func cloexecPipe() -> [Int32]? {
+        var fds: [Int32] = [-1, -1]
+        guard pipe(&fds) == 0 else { return nil }
+        guard HookSocketServer.setCloseOnExec(fds[0]), HookSocketServer.setCloseOnExec(fds[1]) else {
+            close(fds[0])
+            close(fds[1])
+            return nil
+        }
+        return fds
     }
 
     /// A Unix socket owned by this user (never type into another user's tmux server)

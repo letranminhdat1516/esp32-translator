@@ -5,18 +5,32 @@ import Foundation
 /// Every complete line ("…\n") is handed to `onLine` exactly once, in order, before the end of the stream is acted
 /// on; a partial line at the end is dropped. The hook sends one line per connection.
 public final class HookSocketServer: @unchecked Sendable {
+    public typealias Acceptor = @Sendable (_ listener: Int32) -> Int32
+
     public let path: String
     private let maxLineBytes: Int
+    private let idleTimeout: TimeInterval
+    private let acceptBackoff: TimeInterval
+    private let acceptor: Acceptor
     private let onLine: @Sendable (Data, any HookConnection) -> Void
     private let queue = DispatchQueue(label: "claude-board.accept")
-    private var listenFD: Int32 = -1
+    /// The listening descriptor (-1 before start)
+    private(set) var listenFD: Int32 = -1
     private var source: DispatchSourceRead?
+    private var suspended = false
+    private var stopped = false
 
-    /// `onLine` runs on the connection's queue: hand the work off, never block it
-    public init(path: String, maxLineBytes: Int = 4 * 1024 * 1024,
+    /// `onLine` runs on the connection's queue: hand the work off, never block it.
+    /// A connection that has not sent a complete line within `idleTimeout` is closed; one whose line was delivered
+    /// lives until that line is answered. When accept runs out of descriptors, accepting pauses for `acceptBackoff`.
+    public init(path: String, maxLineBytes: Int = 4 * 1024 * 1024, idleTimeout: TimeInterval = 10,
+                acceptBackoff: TimeInterval = 0.1, acceptor: @escaping Acceptor = { accept($0, nil, nil) },
                 onLine: @escaping @Sendable (Data, any HookConnection) -> Void) {
         self.path = path
         self.maxLineBytes = maxLineBytes
+        self.idleTimeout = idleTimeout
+        self.acceptBackoff = acceptBackoff
+        self.acceptor = acceptor
         self.onLine = onLine
     }
 
@@ -35,7 +49,8 @@ public final class HookSocketServer: @unchecked Sendable {
         let bound = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
-        guard bound == 0, chmod(path, 0o600) == 0, listen(fd, 64) == 0, Self.setNonBlocking(fd) else {
+        guard Self.setCloseOnExec(fd), bound == 0, chmod(path, 0o600) == 0, listen(fd, 64) == 0,
+              Self.setNonBlocking(fd) else {
             let error = Self.lastError()
             close(fd)
             throw error
@@ -51,7 +66,10 @@ public final class HookSocketServer: @unchecked Sendable {
     /// Stops accepting (connections already accepted carry on) and removes the socket file
     public func stop() {
         queue.sync {
+            stopped = true
             source?.cancel()
+            if suspended { source?.resume() }   // a suspended source never runs its cancel handler
+            suspended = false
             source = nil
         }
         unlink(path)
@@ -59,15 +77,29 @@ public final class HookSocketServer: @unchecked Sendable {
 
     private func acceptAll() {
         while true {
-            let c = accept(listenFD, nil, nil)
+            let c = acceptor(listenFD)
             if c < 0 {
                 if errno == EINTR || errno == ECONNABORTED { continue }
-                return   // EAGAIN: none left (or EMFILE: retried on the next event)
+                if errno == EMFILE || errno == ENFILE { pauseAccepting() }
+                return   // EAGAIN: none left
             }
             var one: Int32 = 1
             setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-            guard Self.setNonBlocking(c) else { close(c); continue }
-            SocketHookConnection(fd: c, maxLineBytes: maxLineBytes, onLine: onLine).start()
+            guard Self.setCloseOnExec(c), Self.setNonBlocking(c) else { close(c); continue }
+            SocketHookConnection(fd: c, maxLineBytes: maxLineBytes, idleTimeout: idleTimeout, onLine: onLine).start()
+        }
+    }
+
+    /// Out of descriptors: the pending connection keeps the listener readable, so stop listening for a moment
+    /// instead of spinning on accept
+    private func pauseAccepting() {
+        guard let source, !suspended else { return }
+        suspended = true
+        source.suspend()
+        queue.asyncAfter(deadline: .now() + acceptBackoff) { [self] in
+            guard suspended, !stopped else { return }
+            suspended = false
+            source.resume()
         }
     }
 
@@ -76,19 +108,30 @@ public final class HookSocketServer: @unchecked Sendable {
         return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0
     }
 
+    /// Never inherited by a process started meanwhile on another thread (tmux, the speech engine…)
+    static func setCloseOnExec(_ fd: Int32) -> Bool {
+        let flags = fcntl(fd, F_GETFD)
+        return flags >= 0 && fcntl(fd, F_SETFD, flags | FD_CLOEXEC) == 0
+    }
+
     private static func lastError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
 }
 
 /// One accepted connection. All state lives on `queue`. The descriptor is closed once every delivered line has been
-/// answered (reply or close), or at once when the client ends the stream before sending a complete line.
+/// answered (reply or close), at once when the client ends the stream before sending a complete line, or when no
+/// complete line arrived within the idle timeout.
 final class SocketHookConnection: @unchecked Sendable {
-    private let fd: Int32
+    let fd: Int32
     private let maxLineBytes: Int
+    private let idleTimeout: TimeInterval
     private let onLine: @Sendable (Data, any HookConnection) -> Void
     private let queue = DispatchQueue(label: "claude-board.hook-connection")
     private var source: DispatchSourceRead?
     private var buffer = Data()
-    /// Lines handed out and not yet answered
+    /// Bytes at the start of `buffer` already known to hold no newline
+    private var scanned = 0
+    /// Lines handed out, and those not yet answered
+    private var delivered = 0
     private var open = 0
     private var peerGone = false
     private var closed = false
@@ -97,9 +140,11 @@ final class SocketHookConnection: @unchecked Sendable {
     /// A reply waits at most this long for the client to take it
     static let replyTimeout: TimeInterval = 5
 
-    init(fd: Int32, maxLineBytes: Int, onLine: @escaping @Sendable (Data, any HookConnection) -> Void) {
+    init(fd: Int32, maxLineBytes: Int, idleTimeout: TimeInterval,
+         onLine: @escaping @Sendable (Data, any HookConnection) -> Void) {
         self.fd = fd
         self.maxLineBytes = maxLineBytes
+        self.idleTimeout = idleTimeout
         self.onLine = onLine
     }
 
@@ -114,35 +159,51 @@ final class SocketHookConnection: @unchecked Sendable {
         }
         source = s
         s.resume()
+        // A client that never finishes its line must not hold a descriptor forever
+        queue.asyncAfter(deadline: .now() + idleTimeout) {
+            if self.delivered == 0 { self.closeNow() }
+        }
     }
 
     private func readAvailable() {
         var chunk = [UInt8](repeating: 0, count: 65536)
         var ended = false
-        while true {
+        while !closed {
             let n = read(fd, &chunk, chunk.count)
-            if n > 0 { buffer.append(contentsOf: chunk[0..<n]); continue }
+            if n > 0 {
+                buffer.append(contentsOf: chunk[0..<n])
+                deliverLines()           // also enforces the size limit, chunk by chunk
+                continue
+            }
             if n < 0 && errno == EINTR { continue }
             if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { break }
             ended = true      // EOF, or an error such as ECONNRESET: the client is gone
             break
         }
-        // Every complete line first, even when the end of the stream came with it
-        while !closed, let nl = buffer.firstIndex(of: 0x0a) {
-            let line = Data(buffer[buffer.startIndex..<nl])
-            buffer.removeSubrange(buffer.startIndex...nl)
-            open += 1
-            onLine(line, LineHandle(self))
-        }
-        if buffer.count > maxLineBytes {   // oversized: drop, no reply
-            closeNow()
-            return
-        }
-        if ended {
+        if ended && !closed {
             peerGone = true
             source?.cancel()               // nothing more to read; the descriptor stays open for replies
             fireGone()
             if open == 0 { closeNow() }    // a partial line is dropped
+        }
+    }
+
+    /// Hands over every complete line in the buffer, in order. An oversized line (complete or not) closes the
+    /// connection without a reply.
+    private func deliverLines() {
+        while !closed {
+            guard let nl = buffer[(buffer.startIndex + scanned)...].firstIndex(of: 0x0a) else {
+                scanned = buffer.count
+                if buffer.count > maxLineBytes { closeNow() }
+                return
+            }
+            let line = Data(buffer[buffer.startIndex..<nl])
+            buffer.removeSubrange(buffer.startIndex...nl)
+            scanned = 0
+            guard line.count <= maxLineBytes else { closeNow(); return }
+            delivered += 1
+            open += 1
+            onLine(line, LineHandle(self))
         }
     }
 
@@ -204,12 +265,12 @@ final class SocketHookConnection: @unchecked Sendable {
 }
 
 /// The HookConnection for one line: answered once (a reply or a close), later calls are ignored
-private final class LineHandle: HookConnection, @unchecked Sendable {
-    private let conn: SocketHookConnection
+final class LineHandle: HookConnection, @unchecked Sendable {
+    let connection: SocketHookConnection
     private let lock = NSLock()
     private var answered = false
 
-    init(_ conn: SocketHookConnection) { self.conn = conn }
+    init(_ connection: SocketHookConnection) { self.connection = connection }
 
     private func answerOnce() -> Bool {
         lock.withLock {
@@ -218,7 +279,7 @@ private final class LineHandle: HookConnection, @unchecked Sendable {
         }
     }
 
-    func onPeerGone(_ handler: @escaping @Sendable () -> Void) { conn.onPeerGone(handler) }
-    func reply(_ reply: BridgeReply) { if answerOnce() { conn.reply(reply) } }
-    func close() { if answerOnce() { conn.close() } }
+    func onPeerGone(_ handler: @escaping @Sendable () -> Void) { connection.onPeerGone(handler) }
+    func reply(_ reply: BridgeReply) { if answerOnce() { connection.reply(reply) } }
+    func close() { if answerOnce() { connection.close() } }
 }

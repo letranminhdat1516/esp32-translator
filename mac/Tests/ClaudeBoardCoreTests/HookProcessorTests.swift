@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import ClaudeBoardCore
 
@@ -25,7 +26,16 @@ final class FakeConn: HookConnection, @unchecked Sendable {
 
     func onPeerGone(_ handler: @escaping @Sendable () -> Void) { lock.withLock { handlers.append(handler) } }
     func reply(_ reply: BridgeReply) { lock.withLock { _replies.append(reply); _closed = true } }
-    func close() { lock.withLock { _closed = true } }
+    func close() {
+        let observer = lock.withLock { () -> (@Sendable () -> Void)? in _closed = true; return _closeObserver }
+        observer?()
+    }
+    /// Runs when `close()` is called (to see what had happened by then)
+    var closeObserver: (@Sendable () -> Void)? {
+        get { lock.withLock { _closeObserver } }
+        set { lock.withLock { _closeObserver = newValue } }
+    }
+    private var _closeObserver: (@Sendable () -> Void)?
 
     func hookGoesAway() { for h in lock.withLock({ handlers }) { h() } }
     var replies: [BridgeReply] { lock.withLock { _replies } }
@@ -65,24 +75,23 @@ private func makeProcessor(ready: Bool, timeout: Duration = .seconds(90)) -> (Ho
 }
 
 @Test(arguments: [BoardChoice.allow, BoardChoice.deny])
-func permissionRoundTrip(_ choice: BoardChoice) async {
+func permissionRoundTrip(_ choice: BoardChoice) async throws {
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    #expect(board.sent == [.permission(id: board.permissionIds[0], project: "dự-án", tool: "Bash", summary: "npm test")])
+    let id = try await shownPermission(board)
+    #expect(board.sent == [.permission(id: id, project: "dự-án", tool: "Bash", summary: "npm test")])
     #expect(conn.replies.isEmpty)
-    await p.requests.handle(.choice(id: board.permissionIds[0], choice))
+    await p.requests.handle(.choice(id: id, choice))
     await done.value
     #expect(conn.replies == [BridgeReply(decision: choice == .allow ? "allow" : "deny")])
 }
 
-@Test func hookDisconnectCancelsBoardRequest() async {
+@Test func hookDisconnectCancelsBoardRequest() async throws {
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    let id = board.permissionIds[0]
+    let id = try await shownPermission(board)
     conn.hookGoesAway()
     await done.value
     try? await Task.sleep(for: .milliseconds(50))
@@ -115,28 +124,27 @@ func permissionRoundTrip(_ choice: BoardChoice) async {
     #expect(c2.replies.isEmpty && c2.closed)
 }
 
-@Test func answeredRequestSetsTheSessionWorking() async {
+@Test func answeredRequestSetsTheSessionWorking() async throws {
     let (p, board) = makeProcessor(ready: true)
     await p.process(event("UserPromptSubmit"), FakeConn())
     await p.hub?.boardInput(.mode(.claude))
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
+    let id = try await shownPermission(board)
     #expect(board.sent.contains { if case .session(let r) = $0 { r.state == .needsYou } else { false } })
-    await p.requests.handle(.choice(id: board.permissionIds[0], .allow))
+    await p.requests.handle(.choice(id: id, .allow))
     await done.value
     try? await Task.sleep(for: .milliseconds(50))
     if case .session(let r) = board.sent.last { #expect(r.state == .working) } else { Issue.record("expected a row") }
 }
 
-@Test func requestAnsweredInTheTerminalSetsTheSessionWorking() async {
+@Test func requestAnsweredInTheTerminalSetsTheSessionWorking() async throws {
     let (p, board) = makeProcessor(ready: true)
     await p.process(event("UserPromptSubmit"), FakeConn())
     await p.hub?.boardInput(.mode(.claude))
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    let id = board.permissionIds[0]
+    let id = try await shownPermission(board)
     conn.hookGoesAway()                         // answered in the terminal: the hook went away
     await done.value
     try? await Task.sleep(for: .milliseconds(50))
@@ -165,6 +173,36 @@ func permissionRoundTrip(_ choice: BoardChoice) async {
 }
 private let questionLine = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x/proj","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which color?","header":"Color","options":[{"label":"Red","description":"Warm"},{"label":"Green","description":""}],"multiSelect":false},{"question":"Which fruits?","header":"Fruits","options":[{"label":"Apple","description":"a"},{"label":"Banana","description":"b"},{"label":"Cherry","description":"c"}],"multiSelect":true}]}}"#.utf8)
 
+/// Polls (at most 2 s) until `value` is non-nil: never a fixed sleep followed by indexing
+func eventually<T>(_ value: () -> T?, sourceLocation: SourceLocation = #_sourceLocation) async throws -> T {
+    let end = ContinuousClock.now + .seconds(2)
+    while ContinuousClock.now < end {
+        if let v = value() { return v }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return try #require(value(), sourceLocation: sourceLocation)
+}
+
+/// Polls (at most 2 s) until `condition` holds; false if it never did
+func within(_ condition: () async -> Bool) async -> Bool {
+    let end = ContinuousClock.now + .seconds(2)
+    while ContinuousClock.now < end {
+        if await condition() { return true }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return await condition()
+}
+
+/// The id of the permission request the board shows (waits for it)
+private func shownPermission(_ board: FakeBoard) async throws -> UInt32 {
+    try await eventually { board.permissionIds.first }
+}
+
+/// The id of the question the board shows (waits for its first page)
+private func shownQuestion(_ board: FakeBoard) async throws -> UInt32 {
+    try await eventually { pages(board).first?.id }
+}
+
 private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)] {
     board.sent.compactMap { m -> (id: UInt32, index: Int, count: Int)? in
         if case .question(let id, let index, let count, _, _) = m { return (id, index, count) }
@@ -188,13 +226,12 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     #expect(conn.replies == [expected])
 }
 
-@Test func hookDisconnectCancelsQuestion() async {
+@Test func hookDisconnectCancelsQuestion() async throws {
     if HookSchema.questionAnswers == .terminalOnly { return }
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(questionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    let id = pages(board)[0].id
+    let id = try await shownQuestion(board)
     conn.hookGoesAway()                         // answered in the terminal / Remote Control
     await done.value
     try? await Task.sleep(for: .milliseconds(50))
@@ -216,16 +253,16 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     #expect(board.sent.isEmpty)
 }
 
-@Test func permissionOffersAlwaysAllowOnlyWithAUsableSuggestion() async {
+@Test func permissionOffersAlwaysAllowOnlyWithAUsableSuggestion() async throws {
     let line = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x/proj","tool_name":"Bash","tool_input":{"command":"git push"},"permission_suggestions":[{"rule":"Bash(git push *)","description":"d","specificity":"moderate"}]}"#.utf8)
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(line, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
+    let id = try await shownPermission(board)
     let rule = AnswerMapping.alwaysRule(suggestions: try? HookEvent.parse(line).permissionSuggestions)
-    #expect(board.sent == [.permission(id: board.permissionIds[0], project: "proj", tool: "Bash", summary: "git push", alwaysRule: rule)])
+    #expect(board.sent == [.permission(id: id, project: "proj", tool: "Bash", summary: "git push", alwaysRule: rule)])
     let choice: BoardChoice = rule == nil ? .allow : .alwaysAllow
-    await p.requests.handle(.choice(id: board.permissionIds[0], choice))
+    await p.requests.handle(.choice(id: id, choice))
     await done.value
     let expected = AnswerMapping.permissionReply(rule == nil ? .allow : .alwaysAllow,
                                                  suggestions: try? HookEvent.parse(line).permissionSuggestions)
@@ -237,10 +274,10 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(line, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    #expect(board.sent == [.permission(id: board.permissionIds[0], project: "proj", tool: "Bash", summary: "npm test",
+    let id = try await shownPermission(board)
+    #expect(board.sent == [.permission(id: id, project: "proj", tool: "Bash", summary: "npm test",
                                        alwaysRule: HookSchema.alwaysAllow == .unsupported ? nil : "Bash(npm test:*)")])
-    await p.requests.handle(.choice(id: board.permissionIds[0], .alwaysAllow))
+    await p.requests.handle(.choice(id: id, .alwaysAllow))
     await done.value
     let suggestions = try HookEvent.parse(line).permissionSuggestions
     #expect(conn.replies == [AnswerMapping.permissionReply(.alwaysAllow, suggestions: suggestions)])
@@ -249,12 +286,11 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     }
 }
 
-@Test func denyWithReasonReachesTheHook() async {
+@Test func denyWithReasonReachesTheHook() async throws {
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    let id = board.permissionIds[0]
+    let id = try await shownPermission(board)
     #expect(await p.requests.denyWithReason(id: id, message: "chạy pnpm test thay vì npm test"))
     await done.value
     #expect(conn.replies == [BridgeReply(decision: "deny",
@@ -266,8 +302,7 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(questionLine, conn) }
-    try? await Task.sleep(for: .milliseconds(50))
-    let id = pages(board)[0].id
+    let id = try await shownQuestion(board)
     #expect(await p.requests.setOther(id: id, question: 0, text: "Tím"))
     await p.requests.handle(.answers(id: id, masks: [0x80, 0b101]))
     await done.value
@@ -275,4 +310,25 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
     let expected = AnswerMapping.questionReply([0x80, 0b101], others: [0: "Tím"],
                                                questions: try #require(AskQuestion.parse(e.toolInput)), toolInput: e.toolInput)
     #expect(conn.replies == [expected])
+}
+
+@Test func fireAndForgetEventsReleaseTheHookBeforeTheSessionUpdate() async throws {
+    // The hook waits for the close (at most 1 s): it must not also wait for the session bookkeeping
+    let order = OSAllocatedUnfairLock<[String]>(initialState: [])
+    let board = FakeBoard(ready: true)
+    let requests = RequestQueue(send: { board.send($0) })
+    let hub = SessionHub(sessionHooks: true, post: { _ in order.withLock { $0.append("post") } },
+                         finished: { _, _ in order.withLock { $0.append("finished") } })
+    let p = HookProcessor(board: board, requests: requests, hub: hub)
+    await hub.boardInput(.mode(.claude))
+    for name in ["UserPromptSubmit", "Notification", "Stop"] {
+        order.withLock { $0 = [] }
+        let conn = FakeConn()
+        conn.closeObserver = { order.withLock { $0.append("close") } }
+        await p.process(event(name), conn)
+        #expect(conn.closed && conn.replies.isEmpty)
+        let seen = order.withLock { $0 }
+        #expect(seen.first == "close", "\(name): \(seen)")
+        if name == "UserPromptSubmit" { #expect(seen.contains("post")) }   // the new row is still sent
+    }
 }

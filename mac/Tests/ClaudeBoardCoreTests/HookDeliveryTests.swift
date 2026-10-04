@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os
 import Testing
 @testable import ClaudeBoardCore
 
@@ -163,10 +164,12 @@ final class TestServer: @unchecked Sendable {
     let received = Received()
     let server: HookSocketServer
 
-    init(maxLineBytes: Int = 4 * 1024 * 1024,
-         answer: @escaping @Sendable (Data, any HookConnection) -> Void = { _, conn in conn.close() }) throws {
+    init(maxLineBytes: Int = 4 * 1024 * 1024, idleTimeout: TimeInterval = 10,
+         answer: @escaping @Sendable (Data, any HookConnection) -> Void = { _, conn in conn.close() },
+         acceptor: @escaping HookSocketServer.Acceptor = { accept($0, nil, nil) }) throws {
         let received = received
-        server = HookSocketServer(path: testSocketPath(), maxLineBytes: maxLineBytes) { line, conn in
+        server = HookSocketServer(path: testSocketPath(), maxLineBytes: maxLineBytes, idleTimeout: idleTimeout,
+                                  acceptor: acceptor) { line, conn in
             received.add(line)
             answer(line, conn)
         }
@@ -264,4 +267,102 @@ func realHookDeliversEventsToTheServer() async throws {
     #expect(try await runHook(hook, event: prompt, socket: s.path).0 == 0)
     let ids = await s.received.wait(for: 7).compactMap { try? HookEvent.parse(Data($0.utf8)) }.map { "\($0.name) \($0.sessionId)" }
     #expect(ids == (0..<6).map { "Notification s\($0)" } + ["UserPromptSubmit p"])
+}
+
+@Test func serverDropsAnOversizedLineEvenWithItsNewline() async throws {
+    let s = try TestServer(maxLineBytes: 16)
+    #expect(await offPool { rawClient(s.path, String(repeating: "x", count: 100) + "\n", waitForClose: true) })
+    #expect(await offPool { rawClient(s.path, String(repeating: "y", count: 16) + "\n", waitForClose: true) })
+    #expect(await s.received.wait(for: 1) == [String(repeating: "y", count: 16)])   // at the limit: accepted
+}
+
+@Test func spawnDoesNotWaitForAProcessLeftHoldingItsOutput() async {
+    let start = Date()
+    let r = await offPool { TmuxTyper.spawn("/bin/sh", ["-c", "sleep 3 & echo hi"], environment: [:]) }
+    #expect(r.status == 0 && r.output == "hi\n")
+    #expect(Date().timeIntervalSince(start) < 1.5)
+}
+
+@Test func spawnKillsATmuxThatIgnoresSIGTERM() async {
+    let start = Date()
+    let r = await offPool {
+        TmuxTyper.spawn("/bin/sh", ["-c", "trap '' TERM; sleep 3; echo late"], environment: [:], timeout: 0.3)
+    }
+    #expect(r.status == TmuxTyper.timedOut && r.output.isEmpty)
+    #expect(Date().timeIntervalSince(start) < 2.5, "\(Date().timeIntervalSince(start))")
+}
+
+private func closeOnExec(_ fd: Int32) -> Bool { fcntl(fd, F_GETFD) & FD_CLOEXEC != 0 }
+
+@Test func socketsAndPipesAreNeverInherited() async throws {
+    // posix_spawn/Process on another thread must not hand the daemon's descriptors to a child
+    let accepted = OSAllocatedUnfairLock<Int32?>(initialState: nil)
+    let s = try TestServer { _, conn in
+        if let handle = conn as? LineHandle {
+            let fd = handle.connection.fd
+            accepted.withLock { $0 = closeOnExec(fd) ? 1 : 0 }
+        }
+        conn.close()
+    }
+    #expect(closeOnExec(s.server.listenFD))
+    #expect(await offPool { rawClient(s.path, "{}\n", waitForClose: true) })
+    #expect(accepted.withLock { $0 } == 1)
+    let fds = try #require(TmuxTyper.cloexecPipe())
+    defer { fds.forEach { close($0) } }
+    #expect(closeOnExec(fds[0]) && closeOnExec(fds[1]))
+}
+
+/// Connects and sends `bytes` without ending the stream: seconds until the server closed (nil: not within 3 s)
+private func secondsUntilServerCloses(_ path: String, after bytes: String) -> Double? {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    defer { close(fd) }
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &addr.sun_path) { buf in
+        buf.copyBytes(from: path.utf8)
+        buf[path.utf8.count] = 0
+    }
+    let connected = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    guard connected == 0 else { return nil }
+    let start = Date()
+    send(fd, bytes)
+    var p = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+    var b: UInt8 = 0
+    guard poll(&p, 1, 3000) > 0, read(fd, &b, 1) == 0 else { return nil }
+    return Date().timeIntervalSince(start)
+}
+
+@Test func serverClosesAClientThatNeverFinishesItsLine() async throws {
+    let s = try TestServer(idleTimeout: 0.3)
+    let partial = await offPool { secondsUntilServerCloses(s.path, after: "{\"half") }
+    let silent = await offPool { secondsUntilServerCloses(s.path, after: "") }
+    for took in [partial, silent] {
+        let t = try #require(took)
+        #expect(t > 0.25 && t < 1.5, "\(t)")
+    }
+    #expect(await s.received.wait(for: 1, timeout: 0.1).isEmpty)
+}
+
+@Test func serverKeepsAWaitingRequestPastTheIdleTimeout() async throws {
+    // A PermissionRequest waits for the board far longer than the idle timeout
+    let s = try TestServer(idleTimeout: 0.2) { _, conn in
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.8) { conn.reply(BridgeReply(decision: "allow")) }
+    }
+    #expect(await send(event: "{}", to: s.path, waitForReply: true)?.decision == "allow")
+}
+
+@Test func serverPausesAcceptingWhenOutOfDescriptors() async throws {
+    let calls = OSAllocatedUnfairLock(initialState: 0)
+    let s = try TestServer(acceptor: { listener in
+        let n = calls.withLock { $0 += 1; return $0 }
+        if n <= 3 { errno = EMFILE; return -1 }   // the first three tries: out of descriptors
+        return accept(listener, nil, nil)
+    })
+    let start = Date()
+    #expect(await offPool { rawClient(s.path, "{\"n\":1}\n") })
+    #expect(await s.received.wait(for: 1) == ["{\"n\":1}"])
+    #expect(Date().timeIntervalSince(start) > 0.25)          // three pauses of 0.1 s
+    #expect(calls.withLock { $0 } < 12, "\(calls.withLock { $0 })")   // no busy loop on the readable listener
 }

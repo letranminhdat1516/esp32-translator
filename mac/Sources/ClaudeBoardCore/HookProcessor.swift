@@ -36,6 +36,10 @@ public struct HookProcessor: Sendable {
 
     public func process(_ line: Data, _ conn: any HookConnection) async {
         guard let e = try? HookEvent.parse(line) else { conn.close(); return }
+        // Stop / Notification / session events: nothing to answer, so release the hook (it waits for the close)
+        // before the board work
+        let isRequest = e.name == "PermissionRequest"
+        if !isRequest { conn.close() }
         await hub?.record(e)       // every event: session state (PermissionRequest → needs you)
         let project = Summary.project(cwd: e.cwd)
         switch e.name {
@@ -51,8 +55,8 @@ public struct HookProcessor: Sendable {
             log("\(project) \(e.toolName ?? "") → \(reply.decision ?? (gone.happened ? "answered in the terminal" : "fall through"))")
             conn.reply(reply)
         default:
-            // Stop / Notification / session events: the hub sends the focused session's "done" and the rows
-            conn.close()
+            // Already closed above; the hub sent the focused session's "done" and the rows
+            break
         }
     }
 
