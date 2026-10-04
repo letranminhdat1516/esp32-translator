@@ -217,7 +217,7 @@ size_t ancs_clean_text(const uint8_t *src, size_t len, char *out, size_t out_siz
         }
         const uint8_t *ch = src + i;
         i += n;
-        if (c <= 0x20 || c == 0x7f || c == 0xa0 || c == 0x2028 || c == 0x2029) {
+        if (c <= 0x20 || (c >= 0x7f && c <= 0x9f) || c == 0xa0 || c == 0x2028 || c == 0x2029) {   /* DEL, C1 too */
             space = o > 0;
             continue;
         }
@@ -315,13 +315,30 @@ ancs_out_t ancs_flow_on_source(ancs_flow_t *f, const ancs_source_t *ev)
     if (ev->flags & ANCS_FLAG_PRE_EXISTING) {
         return ANCS_OUT_NONE;   /* the dump iOS sends on subscription: old news */
     }
+    ancs_out_t out = ANCS_OUT_NONE;
+    bool added = ev->event == ANCS_EVENT_ADDED;
+    if (added && on_board) {
+        /* iOS reused the uid for a new notification: the one on screen is gone, the new one is looked up */
+        f->shown = false;
+        memset(&f->notice, 0, sizeof f->notice);
+        on_board = false;
+        out = ANCS_OUT_GONE;
+    }
     if (in_flight) {
         f->flags = ev->flags;
-        return ANCS_OUT_NONE;
+        if (added && f->step == ANCS_STEP_DETAILS) {
+            /* the details asked may belong to the uid's previous notification, and the new one may be another
+             * app's: throw the reply away and look the app up again */
+            f->dropped = true;
+            enqueue(f, ev->uid, ev->flags, ANCS_STEP_APP, true);
+        } else {
+            f->dropped = false;   /* removed meanwhile, but back: its reply counts again */
+        }
+        return out;
     }
     bool refresh = ev->event == ANCS_EVENT_MODIFIED && on_board;
     enqueue(f, ev->uid, ev->flags, refresh ? ANCS_STEP_DETAILS : ANCS_STEP_APP, false);
-    return ANCS_OUT_NONE;
+    return out;
 }
 
 size_t ancs_flow_next(ancs_flow_t *f, uint32_t now_ms, uint8_t out[ANCS_CMD_MAX])
@@ -362,10 +379,27 @@ static void take_text(const ancs_reply_t *r, uint8_t id, char *out, size_t size)
     }
 }
 
+/* While the reply's 5-byte header [0][uid u32 LE] is still incomplete: does chunk continue it? A late reply to an
+ * earlier (timed-out) command, or the headerless rest of one, does not. */
+static bool continues_header(const ancs_flow_t *f, const uint8_t *chunk, size_t len)
+{
+    const uint8_t hdr[5] = { ANCS_CMD_GET_NOTIF_ATTRS, f->uid & 0xff, (f->uid >> 8) & 0xff, (f->uid >> 16) & 0xff,
+                             (f->uid >> 24) & 0xff };
+    for (size_t at = f->reply.len, i = 0; at < sizeof hdr && i < len; at++, i++) {
+        if (chunk[i] != hdr[at]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 ancs_out_t ancs_flow_on_data(ancs_flow_t *f, const uint8_t *chunk, size_t len)
 {
     if (f->step == ANCS_STEP_IDLE) {
         return ANCS_OUT_NONE;   /* nothing asked: a stray or late reply */
+    }
+    if (!continues_header(f, chunk, len)) {
+        return ANCS_OUT_NONE;   /* not our reply: ours may still come (or time out) */
     }
     ancs_reply_status_t st = ancs_reply_feed(&f->reply, chunk, len);
     if (st == ANCS_REPLY_MORE) {

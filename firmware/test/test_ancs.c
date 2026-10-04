@@ -183,6 +183,8 @@ static void clean_text_fits_the_fonts(void)
     char small[5];
     clean("ừừ", small, sizeof small);
     assert(strcmp(small, "ừ") == 0);                                     /* 3-byte characters: one fits in 4 */
+    clean("a\xC2\x80" "b\xC2\x85" "\xC2\x9F" "c", out, sizeof out);
+    assert(strcmp(out, "a b c") == 0);                                   /* C1 controls (NEL...) are spaces */
     clean("", out, sizeof out);
     assert(out[0] == '\0');
     assert(ancs_clean_text((const uint8_t *)"abc", 3, out, 1) == 0 && out[0] == '\0');
@@ -382,12 +384,85 @@ static void stalls_and_errors(void)
     assert(ancs_flow_next(&f, t0 + ANCS_REPLY_TIMEOUT_MS, cmd) == 0);
     assert(app_reply(&f, 2, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);    /* a late reply is ignored */
     assert(ancs_flow_next(&f, t0 + ANCS_REPLY_TIMEOUT_MS, cmd) == 0 && !f.shown);
-    /* a foreign reply ends the request in flight and the queue moves on */
+    /* a foreign reply is ignored: the request in flight keeps waiting for its own reply */
     source(&f, ANCS_EVENT_ADDED, 0, 3);
     source(&f, ANCS_EVENT_ADDED, 0, 4);
-    ancs_flow_next(&f, 0, cmd);
+    assert(ancs_flow_next(&f, 0, cmd) == 6 && cmd[1] == 3);
     assert(app_reply(&f, 99, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);
-    assert(ancs_flow_next(&f, 0, cmd) == 6 && cmd[1] == 4);
+    assert(ancs_flow_next(&f, 0, cmd) == 0);                          /* 3 still in flight */
+    assert(app_reply(&f, 3, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);    /* its own reply still counts */
+    assert(ancs_flow_next(&f, 0, cmd) == 16 && cmd[1] == 3);
+    /* the rest of a timed-out reply (no header) does not start the next request's reply */
+    assert(ancs_flow_next(&f, ANCS_REPLY_TIMEOUT_MS, cmd) == 6 && cmd[1] == 4);   /* 3's details given up */
+    const uint8_t tail[] = { 'p', 'm', ' ', 't', 'e', 's', 't', ANCS_ATTR_POSITIVE, 5, 0, 'A', 'l', 'l', 'o', 'w' };
+    assert(ancs_flow_on_data(&f, tail, sizeof tail) == ANCS_OUT_NONE);
+    assert(ancs_flow_next(&f, ANCS_REPLY_TIMEOUT_MS, cmd) == 0);      /* 4 still in flight */
+    assert(app_reply(&f, 4, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);
+    assert(ancs_flow_next(&f, ANCS_REPLY_TIMEOUT_MS, cmd) == 16 && cmd[1] == 4);
+    /* a header split over two chunks is still recognised, a wrong second half is not */
+    ancs_flow_init(&f);
+    source(&f, ANCS_EVENT_ADDED, 0, 0x0102);
+    ancs_flow_next(&f, 0, cmd);
+    uint8_t wire[64];
+    size_t n = reply_header(wire, 0x0102);
+    n = put_attr(wire, n, ANCS_ATTR_APP_ID, "com.apple.reminders");
+    assert(ancs_flow_on_data(&f, wire, 2) == ANCS_OUT_NONE);
+    const uint8_t wrong[3] = { 0x09, 0x00, 0x00 };
+    assert(ancs_flow_on_data(&f, wrong, 3) == ANCS_OUT_NONE);          /* ignored */
+    assert(ancs_flow_on_data(&f, wire + 2, n - 2) == ANCS_OUT_NONE);
+    assert(f.step == ANCS_STEP_IDLE);                                 /* done: not Claude, nothing more asked */
+}
+
+static void removed_then_back_while_in_flight(void)
+{
+    ancs_flow_t f;
+    ancs_flow_init(&f);
+    uint8_t cmd[ANCS_CMD_MAX];
+    /* app id in flight: removed, then modified again → the reply counts */
+    source(&f, ANCS_EVENT_ADDED, ANCS_FLAG_POSITIVE, 42);
+    assert(ancs_flow_next(&f, 0, cmd) == 6);
+    source(&f, ANCS_EVENT_REMOVED, 0, 42);
+    assert(source(&f, ANCS_EVENT_MODIFIED, ANCS_FLAG_POSITIVE, 42) == ANCS_OUT_NONE);
+    assert(app_reply(&f, 42, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);
+    assert(ancs_flow_next(&f, 0, cmd) == 16);
+    assert(details_reply(&f, 42, "Claude", "back", "Allow", "") == ANCS_OUT_SHOW);
+    /* app id in flight: removed, then added again → the reply counts */
+    ancs_flow_init(&f);
+    source(&f, ANCS_EVENT_ADDED, 0, 43);
+    assert(ancs_flow_next(&f, 0, cmd) == 6);
+    source(&f, ANCS_EVENT_REMOVED, 0, 43);
+    source(&f, ANCS_EVENT_ADDED, 0, 43);
+    assert(app_reply(&f, 43, ANCS_CLAUDE_APP_ID) == ANCS_OUT_NONE);
+    assert(ancs_flow_next(&f, 0, cmd) == 16 && cmd[1] == 43);
+    /* details in flight: removed, then modified → shown */
+    assert(source(&f, ANCS_EVENT_REMOVED, 0, 43) == ANCS_OUT_NONE);
+    source(&f, ANCS_EVENT_MODIFIED, 0, 43);
+    assert(details_reply(&f, 43, "Claude", "kept", "", "") == ANCS_OUT_SHOW);
+    /* details in flight: added again = the uid now names a new notification, maybe of another app: the
+     * details reply is thrown away and the app id is looked up again */
+    ancs_flow_init(&f);
+    source(&f, ANCS_EVENT_ADDED, 0, 44);
+    ancs_flow_next(&f, 0, cmd);
+    app_reply(&f, 44, ANCS_CLAUDE_APP_ID);
+    assert(ancs_flow_next(&f, 0, cmd) == 16);
+    source(&f, ANCS_EVENT_REMOVED, 0, 44);
+    source(&f, ANCS_EVENT_ADDED, 0, 44);
+    assert(details_reply(&f, 44, "Other", "secret", "", "") == ANCS_OUT_NONE && !f.shown);
+    assert(ancs_flow_next(&f, 0, cmd) == 6 && cmd[1] == 44 && cmd[5] == ANCS_ATTR_APP_ID);
+}
+
+static void added_again_closes_the_shown_one(void)
+{
+    ancs_flow_t f;
+    ancs_flow_init(&f);
+    uint8_t cmd[ANCS_CMD_MAX], act[6];
+    assert(show(&f, 42, ANCS_FLAG_POSITIVE) == ANCS_OUT_SHOW);
+    assert(source(&f, ANCS_EVENT_ADDED, 0, 42) == ANCS_OUT_GONE);    /* uid reused by iOS */
+    assert(!f.shown && f.notice.message[0] == '\0');
+    assert(ancs_flow_action(&f, 42, ANCS_ACTION_POSITIVE, act) == 0);
+    assert(ancs_flow_next(&f, 0, cmd) == 6 && cmd[5] == ANCS_ATTR_APP_ID);   /* looked up from scratch */
+    assert(app_reply(&f, 42, "com.apple.MobileSMS") == ANCS_OUT_NONE);
+    assert(ancs_flow_next(&f, 0, cmd) == 0 && !f.shown);
 }
 
 static void actions_only_for_the_shown_notice(void)
@@ -475,6 +550,8 @@ int main(void)
     modified_refreshes_the_shown_one();
     newer_notice_replaces();
     stalls_and_errors();
+    removed_then_back_while_in_flight();
+    added_again_closes_the_shown_one();
     actions_only_for_the_shown_notice();
     silent_keeps_its_flag();
     uid_zero_is_a_notification();

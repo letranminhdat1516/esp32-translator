@@ -2,11 +2,10 @@
 
 > **Status: template — every finding below is pending on-device.** The firmware for this probe (Phase 4 Task 1)
 > was built and host-tested overnight but not flashed: the board stays on Phase 3 until the user runs the steps
-> below. `ANCS_CLAUDE_APP_ID` in `firmware/main/ancs.h` is the unverified guess `com.anthropic.claude` until row 5
-> confirms or corrects it.
+> below. The Claude bundle id is already confirmed (see CLAUDE_APP_ID); row 5 only double-checks it over ANCS.
 
-iPhone model / iOS version: _pending on-device_ (Settings → General → About). Claude app version: _pending on-device_
-(App Store page).
+iPhone model / iOS version: _pending on-device_ (Settings → General → About). Claude app version: 1.260925.19
+(`devicectl` app list of the user's iPhone, 2026-10-05).
 Board firmware: Phase 4 Task 1 (discovery probe). Method: Phase 4 plan Task 1 Step 11, rows 1–9.
 
 ## How to run it
@@ -27,7 +26,7 @@ Board firmware: Phase 4 Task 1 (discovery probe). Method: Phase 4 plan Task 1 St
 | 6 | Swipe one Claude notification away on the iPhone | `ancs: source: event 2 flags … uid U` for that uid |
 | 7 | Close the translator app (swipe away in the app switcher), wait 1 min | Link kept (no `ble: disconnected, reason 0x…`)? Another Claude notification still arrives? |
 | 8 | Reset the board (RST) with the app still closed, wait 2 min | iPhone reconnects on its own? `ble: connected (…)`, `ble: link N: encryption on`, `ancs: … iPhone notifications on (discovery probe)`; and `ble: iPhone audio subscription restored from the bond: waiting for the app` with **no** `ble: iPhone audio on`. (Encryption on a reconnect without the app may only come with Task 6: record what happens, not a failure) |
-| 9 | Open the translator app again | `ble: iPhone audio on` (the app's own CCCD write); translation works as before |
+| 9 | Open the translator app again | If row 8 restored the subscription: `ble: translator app active on the restored link` then `ble: iPhone audio on` (the app's time / mic write; its CCCD write is unchanged so NimBLE reports nothing). Otherwise just `ble: iPhone audio on`. Translation works as before (audio streams, board mic toggles) |
 
 Stop rule: if row 1 shows no pairing prompt and no `encryption on`, capture the `asking for encryption (rc …)` /
 `encryption failed (status …)` lines and stop — the security request path needs fixing first.
@@ -38,12 +37,18 @@ Other useful warnings: `ancs: probe: request for U refused, status 0x…`, `ancs
 
 | Name | Value | Evidence |
 |---|---|---|
-| CLAUDE_APP_ID | _pending on-device_ (assumed `com.anthropic.claude`) | the `uid … app "…"` lines of row 5 (a), (b), (c) |
+| CLAUDE_APP_ID | `com.anthropic.claude` (confirmed) | the user's iPhone app list via `devicectl` (Claude 1.260925.19), 2026-10-05; the ANCS `uid … app "…"` lines of row 5 (a), (b), (c) should show the same, _pending on-device_ |
 | ACTIONS | _pending on-device_ (`<positive label / none>`, `<negative label / none>` per notification kind) | the details blocks of row 5: flags and labels |
 | CONTENT | _pending on-device_ (title / subtitle / message per kind, shortened) | row 5 details blocks; message present while locked: _pending_ |
 | PROMPTS | _pending on-device_ (pairing prompt text; notification-sharing prompt text; subscription before/after allowing: ok / refused (status)) | rows 1–2 |
 | PREVIEWS | _pending on-device_ (Show Previews setting found; content arrived while locked) | row 5 |
 | NO_APP_LINK | _pending on-device_ (link kept with the app closed: yes / no; reconnect after a board reset without the app: yes / no (seconds)) | rows 7–8 |
+
+Bond mismatch: if the board's NVS is erased (full flash erase, new board) while the iPhone still holds the old
+bond, encryption fails (`ble: link N: encryption failed (status …)`, no pairing prompt). Fix on the iPhone:
+Settings → Bluetooth → (i) next to ESP-Translator → **Forget This Device**, then reopen the translator app to pair
+again. (The reverse, iPhone forgot but board kept the bond, is handled by the board: REPEAT_PAIRING drops its old
+key.)
 
 After filling: if CLAUDE_APP_ID differs from `com.anthropic.claude`, change `ANCS_CLAUDE_APP_ID` in
 `firmware/main/ancs.h`. If Claude notifications carry no positive / negative actions, note it here (Task 5 still

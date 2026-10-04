@@ -107,7 +107,9 @@ size_t ancs_clean_text(const uint8_t *src, size_t len, char *out, size_t out_siz
  * the details (title, subtitle, message, action labels). Data Source bytes go to ancs_flow_on_data(). The
  * board holds at most one notice (the one on screen); nothing from other apps is asked beyond the app id, and
  * every reply is zeroed once read. Pre-existing notifications (the dump at subscription) are ignored. A reply
- * missing for ANCS_REPLY_TIMEOUT_MS is given up at the next ancs_flow_next() (no timer). */
+ * missing for ANCS_REPLY_TIMEOUT_MS is given up at the next ancs_flow_next() (no timer). Data Source bytes that
+ * do not start with the reply header of the command in flight (another uid's reply, the rest of a timed-out one)
+ * are ignored: the command keeps waiting for its own reply. */
 #define ANCS_QUEUE_MAX        8
 #define ANCS_REPLY_TIMEOUT_MS 3000
 
@@ -146,7 +148,7 @@ typedef enum {
     ANCS_OUT_NONE = 0,
     ANCS_OUT_SHOW,     /* a new Claude notice (chime unless ANCS_FLAG_SILENT) */
     ANCS_OUT_UPDATE,   /* the notice on screen changed (no chime) */
-    ANCS_OUT_GONE,     /* the notice on screen was removed on the iPhone */
+    ANCS_OUT_GONE,     /* the notice on screen was removed on the iPhone (or its uid reused for a new one) */
 } ancs_out_t;
 
 bool ancs_app_allowed(const uint8_t *id, size_t len);   /* exactly ANCS_CLAUDE_APP_ID */
