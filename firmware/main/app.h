@@ -6,6 +6,7 @@
 #include "claude_proto.h"
 #include "lvgl.h"
 #include "modes.h"
+#include "question.h"
 
 /* Board microphone streaming state */
 typedef enum {
@@ -92,6 +93,13 @@ void claude_ui_refresh_session_locked(void);        /* display lock held: status
 void claude_ui_note_press(void);                    /* call from LV_EVENT_PRESSED */
 bool claude_ui_tap_allowed(void);                   /* request pending, panel lit, press armed (dark: wakes) */
 void claude_ui_rearm(void);                         /* new controls under the finger (page change) */
+/* claude_ui.c: Send on the last question page (LVGL task): sends the answers and shows the result */
+void claude_ui_question_send_locked(const uint8_t *answer, size_t len);
+
+/* question_ui.c: AskUserQuestion pages on the Claude screen (display lock held for every call) */
+void question_ui_init(lv_obj_t *scr, question_set_t *set);
+void question_ui_show(void);                        /* page 1 of a complete set */
+void question_ui_hide(void);                        /* safe before init */
 
 /* lock_ui.c: lock screen (pixel cat, clock, battery) */
 void lock_ui_init(void);

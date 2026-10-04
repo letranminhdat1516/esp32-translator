@@ -44,6 +44,8 @@ static volatile uint32_t s_pending_id;   /* 0 = none */
 static bool s_always_offered;            /* the pending permission carries a rule */
 static bool s_touch_on = true;           /* false while the panel is dark */
 static bool s_link;
+static question_set_t s_qset;            /* pages of the question shown (or still arriving) */
+static claude_question_t s_page;         /* parse buffer: NimBLE host task only, ~0.4 KB off its stack */
 
 /* Answer controls go live only ARM_DELAY_US after a request is shown, a page changes or the panel turns on,
  * and only for a press that began after that: a tap aimed at something else (or at a dark panel) never
@@ -107,6 +109,7 @@ static void show_idle(const char *title, const char *detail)
         s_cap_timer = NULL;
     }
     set_buttons(false);
+    question_ui_hide();
     lv_label_set_text(s_project, "");
     lv_label_set_text(s_title, title);
     lv_label_set_text(s_detail, detail);
@@ -318,6 +321,7 @@ void claude_ui_init(void)
     s_deny = make_button("Deny", 0x8a1c1c, 150, -80, -140, CLAUDE_DECISION_DENY);
     s_allow = make_button("Allow", 0x1f9d55, 150, 80, -140, CLAUDE_DECISION_ALLOW);
     s_always = make_button("Always allow", 0x1f5f8b, 220, 0, -74, CLAUDE_DECISION_ALWAYS);
+    question_ui_init(s_scr, &s_qset);   /* after the buttons: the page box covers them while shown */
 
     show_idle("No requests", "Mac not connected.");
     refresh_status();
@@ -333,6 +337,9 @@ void claude_ui_set_link(bool connected)
 {
     bsp_display_lock((uint32_t)-1);
     s_link = connected;
+    if (!connected) {
+        question_reset(&s_qset);   /* the Mac falls back to the terminal; drop pages still arriving */
+    }
     if (!connected && s_pending_id) {
         show_idle("No requests", "Mac disconnected.\nAnswer in the terminal.");
         schedule_restore();
@@ -359,6 +366,8 @@ bool claude_ui_on_message(const claude_msg_t *m)
             lv_timer_delete(s_restore_timer);
             s_restore_timer = NULL;
         }
+        question_reset(&s_qset);   /* the Mac shows one request at a time: no question is pending now */
+        question_ui_hide();
         s_pending_id = m->id;
         s_always_offered = nf >= 4 && f[3][0] != '\0';
         lv_label_set_text(s_project, f[0]);
@@ -375,9 +384,31 @@ bool claude_ui_on_message(const claude_msg_t *m)
         show = true;
         break;
     case CLAUDE_CANCEL:
+        if (m->id == s_qset.id) {
+            question_reset(&s_qset);   /* also drops a set that was still arriving */
+        }
         if (m->id == s_pending_id) {
             show_idle("No requests", "Answered in the terminal\nor timed out.");
             schedule_restore();
+        }
+        break;
+    case CLAUDE_QUESTION:
+        if (!claude_parse_question(m, &s_page)) {
+            ESP_LOGW(TAG, "ignoring bad question page for %lu", (unsigned long)m->id);
+            break;
+        }
+        if (question_add(&s_qset, m->id, &s_page)) {   /* the last missing page: show page 1 */
+            if (s_restore_timer) {
+                lv_timer_delete(s_restore_timer);
+                s_restore_timer = NULL;
+            }
+            s_pending_id = m->id;
+            s_always_offered = false;
+            set_buttons(false);
+            question_ui_show();
+            arm_buttons();
+            start_cap();
+            show = true;
         }
         break;
     default:
@@ -411,4 +442,18 @@ void claude_ui_set_touch_enabled(bool on)
 bool claude_ui_pending(void)
 {
     return s_pending_id != 0;
+}
+
+/* LVGL task (Send on the last question page): the answers go to the Mac, the result shows briefly */
+void claude_ui_question_send_locked(const uint8_t *answer, size_t len)
+{
+    if (s_pending_id == 0 || s_qset.id != s_pending_id) {   /* only the question shown can be answered */
+        ESP_LOGW(TAG, "dropping answers: question %lu is not the pending request", (unsigned long)s_qset.id);
+        return;
+    }
+    bool sent = ble_link_send_claude_input(answer, len);
+    ESP_LOGI(TAG, "answers for %lu (%s)", (unsigned long)s_pending_id, sent ? "sent" : "NOT sent");
+    question_reset(&s_qset);
+    show_idle(sent ? "Answer sent" : "Not sent", sent ? "Claude continues." : "Answer in the terminal.");
+    schedule_restore();
 }
