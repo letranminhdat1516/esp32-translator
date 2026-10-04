@@ -8,18 +8,20 @@ let daemonInfoPlist = Context.packageDirectory + "/Sources/claude-board/Info.pli
 let package = Package(
     name: "ClaudeBoard",
     platforms: [.macOS(.v14)],
+    dependencies: [.package(path: "../relay")],
     targets: [
-        .target(name: "ClaudeBoardCore"),
+        .target(name: "ClaudeBoardCore", dependencies: [.product(name: "ClaudeRelay", package: "relay")]),
         .executableTarget(name: "claude-board-hook", dependencies: ["ClaudeBoardCore"]),
         .executableTarget(
             name: "claude-board",
-            dependencies: ["ClaudeBoardCore"],
+            dependencies: ["ClaudeBoardCore", .product(name: "ClaudeRelay", package: "relay")],
             exclude: ["Info.plist"],
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-sectcreate", "-Xlinker", "__TEXT",
                               "-Xlinker", "__info_plist", "-Xlinker", daemonInfoPlist]),
             ]
         ),
-        .testTarget(name: "ClaudeBoardCoreTests", dependencies: ["ClaudeBoardCore"]),
+        .testTarget(name: "ClaudeBoardCoreTests",
+                    dependencies: ["ClaudeBoardCore", .product(name: "ClaudeRelay", package: "relay")]),
     ]
 )

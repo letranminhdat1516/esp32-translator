@@ -1,3 +1,4 @@
+import ClaudeRelay
 import Foundation
 
 public enum Decision: UInt8, Sendable { case allow = 1, deny = 2 }
@@ -103,17 +104,6 @@ public enum BoardMessage: Equatable, Sendable {
 
     /// Splits a message into BLE writes: [flags u8][payload], flags bit0 = first, bit1 = last
     public static func chunks(_ data: Data, maxChunk: Int) -> [Data] {
-        let size = max(1, maxChunk - 1)
-        var out: [Data] = []
-        var offset = 0
-        repeat {
-            let end = min(offset + size, data.count)
-            var flags: UInt8 = 0
-            if offset == 0 { flags |= 0x01 }
-            if end == data.count { flags |= 0x02 }
-            out.append(Data([flags]) + data[data.startIndex + offset ..< data.startIndex + end])
-            offset = end
-        } while offset < data.count
-        return out
+        BLEFraming.chunks(data, maxChunk: maxChunk)
     }
 }
