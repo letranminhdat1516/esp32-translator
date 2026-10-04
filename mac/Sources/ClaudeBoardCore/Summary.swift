@@ -34,3 +34,25 @@ public enum Summary {
         return path.hasPrefix(base) ? String(path.dropFirst(base.count)) : path
     }
 }
+
+extension Summary {
+    /// Last line of Claude's reply, for the "finished" message. Prefers the hook's
+    /// `last_assistant_message`, else the last assistant text in the transcript JSONL. "" if unavailable.
+    public static func lastLine(_ e: HookEvent, maxChars: Int = 140) -> String {
+        if let m = e.lastAssistantMessage { return lastLine(ofText: m, maxChars: maxChars) }
+        guard let p = e.transcriptPath, let text = try? String(contentsOfFile: p, encoding: .utf8) else { return "" }
+        for line in text.split(separator: "\n").reversed() {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  obj["type"] as? String == "assistant",
+                  let msg = obj["message"] as? [String: Any],
+                  let content = msg["content"] as? [[String: Any]],
+                  let t = content.compactMap({ $0["text"] as? String }).last else { continue }
+            return lastLine(ofText: t, maxChars: maxChars)
+        }
+        return ""
+    }
+
+    private static func lastLine(ofText t: String, maxChars: Int) -> String {
+        trim(t.split(whereSeparator: \.isNewline).last.map(String.init) ?? t, maxChars: maxChars)
+    }
+}
