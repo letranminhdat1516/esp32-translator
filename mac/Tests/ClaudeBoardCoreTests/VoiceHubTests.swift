@@ -413,3 +413,23 @@ private func askTwo(_ q: RequestQueue) async -> BoardResponse? {
     await r.requests.handle(.answers(id: question, masks: [0b1, 0b1]))
     #expect(await answer == .answers([0b1, 0b1]))                    // no Other text was stored
 }
+
+/// The daemon's wiring (main.swift): voice inputs and audio packets go through ONE AsyncStream of events drained by
+/// one task, so a stop never overtakes audio and packets sent while start awaits engine.begin are kept, in order.
+@Test func serialFeedKeepsAudioSentWhileTheEngineStarts() async {
+    let r = rig(engine: FakeEngine(finals: ["xin chào"], beginDelay: .milliseconds(100)))
+    let (events, feed) = AsyncStream<@Sendable () async -> Void>.makeStream()
+    let drain = Task { for await event in events { await event() } }
+    let hub = r.hub
+    feed.yield { await hub.input(.voiceStart(voice: 9, purpose: .command, target: 7)) }
+    for seq in UInt8(0)..<3 { feed.yield { await hub.audio(packet(seq)) } }   // while begin is still pending
+    feed.yield { await hub.input(.voiceStop(voice: 9)) }
+    feed.yield { await hub.audio(packet(3)) }                                  // after stop: ignored
+    feed.yield { await hub.boardDisconnected() }                               // link drop ends the capture
+    feed.yield { await hub.input(.voiceSend(voice: 9)) }
+    feed.finish()
+    await drain.value
+    #expect(r.engine!.streams[0].fed == 6)
+    #expect(await r.sent.updates(9) == [.final("xin chào")])
+    #expect(r.engine!.streams[0].cancelled && r.typer.typed.isEmpty)
+}

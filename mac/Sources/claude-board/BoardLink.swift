@@ -12,14 +12,18 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     static let claudeService = CBUUID(string: "A7C00010-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let requestChar = CBUUID(string: "A7C00011-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let answerChar = CBUUID(string: "A7C00012-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
+    /// Board mic as IMA ADPCM, only between a voice start and its stop (notify, encrypted)
+    static let voiceChar = CBUUID(string: "A7C00013-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
 
     var onInput: (@Sendable (BoardInput) -> Void)?
     var onConnectionChange: (@Sendable (Bool) -> Void)?
+    var onVoiceAudio: (@Sendable (Data) -> Void)?
 
     private let queue = DispatchQueue(label: "claude-board.ble")
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var request: CBCharacteristic?
+    private var voice: CBCharacteristic?
     private var subscribed = false
     private var subscribeRetried = false
     private let knownKey = "boardIdentifier"
@@ -75,6 +79,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
         log("connected \(p.identifier)")
         subscribed = false
         subscribeRetried = false
+        voice = nil
         p.discoverServices([Self.claudeService])
     }
 
@@ -85,6 +90,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
 
     func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         request = nil
+        voice = nil
         subscribed = false
         log("disconnected")
         onConnectionChange?(false)
@@ -97,7 +103,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
             central.cancelPeripheralConnection(p)
             return
         }
-        p.discoverCharacteristics([Self.requestChar, Self.answerChar], for: s)
+        p.discoverCharacteristics([Self.requestChar, Self.answerChar, Self.voiceChar], for: s)
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) {
@@ -105,6 +111,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
         for c in s.characteristics ?? [] {
             if c.uuid == Self.requestChar { request = c }
             if c.uuid == Self.answerChar { answer = c }
+            if c.uuid == Self.voiceChar { voice = c }
         }
         guard request != nil, let answer else {
             log("Claude characteristics missing; dropping connection")
@@ -116,6 +123,10 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) {
+        if c.uuid == Self.voiceChar {
+            if let error { log("voice subscribe failed: \(error)") } else { log("voice \(c.isNotifying ? "on" : "off")") }
+            return
+        }
         guard c.uuid == Self.answerChar else { return }
         if let error {
             let code = (error as NSError).code
@@ -148,6 +159,8 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
         UserDefaults.standard.set(p.identifier.uuidString, forKey: knownKey)
         log("ready")
         onConnectionChange?(true)
+        // Voice rides the same encrypted link; subscribing costs nothing until the board records
+        if let voice { p.setNotifyValue(true, for: voice) } else { log("board has no voice characteristic (old firmware)") }
     }
 
     func peripheral(_ p: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) {
@@ -155,7 +168,12 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
-        if c.uuid == Self.answerChar, let v = c.value, let input = BoardInput.decode(v) { onInput?(input) }
+        guard let v = c.value else { return }
+        if c.uuid == Self.voiceChar {
+            onVoiceAudio?(v)
+        } else if c.uuid == Self.answerChar, let input = BoardInput.decode(v) {
+            onInput?(input)
+        }
     }
 }
 

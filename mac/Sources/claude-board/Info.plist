@@ -11,5 +11,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
   <string>claude-board connects to your ESP32 board over Bluetooth to show Claude Code permission prompts.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>claude-board transcribes what you say into the board, on this Mac, to type voice commands into Claude Code.</string>
 </dict>
 </plist>
