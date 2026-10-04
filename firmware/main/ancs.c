@@ -238,3 +238,199 @@ size_t ancs_clean_text(const uint8_t *src, size_t len, char *out, size_t out_siz
     out[o] = '\0';
     return o;
 }
+
+/* ---- notice flow ---- */
+
+bool ancs_app_allowed(const uint8_t *id, size_t len)
+{
+    static const char claude[] = ANCS_CLAUDE_APP_ID;
+    return len == sizeof(claude) - 1 && memcmp(id, claude, len) == 0;
+}
+
+void ancs_flow_init(ancs_flow_t *f)
+{
+    memset(f, 0, sizeof(*f));
+}
+
+static int find_queued(const ancs_flow_t *f, uint32_t uid)
+{
+    for (int i = 0; i < f->nq; i++) {
+        if (f->queue[i].uid == uid) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static void unqueue(ancs_flow_t *f, int i)
+{
+    memmove(&f->queue[i], &f->queue[i + 1], (size_t)(f->nq - i - 1) * sizeof f->queue[0]);
+    f->nq--;
+}
+
+/* Queues uid (front: the details of a Claude notification go next). Already queued: updates it. Full: the
+ * oldest waits no longer. */
+static void enqueue(ancs_flow_t *f, uint32_t uid, uint8_t flags, ancs_step_t step, bool front)
+{
+    int i = find_queued(f, uid);
+    if (i >= 0) {
+        f->queue[i].flags = flags;
+        if (step == ANCS_STEP_DETAILS) {
+            f->queue[i].step = step;
+        }
+        return;
+    }
+    if (f->nq == ANCS_QUEUE_MAX) {
+        unqueue(f, 0);
+    }
+    if (front) {
+        memmove(&f->queue[1], &f->queue[0], (size_t)f->nq * sizeof f->queue[0]);
+        i = 0;
+    } else {
+        i = f->nq;
+    }
+    f->queue[i] = (ancs_queued_t){ .uid = uid, .flags = flags, .step = step };
+    f->nq++;
+}
+
+ancs_out_t ancs_flow_on_source(ancs_flow_t *f, const ancs_source_t *ev)
+{
+    bool on_board = f->shown && f->notice.uid == ev->uid;
+    bool in_flight = f->step != ANCS_STEP_IDLE && f->uid == ev->uid;
+    if (ev->event == ANCS_EVENT_REMOVED) {
+        int i = find_queued(f, ev->uid);
+        if (i >= 0) {
+            unqueue(f, i);
+        }
+        if (in_flight) {
+            f->dropped = true;
+        }
+        if (on_board) {
+            f->shown = false;
+            memset(&f->notice, 0, sizeof f->notice);
+            return ANCS_OUT_GONE;
+        }
+        return ANCS_OUT_NONE;
+    }
+    if (ev->flags & ANCS_FLAG_PRE_EXISTING) {
+        return ANCS_OUT_NONE;   /* the dump iOS sends on subscription: old news */
+    }
+    if (in_flight) {
+        f->flags = ev->flags;
+        return ANCS_OUT_NONE;
+    }
+    bool refresh = ev->event == ANCS_EVENT_MODIFIED && on_board;
+    enqueue(f, ev->uid, ev->flags, refresh ? ANCS_STEP_DETAILS : ANCS_STEP_APP, false);
+    return ANCS_OUT_NONE;
+}
+
+size_t ancs_flow_next(ancs_flow_t *f, uint32_t now_ms, uint8_t out[ANCS_CMD_MAX])
+{
+    if (f->step != ANCS_STEP_IDLE) {
+        if ((uint32_t)(now_ms - f->sent_ms) < ANCS_REPLY_TIMEOUT_MS) {
+            return 0;
+        }
+        f->step = ANCS_STEP_IDLE;   /* no complete reply in time: give up on that one */
+        ancs_reply_clear(&f->reply);
+    }
+    if (f->nq == 0) {
+        return 0;
+    }
+    ancs_queued_t q = f->queue[0];
+    unqueue(f, 0);
+    f->uid = q.uid;
+    f->flags = q.flags;
+    f->step = q.step;
+    f->dropped = false;
+    f->sent_ms = now_ms;
+    bool app = q.step == ANCS_STEP_APP;
+    const uint8_t *ids = app ? ANCS_APP_ATTRS : ANCS_DETAIL_ATTRS;
+    size_t n = app ? sizeof ANCS_APP_ATTRS : sizeof ANCS_DETAIL_ATTRS;
+    ancs_reply_start(&f->reply, q.uid, (uint8_t)n);
+    return ancs_encode_get_attrs(q.uid, ids, n, out, ANCS_CMD_MAX);
+}
+
+/* Attribute id of the finished reply, cleaned for the fonts; "" when missing */
+static void take_text(const ancs_reply_t *r, uint8_t id, char *out, size_t size)
+{
+    const uint8_t *v;
+    uint16_t len;
+    if (ancs_reply_attr(r, id, &v, &len)) {
+        ancs_clean_text(v, len, out, size);
+    } else {
+        out[0] = '\0';
+    }
+}
+
+ancs_out_t ancs_flow_on_data(ancs_flow_t *f, const uint8_t *chunk, size_t len)
+{
+    if (f->step == ANCS_STEP_IDLE) {
+        return ANCS_OUT_NONE;   /* nothing asked: a stray or late reply */
+    }
+    ancs_reply_status_t st = ancs_reply_feed(&f->reply, chunk, len);
+    if (st == ANCS_REPLY_MORE) {
+        return ANCS_OUT_NONE;
+    }
+    ancs_step_t step = f->step;
+    f->step = ANCS_STEP_IDLE;
+    ancs_out_t out = ANCS_OUT_NONE;
+    if (st == ANCS_REPLY_DONE && !f->dropped) {
+        if (step == ANCS_STEP_APP) {
+            const uint8_t *v;
+            uint16_t n;
+            if (ancs_reply_attr(&f->reply, ANCS_ATTR_APP_ID, &v, &n) && ancs_app_allowed(v, n)) {
+                enqueue(f, f->uid, f->flags, ANCS_STEP_DETAILS, true);
+            }
+        } else {
+            bool same = f->shown && f->notice.uid == f->uid;
+            ancs_notice_t *n = &f->notice;
+            memset(n, 0, sizeof *n);
+            n->uid = f->uid;
+            n->flags = f->flags;
+            take_text(&f->reply, ANCS_ATTR_TITLE, n->title, sizeof n->title);
+            take_text(&f->reply, ANCS_ATTR_SUBTITLE, n->subtitle, sizeof n->subtitle);
+            take_text(&f->reply, ANCS_ATTR_MESSAGE, n->message, sizeof n->message);
+            if (f->flags & ANCS_FLAG_POSITIVE) {
+                take_text(&f->reply, ANCS_ATTR_POSITIVE, n->positive, sizeof n->positive);
+                if (n->positive[0] == '\0') {
+                    strcpy(n->positive, "OK");
+                }
+            }
+            if (f->flags & ANCS_FLAG_NEGATIVE) {
+                take_text(&f->reply, ANCS_ATTR_NEGATIVE, n->negative, sizeof n->negative);
+                if (n->negative[0] == '\0') {
+                    strcpy(n->negative, "Clear");
+                }
+            }
+            f->shown = true;
+            out = same ? ANCS_OUT_UPDATE : ANCS_OUT_SHOW;
+        }
+    }
+    ancs_reply_clear(&f->reply);
+    return out;
+}
+
+void ancs_flow_on_error(ancs_flow_t *f)
+{
+    f->step = ANCS_STEP_IDLE;
+    ancs_reply_clear(&f->reply);
+}
+
+size_t ancs_flow_action(const ancs_flow_t *f, uint32_t uid, uint8_t action, uint8_t out[6])
+{
+    const char *label = action == ANCS_ACTION_POSITIVE   ? f->notice.positive
+                        : action == ANCS_ACTION_NEGATIVE ? f->notice.negative
+                                                         : "";
+    if (!f->shown || f->notice.uid != uid || label[0] == '\0') {
+        return 0;
+    }
+    return ancs_encode_action(uid, action, out);
+}
+
+void ancs_flow_close(ancs_flow_t *f, uint32_t uid)
+{
+    if (f->shown && f->notice.uid == uid) {
+        f->shown = false;
+        memset(&f->notice, 0, sizeof f->notice);
+    }
+}

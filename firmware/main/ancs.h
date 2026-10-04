@@ -100,3 +100,61 @@ bool ancs_reply_attr(const ancs_reply_t *r, uint8_t id, const uint8_t **value, u
  * characters and line separators into spaces, folds whitespace runs, trims, and cuts at a character boundary
  * to fit out_size - 1 bytes. Always NUL-terminates (out_size >= 1). Returns the length. */
 size_t ancs_clean_text(const uint8_t *src, size_t len, char *out, size_t out_size);
+
+/* ---- notice flow (Task 2) ----
+ * Every Notification Source event goes to ancs_flow_on_source(). ancs_flow_next() says which Control Point
+ * command to write (one outstanding at a time): first the App Identifier alone; only for ANCS_CLAUDE_APP_ID
+ * the details (title, subtitle, message, action labels). Data Source bytes go to ancs_flow_on_data(). The
+ * board holds at most one notice (the one on screen); nothing from other apps is asked beyond the app id, and
+ * every reply is zeroed once read. Pre-existing notifications (the dump at subscription) are ignored. A reply
+ * missing for ANCS_REPLY_TIMEOUT_MS is given up at the next ancs_flow_next() (no timer). */
+#define ANCS_QUEUE_MAX        8
+#define ANCS_REPLY_TIMEOUT_MS 3000
+
+typedef struct {
+    uint32_t uid;
+    uint8_t flags;                           /* ANCS_FLAG_* of the latest event */
+    char title[ANCS_TITLE_MAX + 1];
+    char subtitle[ANCS_SUBTITLE_MAX + 1];
+    char message[ANCS_MESSAGE_MAX + 1];
+    char positive[ANCS_LABEL_MAX + 1];       /* "" = no positive action */
+    char negative[ANCS_LABEL_MAX + 1];       /* "" = no negative action */
+} ancs_notice_t;
+
+typedef enum { ANCS_STEP_IDLE = 0, ANCS_STEP_APP, ANCS_STEP_DETAILS } ancs_step_t;
+
+typedef struct {
+    uint32_t uid;
+    uint8_t flags;
+    ancs_step_t step;                        /* APP: look up the app id; DETAILS: a known Claude notification */
+} ancs_queued_t;
+
+typedef struct {
+    ancs_queued_t queue[ANCS_QUEUE_MAX];
+    int nq;
+    ancs_step_t step;                        /* the command outstanding; IDLE = none */
+    uint32_t uid;                            /* its notification */
+    uint8_t flags;
+    bool dropped;                            /* removed on the iPhone meanwhile: its reply is thrown away */
+    uint32_t sent_ms;
+    ancs_reply_t reply;
+    bool shown;                              /* notice holds the notification on the board */
+    ancs_notice_t notice;
+} ancs_flow_t;
+
+typedef enum {
+    ANCS_OUT_NONE = 0,
+    ANCS_OUT_SHOW,     /* a new Claude notice (chime unless ANCS_FLAG_SILENT) */
+    ANCS_OUT_UPDATE,   /* the notice on screen changed (no chime) */
+    ANCS_OUT_GONE,     /* the notice on screen was removed on the iPhone */
+} ancs_out_t;
+
+bool ancs_app_allowed(const uint8_t *id, size_t len);   /* exactly ANCS_CLAUDE_APP_ID */
+void ancs_flow_init(ancs_flow_t *f);                    /* also on every (re)subscription and disconnect */
+ancs_out_t ancs_flow_on_source(ancs_flow_t *f, const ancs_source_t *ev);
+size_t ancs_flow_next(ancs_flow_t *f, uint32_t now_ms, uint8_t out[ANCS_CMD_MAX]);
+ancs_out_t ancs_flow_on_data(ancs_flow_t *f, const uint8_t *chunk, size_t len);
+void ancs_flow_on_error(ancs_flow_t *f);                /* the outstanding command was refused or not sent */
+/* Perform Notification Action bytes for the notice on screen only (uid matches, that action offered); else 0 */
+size_t ancs_flow_action(const ancs_flow_t *f, uint32_t uid, uint8_t action, uint8_t out[6]);
+void ancs_flow_close(ancs_flow_t *f, uint32_t uid);     /* the board closed that notice: forget it */
