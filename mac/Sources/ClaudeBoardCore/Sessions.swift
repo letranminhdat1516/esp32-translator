@@ -18,9 +18,11 @@ public struct SessionRow: Equatable, Sendable {
     public var unseen: Bool
     public var project: String
     public var lastLine: String
+    /// The session runs in a tmux pane its hooks reported (pane + socket + ancestry): voice commands can target it
+    public var voice: Bool
 
     public init(handle: UInt32, state: SessionState, since: Int64, updated: Int64, focused: Bool, unseen: Bool,
-                project: String, lastLine: String) {
+                project: String, lastLine: String, voice: Bool = false) {
         self.handle = handle
         self.state = state
         self.since = since
@@ -29,10 +31,11 @@ public struct SessionRow: Equatable, Sendable {
         self.unseen = unseen
         self.project = project
         self.lastLine = lastLine
+        self.voice = voice
     }
 
-    /// Wire flags: bit0 focused, bit1 unseen
-    public var flags: Int { (focused ? 1 : 0) | (unseen ? 2 : 0) }
+    /// Wire flags: bit0 focused, bit1 unseen, bit2 voice
+    public var flags: Int { (focused ? 1 : 0) | (unseen ? 2 : 0) | (voice ? 4 : 0) }
 
     /// Picker order, identical on the board (sessions.c sessions_before): needs you first, then the most
     /// recently updated, then the higher handle.

@@ -2,6 +2,18 @@ import Foundation
 
 public enum Decision: UInt8, Sendable { case allow = 1, deny = 2 }
 
+/// Mac → board about one voice capture (message kind 8, id = voice id).
+public enum VoiceUpdate: Equatable, Sendable {
+    /// Live transcript while recording (the board shows the end of it)
+    case partial(String)
+    /// Exactly what Send would type or answer (VoiceText.forTyping); "" = nothing heard
+    case final(String)
+    /// The capture is over; shown to the user
+    case error(String)
+    /// Send succeeded (typed, answer stored, or denied)
+    case done(String)
+}
+
 public enum BoardMessage: Equatable, Sendable {
     /// alwaysRule: caption of the rule "Always allow" would add; nil = the button is not offered
     case permission(id: UInt32, project: String, tool: String, summary: String, alwaysRule: String? = nil)
@@ -14,6 +26,8 @@ public enum BoardMessage: Equatable, Sendable {
     case sessionsClear
     /// One AskUserQuestion page; all pages of a request share its id
     case question(id: UInt32, index: Int, count: Int, project: String, question: AskQuestion)
+    /// One voice capture's transcript or result (kind 8, id = the board's voice id)
+    case voice(id: UInt32, VoiceUpdate)
 
     /// Firmware CLAUDE_TEXT_MAX: the text after the 5-byte header never exceeds this many bytes
     public static let textMax = 400
@@ -21,7 +35,7 @@ public enum BoardMessage: Equatable, Sendable {
     /// [kind u8][id u32 LE][UTF-8 text]. Kinds: 0 permission "project\ntool\nsummary[\nrule]", 1 finished
     /// "project\nline", 2 cancel, 3 time (id 0, "<unix seconds> <offset minutes>"), 4 session (id = handle,
     /// "<state> <since> <updated> <flags>\nproject\nline"), 5 session remove (id = handle), 6 sessions clear
-    /// (id 0), 7 question page "<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc)xnopt".
+    /// (id 0), 7 question page "<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc)xnopt", 8 voice (id = voice id, "<p|f|x|k>\ntext").
     public func encode() -> Data {
         let (kind, id, text): (UInt8, UInt32, String) = switch self {
         case .permission(let id, let p, let t, let s, let rule): (0, id, Self.permissionText(p, t, s, rule))
@@ -34,6 +48,7 @@ public enum BoardMessage: Equatable, Sendable {
         case .sessionRemove(let h): (5, h, "")
         case .sessionsClear: (6, 0, "")
         case .question(let id, let index, let count, let project, let q): (7, id, Self.questionText(index, count, project, q))
+        case .voice(let id, let u): (8, id, Self.voiceText(u))
         }
         var d = Data([kind, UInt8(id & 0xff), UInt8(id >> 8 & 0xff), UInt8(id >> 16 & 0xff), UInt8(id >> 24)])
         d.append(contentsOf: text.utf8)
@@ -68,6 +83,16 @@ public enum BoardMessage: Equatable, Sendable {
         var fields = head
         for (l, d) in zip(labels, descs) { fields.append(l); fields.append(d) }
         return fields.joined(separator: "\n")
+    }
+
+    private static func voiceText(_ u: VoiceUpdate) -> String {
+        let room = textMax - 2   // "<w>\n"
+        switch u {
+        case .partial(let s): return "p\n" + Utf8.fitTail(Utf8.oneLine(s), maxBytes: room)
+        case .final(let s): return "f\n" + Utf8.fit(Utf8.oneLine(s), maxBytes: room)
+        case .error(let s): return "x\n" + Utf8.fit(Utf8.oneLine(s), maxBytes: room)
+        case .done(let s): return "k\n" + Utf8.fit(Utf8.oneLine(s), maxBytes: room)
+        }
     }
 
     /// The time message for `date` as seen in `timeZone` (daylight saving included).

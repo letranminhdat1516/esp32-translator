@@ -64,7 +64,7 @@ public actor SessionHub {
             await push()
         case .focus(let handle):
             if tracker.focus(handle: handle) { await push() }
-        case .choice, .answers:
+        case .choice, .answers, .voiceStart, .voiceStop, .voiceCancel, .voiceSend:
             break
         }
     }

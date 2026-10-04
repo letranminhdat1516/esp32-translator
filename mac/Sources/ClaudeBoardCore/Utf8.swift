@@ -18,6 +18,22 @@ public enum Utf8 {
         return out + "…"
     }
 
+    /// `s` if it fits; else "…" plus the longest suffix of whole Characters within `maxBytes` (live transcripts:
+    /// the newest words matter); "" when not even the ellipsis fits.
+    public static func fitTail(_ s: String, maxBytes: Int) -> String {
+        if s.utf8.count <= maxBytes { return s }
+        guard maxBytes >= 3 else { return "" }
+        var kept: [Character] = []
+        var used = 0
+        for ch in s.reversed() {
+            let n = ch.utf8.count
+            if used + n > maxBytes - 3 { break }
+            kept.append(ch)
+            used += n
+        }
+        return "…" + String(kept.reversed())
+    }
+
     /// Fits every item into a share of `totalBytes`: items shorter than an even share keep their full
     /// length, the others split what is left evenly.
     public static func share(_ items: [String], totalBytes: Int) -> [String] {

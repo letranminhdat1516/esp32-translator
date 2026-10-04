@@ -102,7 +102,7 @@ public actor RequestQueue {
         let id: UInt32
         switch input {
         case .choice(let i, _), .answers(let i, _): id = i
-        case .mode, .focus: return
+        case .mode, .focus, .voiceStart, .voiceStop, .voiceCancel, .voiceSend: return
         }
         guard let head = queue.first, head.id == id, let response = head.shape.accept(input) else { return }
         finish(id, with: response, cancelOnBoard: false)

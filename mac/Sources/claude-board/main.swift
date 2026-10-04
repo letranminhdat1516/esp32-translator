@@ -20,6 +20,8 @@ board.onInput = { input in
     case .mode, .focus:              // board events: which screen it shows, which session to focus
         if case .mode(let m) = input { log("board mode \(m)") }
         hubFeed.yield { await hub.boardInput(input) }
+    case .voiceStart, .voiceStop, .voiceCancel, .voiceSend:
+        break
     }
 }
 board.onConnectionChange = { up in

@@ -152,6 +152,7 @@ private func tag(_ m: BoardMessage) -> String {
     case .sessionRemove(let h): "rm\(h)"
     case .sessionsClear: "clear"
     case .question(let id, let index, _, _, _): "q\(id).\(index)"
+    case .voice(let id, _): "voice\(id)"
     }
 }
 
