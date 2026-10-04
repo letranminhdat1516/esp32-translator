@@ -4,6 +4,7 @@
  *            or "Claude · Mac not connected"
  *   middle : the focused session (project, "State · elapsed", last assistant line), or the request asked
  *   bottom : Deny / Allow, and Always allow when the Mac offers a rule, while a permission request is pending;
+ *            Deny + why (when the Mac voice link is up): say the reason, Send denies with it (voice_ui.c)
  *            on the session view, Speak (voice command, voice_ui.c) when the Mac voice link is up: disabled with
  *            "Open with cb for voice" when the focused session has no tmux pane the Mac can type into
  * Requests arrive one at a time from the Mac (the daemon queues the rest).
@@ -44,6 +45,7 @@ static lv_obj_t *s_detail;
 static lv_obj_t *s_allow;
 static lv_obj_t *s_deny;
 static lv_obj_t *s_always;
+static lv_obj_t *s_deny_why;
 static lv_obj_t *s_speak;
 static lv_obj_t *s_speak_hint;
 static uint32_t s_speak_handle;          /* focused session Speak would target; 0 = Speak not usable */
@@ -99,11 +101,20 @@ static void schedule_restore(void)
     lv_timer_set_repeat_count(s_restore_timer, 1);
 }
 
+/* Deny / Allow at y 270..326; second row at y 336..392: Deny + why and Always allow side by side (160 wide at
+ * x -85 / +85), or whichever of them is offered, centred */
 static void set_buttons(bool visible)
 {
+    bool why = visible && ble_link_voice_ready();
+    bool always = visible && s_always_offered;
     lv_obj_set_hidden(s_allow, !visible);
     lv_obj_set_hidden(s_deny, !visible);
-    lv_obj_set_hidden(s_always, !(visible && s_always_offered));
+    lv_obj_set_hidden(s_always, !always);
+    lv_obj_set_hidden(s_deny_why, !why);
+    lv_obj_set_width(s_always, why ? 160 : 220);
+    lv_obj_align(s_always, LV_ALIGN_BOTTOM_MID, why ? 85 : 0, -74);
+    lv_obj_set_width(s_deny_why, always ? 160 : 180);
+    lv_obj_align(s_deny_why, LV_ALIGN_BOTTOM_MID, always ? -85 : 0, -74);
 }
 
 /* Session view only: Speak for the focused session. Hidden without the Mac voice link or a live session;
@@ -306,6 +317,17 @@ static void on_speak(lv_event_t *e)
     }
 }
 
+/* Runs in the LVGL task (lock already held): say why, Send denies with it */
+static void on_deny_why(lv_event_t *e)
+{
+    if (!claude_ui_tap_allowed() || s_qset.id == s_pending_id) {   /* permission requests only */
+        return;
+    }
+    if (!voice_ui_start_locked(CLAUDE_VOICE_FOR_DENY, 0, s_pending_id)) {
+        ESP_LOGW(TAG, "voice capture not started");
+    }
+}
+
 static lv_obj_t *make_button(const char *text, uint32_t color, int width, int x, int y_from_bottom, lv_event_cb_t cb,
                              uint8_t decision)
 {
@@ -354,11 +376,12 @@ void claude_ui_init(void)
     lv_obj_set_height(s_detail, 96);
     lv_label_set_long_mode(s_detail, LV_LABEL_LONG_MODE_DOTS);
 
-    /* Deny / Allow at y 270..326; Always allow below at y 336..392. Any tap that began before the request
-     * was shown (e.g. aimed at the translator's Mic button) is ignored by the arming. */
+    /* Deny / Allow at y 270..326; Always allow / Deny + why below at y 336..392 (set_buttons). Any tap that
+     * began before the request was shown (e.g. aimed at the translator's Mic button) is ignored by the arming. */
     s_deny = make_button("Deny", 0x8a1c1c, 150, -80, -140, on_answer, CLAUDE_DECISION_DENY);
     s_allow = make_button("Allow", 0x1f9d55, 150, 80, -140, on_answer, CLAUDE_DECISION_ALLOW);
     s_always = make_button("Always allow", 0x1f5f8b, 220, 0, -74, on_answer, CLAUDE_DECISION_ALWAYS);
+    s_deny_why = make_button("Deny + why", 0x5a2323, 180, 0, -74, on_deny_why, 0);
     /* Session view: Speak at y 340..396 (where voice_ui.c puts Stop), the hint above it */
     s_speak = make_button("Speak", 0x1e6fd9, 150, 0, -70, on_speak, 0);
     lv_obj_set_style_bg_color(s_speak, lv_color_hex(0x333333), LV_STATE_DISABLED);
@@ -499,6 +522,7 @@ void claude_ui_set_touch_enabled(bool on)
     lv_obj_set_clickable(s_deny, on);
     lv_obj_set_clickable(s_always, on);
     lv_obj_set_clickable(s_speak, on);
+    lv_obj_set_clickable(s_deny_why, on);
 }
 
 bool claude_ui_pending(void)

@@ -4,7 +4,9 @@
  *   middle : one full-width row per option, radio (single-select) or checkbox (multi-select);
  *            the list scrolls when it does not fit; long-press a row for its description
  *   bottom : Back (from page 2) and Next, or Send on the last page (disabled until answered)
- * No "Other" row in Phase 2 (voice answers come with Phase 3).
+ *   Other  : while the Mac voice link is up, a last row "Other (speak)": tap to say the answer (voice_ui.c),
+ *            Use stores it on the Mac and selects the row (shown as the spoken text); tap again to (un)select,
+ *            long-press to say it again. Its mask bit is QUESTION_OTHER_BIT.
  * Selection and the answer bytes: question.c (host-tested). claude_ui.c owns the pending request, the
  * 700 ms arming and the dark-panel rule: every control asks claude_ui_tap_allowed() before acting, and
  * every page change re-arms (a double tap on Next never lands on Send).
@@ -55,6 +57,8 @@ static lv_obj_t *s_desc;
 static lv_obj_t *s_desc_label;
 static lv_obj_t *s_rows[CLAUDE_OPT_MAX];
 static lv_obj_t *s_marks[CLAUDE_OPT_MAX];
+static lv_obj_t *s_other_row;     /* NULL when the page has no Other row (no Mac voice link) */
+static lv_obj_t *s_other_mark;
 
 static void build_page(void);
 
@@ -71,6 +75,11 @@ static void refresh_marks(void)
         bool on = (mask >> i) & 1u;
         lv_obj_set_style_bg_color(s_marks[i], lv_color_hex(on ? COLOR_ACCENT : 0x000000), 0);
         lv_obj_set_style_bg_color(s_rows[i], lv_color_hex(on ? COLOR_ROW_ON : COLOR_ROW), 0);
+    }
+    if (s_other_mark != NULL) {
+        bool on = (mask & QUESTION_OTHER_BIT) != 0;
+        lv_obj_set_style_bg_color(s_other_mark, lv_color_hex(on ? COLOR_ACCENT : 0x000000), 0);
+        lv_obj_set_style_bg_color(s_other_row, lv_color_hex(on ? COLOR_ROW_ON : COLOR_ROW), 0);
     }
     bool last = question_last_page(s_set);
     bool ready = last ? question_all_answered(s_set) : question_page_answered(s_set, s_set->page);
@@ -100,6 +109,29 @@ static void on_row_long(lv_event_t *e)
     lv_obj_scroll_to_y(s_desc, 0, LV_ANIM_OFF);
     lv_obj_set_hidden(s_desc, false);
     claude_ui_rearm();   /* the finger is still down: its release must not close the overlay */
+}
+
+/* Other row: say the answer, or (once said) select / toggle it like an option */
+static void on_other_tap(lv_event_t *e)
+{
+    if (!claude_ui_tap_allowed()) {
+        return;
+    }
+    if (s_set->other[s_set->page][0] == '\0') {
+        voice_ui_start_locked(CLAUDE_VOICE_FOR_OTHER, s_set->page, s_set->id);
+        return;
+    }
+    question_tap(s_set, QUESTION_OTHER);
+    refresh_marks();
+}
+
+/* Other row long press: say it again (Use replaces the text) */
+static void on_other_long(lv_event_t *e)
+{
+    if (!claude_ui_tap_allowed()) {
+        return;
+    }
+    voice_ui_start_locked(CLAUDE_VOICE_FOR_OTHER, s_set->page, s_set->id);
 }
 
 /* Gated like the answers: a tap on the dark panel only wakes it */
@@ -184,6 +216,8 @@ static lv_obj_t *make_button(const char *text, int width, lv_event_cb_t cb, lv_o
 
 static lv_obj_t *make_row(int i, const claude_question_t *q)
 {
+    bool other = i == QUESTION_OTHER;
+    const char *spoken = s_set->other[s_set->page];
     lv_obj_t *row = lv_obj_create(s_list);
     lv_obj_set_width(row, 330);
     lv_obj_set_height(row, LV_SIZE_CONTENT);
@@ -198,8 +232,8 @@ static lv_obj_t *make_row(int i, const claude_question_t *q)
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scrollable(row, false);   /* a drag scrolls the list */
     lv_obj_add_event_cb(row, on_pressed, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(row, on_row_tap, LV_EVENT_SHORT_CLICKED, (void *)(uintptr_t)i);
-    lv_obj_add_event_cb(row, on_row_long, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)i);
+    lv_obj_add_event_cb(row, other ? on_other_tap : on_row_tap, LV_EVENT_SHORT_CLICKED, (void *)(uintptr_t)i);
+    lv_obj_add_event_cb(row, other ? on_other_long : on_row_long, LV_EVENT_LONG_PRESSED, (void *)(uintptr_t)i);
 
     lv_obj_t *mark = lv_obj_create(row);   /* radio (circle) or checkbox (rounded square) */
     lv_obj_set_size(mark, 22, 22);
@@ -214,11 +248,15 @@ static lv_obj_t *make_row(int i, const claude_question_t *q)
     lv_obj_t *label = lv_label_create(row);
     lv_obj_set_width(label, 262);
     lv_obj_set_style_text_font(label, &font_vi_22, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(other && spoken[0] == '\0' ? COLOR_MUTED : 0xffffff), 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
-    lv_label_set_text(label, CLAUDE_Q_STR(q, label[i]));
+    lv_label_set_text(label, !other ? CLAUDE_Q_STR(q, label[i]) : spoken[0] ? spoken : "Other (speak)");
 
-    s_marks[i] = mark;
+    if (other) {
+        s_other_mark = mark;
+    } else {
+        s_marks[i] = mark;
+    }
     return row;
 }
 
@@ -237,8 +275,13 @@ static void build_page(void)
         s_rows[i] = NULL;
         s_marks[i] = NULL;
     }
+    s_other_row = NULL;
+    s_other_mark = NULL;
     for (int i = 0; i < q->nopt; i++) {
         s_rows[i] = make_row(i, q);
+    }
+    if (ble_link_voice_ready()) {   /* no Mac voice link: no Other row */
+        s_other_row = make_row(QUESTION_OTHER, q);
     }
     lv_obj_scroll_to_y(s_list, 0, LV_ANIM_OFF);
     bool first = s_set->page == 0;
