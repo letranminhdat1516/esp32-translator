@@ -47,7 +47,9 @@ it on the Claude screen, each time with Allow/Deny ignoring taps for the first 7
 The clock is set by the iPhone app and by the Mac daemon each time they connect, and again when the phone's
 or the Mac's clock or time zone changes (`--:--` until then). Update the firmware and the iOS app together:
 older firmware shows the app's time message (`"<seconds> <offset>"`) as a subtitle.
-The session picker lists Claude sessions from Phase 2 on; for now it shows "No sessions yet".
+The session picker (PWR ×3) lists up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
+recent: a red dot needs you, yellow is working, green is idle, grey has ended (ended sessions leave after
+10 min). "· new" marks a session that finished while another one was focused. Tap a row to focus it.
 The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` (needs Pillow;
 `python3 tools/gen_logo.py` regenerates `firmware/main/logo_img.c/.h`, `--preview out.png` renders it back).
 
@@ -71,7 +73,7 @@ Battery life has not been measured yet.
 
 | Path | Contents |
 |---|---|
-| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `lock_ui.c`, `picker_ui.c`, `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
+| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `lock_ui.c`, `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
 | `tools/` | `gen_logo.py`: generates the lock-face logo (`firmware/main/logo_img.c`) from `assets/cicca-dark.png` |
 | `mac/` | Swift package: `claude-board` daemon (Unix socket + CoreBluetooth) and `claude-board-hook` (Claude Code hook), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
@@ -85,8 +87,8 @@ Battery life has not been measured yet.
 | `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect) |
 | `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
 | `…0010` Claude service | (service) | Claude companion mode, see below. Requires a bonded, encrypted link |
-| `…0011` Claude request | write (with response), encrypted | Mac → board: permission request / status to display; kind 3 = time (id 0, same text as above, sent on connect) |
-| `…0012` Claude answer | notify, encrypted | Board → Mac: Allow / Deny decision |
+| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options). See `firmware/main/claude_proto.h` |
+| `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session |
 
 ## Getting started
 
@@ -119,7 +121,7 @@ Requires Xcode 26 and an iPhone on iOS 26.
 
 ## Claude companion mode
 
-The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board. When Claude finishes a turn, the board plays a done chime and a "Claude finished: <project>" toast, and the Claude screen shows the last line of the reply. After you answer (or the request is cancelled, times out or the Mac disconnects), the board returns to the screen you were on (or goes dark again if it was locked).
+The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board (plus Always allow when offered, see below). When the focused session finishes a turn, the board plays a done chime and a "<project> · <last line>" toast; other sessions finish silently and show up as "Claude · N new" on the Claude screen and "· new" in the picker. After you answer (or the request is cancelled, times out or the Mac disconnects), the board returns to the screen you were on (or goes dark again if it was locked).
 
 Open the Claude screen with a **PWR double press**; **BOOT** goes back to the translator. A permission request takes over the screen in any mode, even when the board is locked. If you lock the board or switch away while a request is shown, it stays pending and comes back when you unlock (PWR ×1 or a double tap on the lock screen) or open the Claude screen (PWR ×2). The Mac gives up on a request after 90 s and cancels it on the board; if that cancel is lost, the board drops the request itself after 100 s ("Timed out").
 
@@ -128,16 +130,36 @@ bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a laun
 bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board hook entries
 ```
 
-The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds three hooks: `PermissionRequest`, `Stop` and `Notification` (`idle_prompt`).
+The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` on to the daemon when Claude runs inside tmux. Hooks must be verified against the Claude Code version they run on; this was verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
 
-**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again after you rebuild and reinstall. If you denied it, enable `claude-board` in System Settings > Privacy & Security > Bluetooth.
+**Sessions.** The Claude screen shows the focused session: project, state with elapsed time ("Working · 12m"),
+and the last line of Claude's reply; the title reads "Claude · N new" while other sessions have finished unseen.
+A session is working after you submit a prompt, needs you on a permission request (or a permission / elicitation
+notification), and is idle after a turn ends, on start, or on `idle_prompt`; `SessionEnd` ends it. Sessions that
+never send `SessionEnd` (a crashed or killed terminal, or an interrupted turn, which sends no `Stop`) end
+on their own only if the session hooks are not installed (after 2 h without events); otherwise they stay until
+the next event, so an old row can linger. Session updates reach the board only while it shows the Claude screen
+or the picker (battery); requests, cancels and the focused session's "done" arrive in any mode.
+
+**Questions.** When Claude asks a multiple-choice question (`AskUserQuestion`), the board shows one page per
+question ("1/2 · project", header, question). Single choice: tap an option (radio), then Next. Several choices:
+tick the boxes. Long-press an option to read its description; scroll the option list or question text when it
+does not fit. Next / Send stay disabled until the page is answered; Send on the last page answers every question
+at once, and Claude receives the chosen labels (several joined with ", "). Questions with more than 4
+questions or 4 options stay in the terminal, and there is no "Other" free-text row.
+
+**Always allow.** When Claude Code suggests a permission rule (an `addRules` suggestion) for the request, a
+third button "Always allow" applies that rule (shown as "Rule: …"), so the same kind of call is not asked again.
+Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button.
+
+**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again after you rebuild and reinstall. If the prompt reappears after rebuilding or reinstalling the daemon, allow it again; if you denied it, enable `claude-board` in System Settings → Privacy & Security → Bluetooth.
 
 **First-time pairing.** The board's Claude service requires a bonded, encrypted link. The first time the daemon connects, macOS shows a Bluetooth pairing prompt. Accept it once.
 
 **Re-pairing.** If the board is reflashed or its NVS is erased, the old bond is invalid. Run `defaults delete dev.cicca.claude-board boardIdentifier`, remove the board in macOS System Settings > Bluetooth, then restart the daemon and accept the pairing prompt again.
 
 **Safety rules**
-- Nothing is ever auto-approved. Only an explicit Allow on the board approves a request.
+- Nothing is ever auto-approved. Only an explicit Allow / Always allow tap approves a request, and only a Send tap answers a question; taps in the first 700 ms after anything appears, and taps on a dark panel, never count.
 - If the daemon is not running, the board is off or not connected, or the request times out, the hook prints nothing and exits 0, so Claude Code shows its normal terminal prompt.
 
 Daemon log: `~/.claude-board/daemon.log`.
