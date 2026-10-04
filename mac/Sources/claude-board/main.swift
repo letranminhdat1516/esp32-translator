@@ -15,6 +15,15 @@ board.onConnectionChange = { up in
         Task { await requests.boardDisconnected() }
     }
 }
+// Keep the board clock right when the Mac's clock or time zone changes (manual set, network time, travel).
+// board.send drops the message unless the link is ready; the next connect sends the time anyway.
+for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
+    NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { note in
+        NSTimeZone.resetSystemTimeZone()
+        log("\(note.name.rawValue): resending the time")
+        board.send(.timeSync())
+    }
+}
 let processor = HookProcessor(board: board, requests: requests, log: log)
 
 // Socket: ~/.claude-board/sock, owner-only

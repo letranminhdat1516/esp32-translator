@@ -75,6 +75,17 @@ final class ConversationEngine {
         link.onMicChange = { [weak self] on in
             Task { @MainActor in self?.boardMicOn = on }
         }
+        // Midnight, a time zone or daylight-saving change, or a clock set: keep the board's lock-face clock right
+        NotificationCenter.default.addObserver(forName: UIApplication.significantTimeChangeNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.resendTimeIfConnected() }
+        }
+    }
+
+    private func resendTimeIfConnected() {
+        guard board == .ready else { return }
+        NSTimeZone.resetSystemTimeZone()
+        link.sendTime()
     }
 
     // MARK: Startup

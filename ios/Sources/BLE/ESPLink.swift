@@ -55,6 +55,14 @@ final class ESPLink: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Re-sends the wall clock (after a significant time change); does nothing until the link is set up
+    func sendTime() {
+        queue.async { [self] in
+            guard let peripheral, peripheral.state == .connected, let textCharacteristic else { return }
+            peripheral.writeValue(Self.timePayload(), for: textCharacteristic, type: .withResponse)
+        }
+    }
+
     func setBoardMic(_ on: Bool) {
         queue.async { [self] in
             guard let peripheral, let controlCharacteristic else { return }
