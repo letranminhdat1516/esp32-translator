@@ -9,8 +9,8 @@ public protocol BoardLinking: Sendable {
 
 /// One accepted hook connection on the daemon's Unix socket.
 public protocol HookConnection: Sendable {
-    /// Calls `handler` (possibly more than once) when the hook side goes away: EOF, error, a stray byte,
-    /// or the connection being cancelled. Harmless after the reply has been sent.
+    /// Calls `handler` (possibly more than once) when the hook side goes away: EOF, error, or the connection
+    /// being closed. Harmless after the reply has been sent.
     func onPeerGone(_ handler: @escaping @Sendable () -> Void)
     /// Sends one reply line, then closes the connection.
     func reply(_ reply: BridgeReply)

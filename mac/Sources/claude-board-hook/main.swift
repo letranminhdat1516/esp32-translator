@@ -10,7 +10,8 @@ let environment = ProcessInfo.processInfo.environment
 let ancestors = (environment["TMUX_PANE"] ?? "").isEmpty ? [] : ProcessTree.chain(from: getppid())
 let line = HookEnvelope.augment(input, environment: environment, ancestors: ancestors)
 let isPermission = event.name == "PermissionRequest"
-let reply = bridgeRoundTrip(event: line, waitForReply: isPermission, timeout: 92)
+// Other events are fire-and-forget: delivered within about 1 s or dropped, never holding up Claude Code
+let reply = bridgeRoundTrip(event: line, waitForReply: isPermission, timeout: isPermission ? 92 : 1)
 
 if isPermission, let out = HookOutput.output(for: reply) {
     print(out)

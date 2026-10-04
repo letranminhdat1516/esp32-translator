@@ -74,14 +74,20 @@ private func waitReady(_ fd: Int32, _ events: Int16, deadline: Double) -> Bool {
 /// (questions + option descriptions) in updatedInput, so this must cover the daemon's request limit (4 MiB).
 let maxReplyBytes = 5 * 1024 * 1024
 
+/// Longest a fire-and-forget event (waitForReply false) may hold up Claude Code
+let fireAndForgetSeconds: TimeInterval = 1
+
 /// Hook side. Writes the event followed by "\n"; if `waitForReply`, reads one line back.
 /// The whole round trip (write + read) shares one absolute deadline of `timeout` seconds.
+/// Without `waitForReply` the hook shuts down its write side and waits for the daemon to close (at most
+/// `fireAndForgetSeconds` in all): a socket closed right after the write may never be accepted by the daemon.
 /// Any failure (no daemon, timeout, oversized or garbage reply) returns nil so the caller can fall through.
 public func bridgeRoundTrip(
     event: Data, waitForReply: Bool, timeout: TimeInterval,
     socketPath: String = BridgeSocket.path
 ) -> BridgeReply? {
-    let seconds = timeout.isFinite && timeout > 0 ? timeout : 0.01
+    var seconds = timeout.isFinite && timeout > 0 ? timeout : 0.01
+    if !waitForReply { seconds = min(seconds, fireAndForgetSeconds) }
     let deadline = monotonicNow() + seconds
 
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -120,7 +126,17 @@ public func bridgeRoundTrip(
         }
         return nil
     }
-    guard waitForReply else { return nil }
+    guard waitForReply else {
+        // The daemon reads to the end of the line and closes; until then the event may still be in flight
+        shutdown(fd, SHUT_WR)
+        var sink = [UInt8](repeating: 0, count: 512)
+        while waitReady(fd, Int16(POLLIN), deadline: deadline) {
+            let n = read(fd, &sink, sink.count)
+            if n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
+            if n <= 0 { break }   // closed by the daemon (or an error): done
+        }
+        return nil
+    }
 
     var line = Data()
     var chunk = [UInt8](repeating: 0, count: 16384)

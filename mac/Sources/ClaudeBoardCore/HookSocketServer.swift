@@ -1,0 +1,224 @@
+import Foundation
+
+/// The daemon's Unix socket (BSD sockets, not Network.framework: an NWListener never surfaces a connection whose
+/// client wrote its line and closed before the accept, which is what a fire-and-forget hook does).
+/// Every complete line ("…\n") is handed to `onLine` exactly once, in order, before the end of the stream is acted
+/// on; a partial line at the end is dropped. The hook sends one line per connection.
+public final class HookSocketServer: @unchecked Sendable {
+    public let path: String
+    private let maxLineBytes: Int
+    private let onLine: @Sendable (Data, any HookConnection) -> Void
+    private let queue = DispatchQueue(label: "claude-board.accept")
+    private var listenFD: Int32 = -1
+    private var source: DispatchSourceRead?
+
+    /// `onLine` runs on the connection's queue: hand the work off, never block it
+    public init(path: String, maxLineBytes: Int = 4 * 1024 * 1024,
+                onLine: @escaping @Sendable (Data, any HookConnection) -> Void) {
+        self.path = path
+        self.maxLineBytes = maxLineBytes
+        self.onLine = onLine
+    }
+
+    /// Replaces any socket file at `path`, owner-only (0600), and starts accepting
+    public func start() throws {
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        guard path.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else { throw POSIXError(.ENAMETOOLONG) }
+        withUnsafeMutableBytes(of: &addr.sun_path) { buf in
+            buf.copyBytes(from: path.utf8)
+            buf[path.utf8.count] = 0
+        }
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw Self.lastError() }
+        unlink(path)
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, chmod(path, 0o600) == 0, listen(fd, 64) == 0, Self.setNonBlocking(fd) else {
+            let error = Self.lastError()
+            close(fd)
+            throw error
+        }
+        listenFD = fd
+        let s = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        s.setEventHandler { [weak self] in self?.acceptAll() }
+        s.setCancelHandler { close(fd) }
+        source = s
+        s.resume()
+    }
+
+    /// Stops accepting (connections already accepted carry on) and removes the socket file
+    public func stop() {
+        queue.sync {
+            source?.cancel()
+            source = nil
+        }
+        unlink(path)
+    }
+
+    private func acceptAll() {
+        while true {
+            let c = accept(listenFD, nil, nil)
+            if c < 0 {
+                if errno == EINTR || errno == ECONNABORTED { continue }
+                return   // EAGAIN: none left (or EMFILE: retried on the next event)
+            }
+            var one: Int32 = 1
+            setsockopt(c, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+            guard Self.setNonBlocking(c) else { close(c); continue }
+            SocketHookConnection(fd: c, maxLineBytes: maxLineBytes, onLine: onLine).start()
+        }
+    }
+
+    static func setNonBlocking(_ fd: Int32) -> Bool {
+        let flags = fcntl(fd, F_GETFL)
+        return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0
+    }
+
+    private static func lastError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+}
+
+/// One accepted connection. All state lives on `queue`. The descriptor is closed once every delivered line has been
+/// answered (reply or close), or at once when the client ends the stream before sending a complete line.
+final class SocketHookConnection: @unchecked Sendable {
+    private let fd: Int32
+    private let maxLineBytes: Int
+    private let onLine: @Sendable (Data, any HookConnection) -> Void
+    private let queue = DispatchQueue(label: "claude-board.hook-connection")
+    private var source: DispatchSourceRead?
+    private var buffer = Data()
+    /// Lines handed out and not yet answered
+    private var open = 0
+    private var peerGone = false
+    private var closed = false
+    private var sourceDone = false
+    private var goneHandlers: [@Sendable () -> Void] = []
+    /// A reply waits at most this long for the client to take it
+    static let replyTimeout: TimeInterval = 5
+
+    init(fd: Int32, maxLineBytes: Int, onLine: @escaping @Sendable (Data, any HookConnection) -> Void) {
+        self.fd = fd
+        self.maxLineBytes = maxLineBytes
+        self.onLine = onLine
+    }
+
+    func start() {
+        let s = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+        // The connection stays alive (retained by its source) until the source is cancelled
+        s.setEventHandler { self.readAvailable() }
+        s.setCancelHandler {
+            self.sourceDone = true
+            self.source = nil
+            if self.closed { Darwin.close(self.fd) }
+        }
+        source = s
+        s.resume()
+    }
+
+    private func readAvailable() {
+        var chunk = [UInt8](repeating: 0, count: 65536)
+        var ended = false
+        while true {
+            let n = read(fd, &chunk, chunk.count)
+            if n > 0 { buffer.append(contentsOf: chunk[0..<n]); continue }
+            if n < 0 && errno == EINTR { continue }
+            if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { break }
+            ended = true      // EOF, or an error such as ECONNRESET: the client is gone
+            break
+        }
+        // Every complete line first, even when the end of the stream came with it
+        while !closed, let nl = buffer.firstIndex(of: 0x0a) {
+            let line = Data(buffer[buffer.startIndex..<nl])
+            buffer.removeSubrange(buffer.startIndex...nl)
+            open += 1
+            onLine(line, LineHandle(self))
+        }
+        if buffer.count > maxLineBytes {   // oversized: drop, no reply
+            closeNow()
+            return
+        }
+        if ended {
+            peerGone = true
+            source?.cancel()               // nothing more to read; the descriptor stays open for replies
+            fireGone()
+            if open == 0 { closeNow() }    // a partial line is dropped
+        }
+    }
+
+    private func fireGone() {
+        let handlers = goneHandlers
+        goneHandlers = []
+        handlers.forEach { $0() }
+    }
+
+    private func closeNow() {
+        guard !closed else { return }
+        closed = true
+        if sourceDone { Darwin.close(fd) } else { source?.cancel() }   // the cancel handler closes it
+        peerGone = true
+        fireGone()
+    }
+
+    // MARK: - HookConnection, per delivered line
+
+    fileprivate func onPeerGone(_ handler: @escaping @Sendable () -> Void) {
+        queue.async {
+            if self.peerGone { handler() } else { self.goneHandlers.append(handler) }
+        }
+    }
+
+    fileprivate func reply(_ reply: BridgeReply) {
+        var line = (try? JSONEncoder().encode(reply)) ?? Data("{}".utf8)
+        line.append(0x0a)
+        let data = line
+        queue.async {
+            if !self.closed { self.write(data) }
+            self.finishLine()
+        }
+    }
+
+    fileprivate func close() {
+        queue.async { self.finishLine() }
+    }
+
+    private func finishLine() {
+        open -= 1
+        if open <= 0 { closeNow() }
+    }
+
+    private func write(_ data: Data) {
+        let deadline = Date().addingTimeInterval(Self.replyTimeout)
+        var offset = 0
+        while offset < data.count {
+            let n = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress! + offset, $0.count - offset) }
+            if n > 0 { offset += n; continue }
+            if n < 0 && errno == EINTR { continue }
+            guard n < 0, errno == EAGAIN || errno == EWOULDBLOCK else { return }
+            let ms = Int32(deadline.timeIntervalSinceNow * 1000)
+            guard ms > 0 else { return }
+            var p = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            if poll(&p, 1, ms) < 0 && errno != EINTR { return }
+        }
+    }
+}
+
+/// The HookConnection for one line: answered once (a reply or a close), later calls are ignored
+private final class LineHandle: HookConnection, @unchecked Sendable {
+    private let conn: SocketHookConnection
+    private let lock = NSLock()
+    private var answered = false
+
+    init(_ conn: SocketHookConnection) { self.conn = conn }
+
+    private func answerOnce() -> Bool {
+        lock.withLock {
+            defer { answered = true }
+            return !answered
+        }
+    }
+
+    func onPeerGone(_ handler: @escaping @Sendable () -> Void) { conn.onPeerGone(handler) }
+    func reply(_ reply: BridgeReply) { if answerOnce() { conn.reply(reply) } }
+    func close() { if answerOnce() { conn.close() } }
+}
