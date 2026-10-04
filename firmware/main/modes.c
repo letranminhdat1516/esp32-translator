@@ -117,6 +117,11 @@ bool modes_face_visible(const modes_t *m, int64_t now_us)
     return m->locked && !m->urgent && !m->notice && now_us < m->face_until_us;
 }
 
+bool modes_notice_allowed(const modes_t *m)
+{
+    return !m->urgent;
+}
+
 modes_panel_t modes_panel(const modes_t *m, int64_t now_us)
 {
     if (!m->locked) {

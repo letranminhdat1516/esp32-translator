@@ -95,7 +95,7 @@ static void screen_timer_cb(lv_timer_t *t)
         return;
     }
     if (modes_screen(&m) == SCREEN_PHONE) {
-        set_screen(true);   /* an iPhone notice is up (it closes itself after 20 s, or 60 s with actions) */
+        set_screen(true);   /* an iPhone notice is up (closes after 20 s, 60 s with actions, at once on link loss) */
         return;
     }
     if (claude_ui_pending() && modes_screen(&m) == SCREEN_CLAUDE) {

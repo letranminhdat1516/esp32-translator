@@ -257,6 +257,9 @@ static ancs_flow_t s_flow;
 static SemaphoreHandle_t s_flow_lock;
 static StaticSemaphore_t s_flow_lock_buf;
 static ancs_notice_t s_snapshot;   /* host task: the notice handed to phone_ui.c, cleared right after */
+/* The ready link's Control Point, for actions from the LVGL task (under s_flow_lock) */
+static uint16_t s_flow_conn = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_flow_control;
 
 void ancs_client_init(void)
 {
@@ -321,6 +324,17 @@ static int on_command_written(uint16_t conn, const struct ble_gatt_error *error,
 static void deliver(ancs_out_t out, uint32_t uid)
 {
     if (out == ANCS_OUT_SHOW || out == ANCS_OUT_UPDATE) {
+        modes_t m;
+        shell_snapshot(&m);
+        if (!modes_notice_allowed(&m)) {
+            /* A Mac request has the screen: no notice, no chime over it; the iPhone keeps the notification */
+            ESP_LOGI(TAG, "notice %lu not shown: a Mac request is up", (unsigned long)s_snapshot.uid);
+            flow_lock();
+            ancs_flow_close(&s_flow, s_snapshot.uid);
+            flow_unlock();
+            memset(&s_snapshot, 0, sizeof(s_snapshot));
+            return;
+        }
         phone_ui_show(&s_snapshot, out == ANCS_OUT_SHOW);
         if (out == ANCS_OUT_SHOW && !(s_snapshot.flags & ANCS_FLAG_SILENT)) {
             chime_play(CHIME_PHONE);
@@ -368,7 +382,10 @@ static void notifications_ready(uint16_t conn)
 {
     flow_lock();
     ancs_flow_init(&s_flow);
+    s_flow_conn = conn;
+    s_flow_control = s_link.control_val;
     flow_unlock();
+    phone_ui_set_link(true);
     ESP_LOGI(TAG, "link %d: Claude notifications from the iPhone on", conn);
 }
 
@@ -379,7 +396,10 @@ void ancs_client_on_disconnect(uint16_t conn)
     }
     flow_lock();
     ancs_flow_init(&s_flow);
+    s_flow_conn = BLE_HS_CONN_HANDLE_NONE;
+    s_flow_control = 0;
     flow_unlock();
+    phone_ui_set_link(false);   /* a notice on screen closes at once; its action buttons are gone */
     ESP_LOGI(TAG, "iPhone notifications off");
 }
 
@@ -392,4 +412,40 @@ void ancs_client_close(uint32_t uid)
     flow_lock();
     ancs_flow_close(&s_flow, uid);
     flow_unlock();
+}
+
+static int on_action_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr,
+                             void *arg)
+{
+    uint32_t uid = (uint32_t)(uintptr_t)arg;
+    if (error->status != 0) {
+        ESP_LOGW(TAG, "the iPhone refused the action for %lu: status 0x%x", (unsigned long)uid, error->status);
+    } else {
+        ESP_LOGI(TAG, "the iPhone took the action for %lu", (unsigned long)uid);
+    }
+    phone_ui_action_result(uid, error->status == 0);
+    return 0;
+}
+
+/* LVGL task (display lock held; lock order display -> flow) */
+bool ancs_client_perform(uint32_t uid, uint8_t action)
+{
+    uint8_t cmd[6];
+    if (s_flow_lock == NULL) {
+        return false;
+    }
+    flow_lock();
+    size_t n = ancs_flow_action(&s_flow, uid, action, cmd);
+    uint16_t conn = s_flow_conn;
+    uint16_t control = s_flow_control;
+    flow_unlock();
+    if (n == 0 || conn == BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGW(TAG, "action for %lu not sent: not the notice on screen, not offered, or no iPhone link",
+                 (unsigned long)uid);
+        return false;
+    }
+    int rc = ble_gattc_write_flat(conn, control, cmd, n, on_action_written, (void *)(uintptr_t)uid);
+    ESP_LOGI(TAG, "%s action for %lu: %s (rc %d)", action == ANCS_ACTION_POSITIVE ? "positive" : "negative",
+             (unsigned long)uid, rc == 0 ? "sent" : "NOT sent", rc);
+    return rc == 0;
 }

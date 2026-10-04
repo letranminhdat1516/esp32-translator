@@ -428,6 +428,18 @@ static void lock_gestures_and_picks_wait_for_the_notice(void)
     assert(m.mode == BOARD_PICKER && modes_screen(&m) == SCREEN_PHONE);
 }
 
+static void notice_waits_while_a_mac_request_is_up(void)
+{
+    modes_t m = fresh();
+    assert(modes_notice_allowed(&m));                     /* nothing urgent: an iPhone notice may show (and chime) */
+    assert(modes_handle(&m, MODES_EV_PWR_1, 0) == false); /* locked: still allowed, it lights the panel */
+    assert(modes_notice_allowed(&m));
+    modes_handle(&m, MODES_EV_URGENT, 0);
+    assert(!modes_notice_allowed(&m));                    /* a Mac request has the screen: no notice, no chime */
+    modes_handle(&m, MODES_EV_URGENT_DONE, 0);
+    assert(modes_notice_allowed(&m));
+}
+
 int main(void)
 {
     starts_unlocked_in_translator();
@@ -459,6 +471,7 @@ int main(void)
     mode_buttons_close_the_notice();
     mac_request_wins_over_a_notice();
     lock_gestures_and_picks_wait_for_the_notice();
+    notice_waits_while_a_mac_request_is_up();
     puts("modes: all tests passed");
     return 0;
 }

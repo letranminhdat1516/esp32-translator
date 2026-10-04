@@ -68,6 +68,9 @@ void ancs_client_on_encrypted(uint16_t conn);
 bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len);
 void ancs_client_on_disconnect(uint16_t conn);
 void ancs_client_close(uint32_t uid);
+/* LVGL task, from an armed tap on the notice's action button: writes Perform Notification Action for the notice
+ * on screen only. True when the write went out; the iPhone's answer arrives as phone_ui_action_result(). */
+bool ancs_client_perform(uint32_t uid, uint8_t action);
 
 /* audio_in.c */
 void audio_in_start(void);
@@ -166,6 +169,8 @@ lv_obj_t *phone_ui_screen(void);
 void phone_ui_show(const ancs_notice_t *n, bool fresh);   /* NimBLE host task; takes the lock, posts MODES_EV_NOTICE */
 void phone_ui_gone(uint32_t uid);                         /* NimBLE host task: removed on the iPhone */
 void phone_ui_set_touch_enabled(bool on);                 /* LVGL task (screen timer) */
+void phone_ui_action_result(uint32_t uid, bool ok);       /* NimBLE host task: the iPhone took (or refused) the action */
+void phone_ui_set_link(bool up);                          /* NimBLE host task: the ANCS link is up / gone */
 
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);

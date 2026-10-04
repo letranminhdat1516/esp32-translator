@@ -44,6 +44,9 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us);
 board_screen_t modes_screen(const modes_t *m);
 modes_panel_t modes_panel(const modes_t *m, int64_t now_us);
 bool modes_face_visible(const modes_t *m, int64_t now_us);
+/* An iPhone notice may take the screen (and chime) now: no Mac request is shown (MODES_EV_NOTICE would be
+ * dropped, and the chime would sound over the request) */
+bool modes_notice_allowed(const modes_t *m);
 
 /* What the board shows, for the Mac (claude_proto.h CLAUDE_BOARD_*): 0 other (translator, or locked),
  * 1 Claude mode, 2 picker. Session rows are pushed only while this is 1 or 2. */
