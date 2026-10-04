@@ -48,6 +48,8 @@ static void on_button(lv_event_t *e)
     app_request_recording(app_get_recording() == REC_NONE ? REC_EN : REC_NONE);
 }
 
+static void refresh_status(rec_lang_t lang);
+
 static void set_screen(bool on)
 {
     if (on == s_screen_on) {
@@ -91,6 +93,36 @@ static void on_double_tap(lv_event_t *e)
 void ui_mark_activity(void)
 {
     s_last_activity_us = esp_timer_get_time();
+}
+
+static void toast_done_cb(lv_timer_t *t)
+{
+    refresh_status(app_get_recording());
+}
+
+void ui_toast(const char *utf8, uint32_t ms)
+{
+    s_manual_off = false;
+    ui_mark_activity();
+    lock();
+    lv_label_set_text(s_status, utf8);
+    lv_timer_t *t = lv_timer_create(toast_done_cb, ms, NULL);
+    lv_timer_set_repeat_count(t, 1);
+    unlock();
+}
+
+void ui_prepare_power_off(void)
+{
+    lock();
+    s_manual_off = false;
+    set_screen(true);
+    lv_label_set_text(s_status, "Powering off");
+    lv_label_set_text(s_text, "Press the PWR button\nto turn on");
+    unlock();
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    lock();
+    bsp_display_brightness_set(0);
+    unlock();
 }
 
 void ui_prepare_sleep(void)

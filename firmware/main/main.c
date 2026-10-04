@@ -63,9 +63,15 @@ static void enable_power_management(void)
     }
 }
 
-static void enter_deep_sleep(void)
+void app_switch_mode(void)
 {
-    ESP_LOGI(TAG, "no iPhone for a while, entering deep sleep (touch the screen to wake)");
+    /* Placeholder until the Claude companion mode is designed */
+    ui_toast("Claude mode: coming soon", 2500);
+}
+
+void app_enter_deep_sleep(void)
+{
+    ESP_LOGI(TAG, "entering deep sleep (touch the screen or press BOOT to wake)");
     ui_prepare_sleep();
     /* Touch controller INT and the BOOT button both pull low */
     const uint64_t mask = (1ULL << BSP_LCD_TOUCH_INT) | (1ULL << BOOT_BUTTON_GPIO);
@@ -95,12 +101,16 @@ void app_main(void)
     s_cmd_queue = xQueueCreate(8, sizeof(rec_lang_t));
 
     bsp_display_start();
+    /* The panel shares the SPI bus with LVGL flushes: talk to it only under the display lock */
+    bsp_display_lock((uint32_t)-1);
     bsp_display_backlight_on();
     bsp_display_brightness_set(100);
+    bsp_display_unlock();
     ui_init();
 
     ble_link_init();
     audio_in_start();
+    pmu_start();
 
     /* All mic on/off requests (from the on-screen button or the app) are handled here */
     rec_lang_t lang;
@@ -108,7 +118,7 @@ void app_main(void)
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
             if (!s_connected && s_disconnected_since != 0 &&
                     esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
-                enter_deep_sleep();
+                app_enter_deep_sleep();
             }
             continue;
         }
