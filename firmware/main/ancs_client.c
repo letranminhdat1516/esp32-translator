@@ -336,6 +336,7 @@ static void deliver(ancs_out_t out, uint32_t uid)
             return;
         }
         phone_ui_show(&s_snapshot, out == ANCS_OUT_SHOW);
+        app_on_phone_notice();
         if (out == ANCS_OUT_SHOW && !(s_snapshot.flags & ANCS_FLAG_SILENT)) {
             chime_play(CHIME_PHONE);
         }

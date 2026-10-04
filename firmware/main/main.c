@@ -13,11 +13,12 @@
 
 #include "app.h"
 #include "clock.h"
+#include "sleep_rule.h"
 
 static const char *TAG = "main";
 
-/* Deep sleep after this long without an iPhone; touching the screen wakes the board */
-#define SLEEP_AFTER_DISCONNECT_US (3LL * 60 * 1000 * 1000)
+/* Deep sleep on battery after 3 min without a link, or 30 min with only the iPhone notification link
+ * (sleep_rule.h); touching the screen or BOOT wakes the board */
 #define BOOT_BUTTON_GPIO          GPIO_NUM_0
 
 static volatile int64_t s_disconnected_since;
@@ -26,10 +27,11 @@ static QueueHandle_t s_cmd_queue;
 static volatile rec_lang_t s_recording = REC_NONE;
 static volatile bool s_connected;
 static volatile bool s_claude_link;
-/* iPhone notifications (ANCS) subscribed on an encrypted link: a link, even without the translator app. It keeps
- * the board awake on battery while the iPhone stays near (battery note: docs/superpowers/notes/2026-10-05-ancs-discovery.md);
- * it ends with the link (iPhone away, Bluetooth off), and the usual 3 min grace then applies. */
+/* iPhone notifications (ANCS) subscribed on an encrypted link: a link, even without the translator app. On battery
+ * it keeps the board awake for at most 30 min after the last link change or Claude notice (sleep_rule.h); it ends
+ * with the link (iPhone away, Bluetooth off), and the usual 3 min rule then applies. */
 static volatile bool s_notices_link;
+static volatile int64_t s_last_notice_us;   /* a Claude notice shown (ancs_client.c) */
 
 void app_request_recording(rec_lang_t lang)
 {
@@ -60,7 +62,7 @@ void app_on_connection_changed(bool connected)
 void app_on_claude_link(bool connected)
 {
     s_claude_link = connected;
-    if (!connected && !s_connected && !s_notices_link) {
+    if (!connected && !s_connected) {
         s_disconnected_since = esp_timer_get_time();
     }
     ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
@@ -89,10 +91,16 @@ void app_on_claude_voice_link(bool on)
 void app_on_phone_notices_link(bool up)
 {
     s_notices_link = up;
-    if (!up && !s_connected && !s_claude_link) {
-        s_disconnected_since = esp_timer_get_time();
+    if (!s_connected) {
+        s_disconnected_since = esp_timer_get_time();   /* the 30 min (up) or 3 min (down) count from now */
     }
     ESP_LOGI(TAG, "iPhone notifications link %s", up ? "up" : "down");
+}
+
+/* NimBLE host task: a Claude notice from the iPhone was shown: the 30 min notice-link grace starts again */
+void app_on_phone_notice(void)
+{
+    s_last_notice_us = esp_timer_get_time();
 }
 
 /* msg points to a static buffer overwritten by the next BLE write: consume it synchronously */
@@ -205,7 +213,7 @@ void app_main(void)
     rec_lang_t lang;
     while (true) {
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (!s_connected && !s_claude_link && !s_notices_link && s_disconnected_since != 0) {
+            if (!s_connected && !s_claude_link && s_disconnected_since != 0) {
                 /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
                  * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;
@@ -217,7 +225,11 @@ void app_main(void)
                     }
                 } else {
                     usb_logged = false;
-                    if (esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
+                    if (sleep_rule_due(s_connected, s_claude_link, s_notices_link, s_disconnected_since,
+                                       s_last_notice_us, esp_timer_get_time())) {
+                        if (s_notices_link) {
+                            ESP_LOGI(TAG, "30 min on battery with only iPhone notifications: sleeping anyway");
+                        }
                         app_enter_deep_sleep();
                     }
                 }

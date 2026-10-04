@@ -28,6 +28,8 @@ void app_on_claude_message(const claude_msg_t *msg);
 void app_on_claude_voice_link(bool on);
 /* iPhone notifications (ANCS) ready / gone: a link for the deep-sleep rule (NimBLE host task) */
 void app_on_phone_notices_link(bool up);
+/* A Claude notice from the iPhone was shown (NimBLE host task): restarts the notice-link sleep grace */
+void app_on_phone_notice(void);
 /* audio_in.c: the board VAD detected the start of speech */
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */

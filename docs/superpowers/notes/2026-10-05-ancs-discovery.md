@@ -61,20 +61,29 @@ this is the one request of that connection, the app's subscribe does not ask aga
 asked once the translator app subscribes). The scan response solicits the ANCS service (name shortened to
 "ESP-Transla" there; the GAP name stays "ESP-Translator"). While only ANCS uses the iPhone link (the app is closed,
 silent for 60 s, or not opened yet) the link runs at a relaxed pace (180–210 ms, latency 4); the translator app
-taking the audio role switches it back to 30–45 ms. Log: `ble: link N: relaxed pace (rc R)` / `fast pace (rc R)`.
+taking the audio role switches it back to 30–45 ms. The relaxed request waits 10 s after the connect (or after the
+link became the waiting audio link), so an app that subscribes right after the connect never streams at 210 ms; the
+Mac link is never relaxed. Log: `ble: link N: relaxed pace (rc R)` / `fast pace (rc R)`, and after every update
+`ble: link N: parameters updated (status S): interval I (x1.25 ms), latency L, timeout T ms` (what iOS chose).
 
 Deep-sleep rule: the ANCS link counts as a link only from `ancs: link N: Claude notifications from the iPhone on`
 (both ANCS subscriptions done on an encrypted link) until that link drops (`ancs: iPhone notifications off`).
-`main: iPhone notifications link up` / `down` in the log. While it is up the board does not deep-sleep on battery.
+`main: iPhone notifications link up` / `down` in the log. On battery it keeps the board awake for at most **30 min**
+after the later of the last link change (translator app left, link up) and the last Claude notice shown; then the
+board deep-sleeps anyway (`main: 30 min on battery with only iPhone notifications: sleeping anyway`). Claude notices
+that arrive while it sleeps are **missed** (the iPhone keeps them; nothing on the board): a tap on the screen or
+BOOT wakes it, and the iPhone reconnects (rows 3–4 decide whether that needs the app). On USB power it never sleeps.
+Rule: `firmware/main/sleep_rule.h` (host-tested).
 
 **Battery effect (estimate, not measured).** Before Task 6 an iPhone with the app closed let the board deep-sleep
-3 min after the app left. Now, as long as a bonded iPhone with Share System Notifications stays in range, the board
-stays awake: screen off, CPU at 80 MHz, BLE modem sleep, but no light sleep (power management keeps it off for the
-mic I2S). Expect roughly the board's idle-awake draw, on the order of 25–40 mA, so a full 550 mAh battery lasts
-very roughly 14–20 h instead of days in deep sleep. The relaxed link pace cuts the radio's share (about 5× fewer
-connection events, latency 4) but the awake CPU dominates. Row 9 measures it. To save the battery when the board
-is not needed (e.g. travelling): hold PWR to power off, or turn off Share System Notifications for the board in
-Settings → Bluetooth → (i); the link then ends and the usual 3 min rule applies.
+3 min after the app left. Now a bonded iPhone with Share System Notifications in range keeps it awake up to 30 min
+longer per quiet spell (each Claude notice restarts the 30 min): screen off, CPU at 80 MHz, BLE modem sleep, but no
+light sleep (power management keeps it off for the mic I2S). That is roughly the board's idle-awake draw, on the
+order of 25–40 mA, i.e. about 12–20 mAh (2–4 % of 550 mAh) per quiet 30 min, and continuous drain (≈14–20 h per
+full charge) only while Claude notices keep coming at least every 30 min. The relaxed link pace cuts the radio's
+share (about 5× fewer connection events) but the awake CPU dominates. Row 9 measures it. To save more (e.g.
+travelling): hold PWR to power off, or turn off Share System Notifications for the board in Settings → Bluetooth →
+(i); the link then ends and the 3 min rule applies.
 
 Verification (flash first; start with the translator app open and the board paired):
 
@@ -84,11 +93,11 @@ Verification (flash first; start with the translator app open and the board pair
 | 2 | Swipe the translator app away; wait 1–2 min | `ble: iPhone audio off` or `ble: iPhone app silent for 60 s — audio off`, then `ble: link N: relaxed pace (rc 0)`; no `disconnected`. A Claude notification still shows on the board |
 | 3 | App still closed: press the board's RST; wait up to 2 min | iPhone reconnects by itself? `ble: connected`, `ble: link N: asking for encryption`, `encryption on`, `iPhone audio subscription restored from the bond: waiting for the app` (no `iPhone audio on`), `ancs: … ANCS at …`, `Claude notifications from the iPhone on`, `relaxed pace`, `main: iPhone notifications link up`. Seconds until reconnect. A Claude notification shows; the translator screen does not claim the iPhone is connected |
 | 4 | App still closed: iPhone Bluetooth off, wait 10 s, on; wait up to 2 min | reconnect yes / no (seconds) |
-| 5 | App still closed, board on battery (USB unplugged), link up: wait 4 min | no `entering deep sleep` |
+| 5 | App still closed, board on battery (USB unplugged), link up: wait 4 min; then leave it 30 min with no Claude notice | no `entering deep sleep` at 4 min; at ~30 min `sleeping anyway` + `entering deep sleep`. Tap to wake: does the iPhone reconnect (seconds)? |
 | 6 | Open the translator app | `translator app active on the restored link` or `iPhone audio on`, then `fast pace`; translation works as before |
 | 7 | If row 3 or 4 failed: Settings → Bluetooth → tap ESP-Translator | does that connect it (and start notifications) without the app? |
 | 8 | iPhone out of range (or Bluetooth off) for 4 min, board on battery | `iPhone notifications off`, `main: iPhone notifications link down`, deep sleep ~3 min later |
-| 9 | Battery drain: on battery, app closed, link up, screen off: note the battery % at the start and after 1 h | % per hour (100 % = 550 mAh) |
+| 9 | Battery drain: on battery, app closed, link up, screen off: note the battery % at the start and after 25 min (before the 30 min sleep) | % per 25 min (100 % = 550 mAh) |
 
 Outcome for the README: rows 2–4 pass → notifications work without the translator app. Row 2 passes, 3–4 fail,
 row 7 works → after a board restart open the translator app once or tap the board in Settings → Bluetooth. Row 2
