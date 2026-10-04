@@ -26,6 +26,9 @@ public enum JSONValue: Codable, Equatable, Sendable {
     }
 
     public var string: String? { if case .string(let s) = self { s } else { nil } }
+    public var array: [JSONValue]? { if case .array(let a) = self { a } else { nil } }
+    public var object: [String: JSONValue]? { if case .object(let o) = self { o } else { nil } }
+    public var bool: Bool? { if case .bool(let b) = self { b } else { nil } }
 }
 
 public struct HookEvent: Sendable {
@@ -37,6 +40,11 @@ public struct HookEvent: Sendable {
     public let notificationType: String?
     public let lastAssistantMessage: String?
     public let transcriptPath: String?
+    /// PermissionRequest: suggested rules that would approve this call (shape: see the hook spike notes)
+    public var permissionSuggestions: JSONValue? = nil
+    /// Added by claude-board-hook from its environment (HookEnvelope): the session's tmux pane and socket
+    public var tmuxPane: String? = nil
+    public var tmuxSocket: String? = nil
 
     private struct Raw: Decodable {
         let hook_event_name: String
@@ -47,6 +55,9 @@ public struct HookEvent: Sendable {
         let notification_type: String?
         let last_assistant_message: String?
         let transcript_path: String?
+        let permission_suggestions: JSONValue?
+        let claude_board_tmux_pane: String?
+        let claude_board_tmux: String?
     }
 
     public static func parse(_ data: Data) throws -> HookEvent {
@@ -54,6 +65,8 @@ public struct HookEvent: Sendable {
         return HookEvent(name: r.hook_event_name, sessionId: r.session_id ?? "", cwd: r.cwd ?? "",
                          toolName: r.tool_name, toolInput: r.tool_input ?? [:],
                          notificationType: r.notification_type,
-                         lastAssistantMessage: r.last_assistant_message, transcriptPath: r.transcript_path)
+                         lastAssistantMessage: r.last_assistant_message, transcriptPath: r.transcript_path,
+                         permissionSuggestions: r.permission_suggestions,
+                         tmuxPane: r.claude_board_tmux_pane, tmuxSocket: r.claude_board_tmux)
     }
 }

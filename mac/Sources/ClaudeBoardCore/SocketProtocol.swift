@@ -7,28 +7,48 @@ public enum BridgeSocket {
     }
 }
 
-/// Daemon → hook, one JSON line
+/// Daemon → hook, one JSON line. Only `decision` "allow" or "deny" ever becomes a decision; the other
+/// fields ride along with it (HookOutput decides which apply).
 public struct BridgeReply: Codable, Equatable, Sendable {
     public let decision: String?
-    public init(decision: String?) { self.decision = decision }
+    /// Text Claude sees (deny reason, or the board's answers in the deny-with-reason fallback)
+    public let message: String?
+    /// Allow only: replaces the tool input (AskUserQuestion answers)
+    public let updatedInput: JSONValue?
+    /// Allow only: the "Always allow" rule
+    public let updatedPermissions: JSONValue?
+
+    public init(decision: String?, message: String? = nil, updatedInput: JSONValue? = nil,
+                updatedPermissions: JSONValue? = nil) {
+        self.decision = decision
+        self.message = message
+        self.updatedInput = updatedInput
+        self.updatedPermissions = updatedPermissions
+    }
 }
 
 public enum HookOutput {
     public static func json(for decision: Decision) -> String {
-        let behavior = decision == .allow ? "allow" : "deny"
-        return #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"\#(behavior)"}}}"#
+        output(for: BridgeReply(decision: decision == .allow ? "allow" : "deny"))!
     }
-}
 
-extension HookOutput {
     /// Maps the daemon reply to the text the hook prints. nil = print nothing (Claude shows its normal prompt).
     /// Only an explicit "allow" or "deny" is ever turned into a decision.
     public static func output(for reply: BridgeReply?) -> String? {
-        switch reply?.decision {
-        case "allow": return json(for: .allow)
-        case "deny": return json(for: .deny)
-        default: return nil
+        guard let reply, let behavior = reply.decision, behavior == "allow" || behavior == "deny" else { return nil }
+        var decision: [String: JSONValue] = ["behavior": .string(behavior)]
+        if let m = reply.message, !m.isEmpty { decision[HookSchema.denyMessageKey] = .string(m) }
+        if behavior == "allow" {
+            if let u = reply.updatedInput { decision["updatedInput"] = u }
+            if let p = reply.updatedPermissions { decision["updatedPermissions"] = p }
         }
+        let out = JSONValue.object(["hookSpecificOutput": .object([
+            "hookEventName": .string("PermissionRequest"),
+            "decision": .object(decision),
+        ])])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return (try? encoder.encode(out)).flatMap { String(data: $0, encoding: .utf8) }
     }
 }
 
