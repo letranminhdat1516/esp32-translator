@@ -72,6 +72,10 @@ cd firmware
 idf.py -p /dev/cu.usbmodem1101 flash monitor
 ```
 
+> **After pulling changes, delete `firmware/sdkconfig` before building.** ESP-IDF generates it once from
+> `sdkconfig.defaults` and never refreshes it, so an old one keeps outdated settings (e.g. one BLE connection,
+> no persistent bonds). The build stops with `Stale sdkconfig: delete firmware/sdkconfig and rebuild` when it detects this.
+
 > Flashing replaces the factory demo. Back it up first if you want to keep it:
 > `esptool -p <port> read-flash 0 0x2000000 backup.bin`. Restore it with `esptool write-flash 0 backup.bin`.
 > `backup/` is git-ignored because a flash dump may contain Wi-Fi credentials.
@@ -87,7 +91,7 @@ Requires Xcode 26 and an iPhone on iOS 26.
 
 ## Claude companion mode
 
-The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board. When Claude finishes a turn, the board plays a done chime and shows "Claude finished" with the last line of the reply.
+The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board. When Claude finishes a turn, the board plays a done chime and a "Claude finished: <project>" toast, and the Claude screen shows the last line of the reply. After you answer (or the request is cancelled, times out or the Mac disconnects), the board returns to the screen you were on.
 
 Toggle the mode on the board with a **PWR double press**.
 
@@ -98,9 +102,11 @@ bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board 
 
 The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds three hooks: `PermissionRequest`, `Stop` and `Notification` (`idle_prompt`).
 
+**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again after you rebuild and reinstall. If you denied it, enable `claude-board` in System Settings > Privacy & Security > Bluetooth.
+
 **First-time pairing.** The board's Claude service requires a bonded, encrypted link. The first time the daemon connects, macOS shows a Bluetooth pairing prompt. Accept it once.
 
-**Re-pairing.** If the board is reflashed or its NVS is erased, the old bond is invalid. Run `defaults delete claude-board boardIdentifier`, remove the board in macOS System Settings > Bluetooth, then restart the daemon and accept the pairing prompt again.
+**Re-pairing.** If the board is reflashed or its NVS is erased, the old bond is invalid. Run `defaults delete dev.cicca.claude-board boardIdentifier`, remove the board in macOS System Settings > Bluetooth, then restart the daemon and accept the pairing prompt again.
 
 **Safety rules**
 - Nothing is ever auto-approved. Only an explicit Allow on the board approves a request.

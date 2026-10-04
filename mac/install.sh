@@ -7,7 +7,20 @@ swift build -c release
 BIN="${BIN:-$HOME/.claude-board/bin}"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 mkdir -p "$BIN" "$(dirname "$SETTINGS")"
-cp .build/release/claude-board .build/release/claude-board-hook "$BIN/"
+# Never overwrite a signed binary in place (same inode → the kernel's code-signature cache can SIGKILL
+# the new code on Apple Silicon): copy to a temp name in the same directory, then rename over the old one.
+install_bin() {
+  local name="$1" tmp="$BIN/.$1.tmp.$$"
+  cp ".build/release/$name" "$tmp"
+  if [ "$name" = claude-board ]; then
+    # Ad-hoc re-sign so the signature binds the embedded Info.plist (Bluetooth usage text, bundle id).
+    codesign --force --sign - --identifier dev.cicca.claude-board "$tmp" 2>/dev/null \
+      || { rm -f "$tmp"; echo "codesign failed for $name" >&2; exit 1; }
+  fi
+  mv -f "$tmp" "$BIN/$name"
+}
+install_bin claude-board
+install_bin claude-board-hook
 
 # Settings first: an invalid settings.json aborts before the daemon starts.
 python3 claude_settings.py install "$SETTINGS" "$BIN/claude-board-hook"
