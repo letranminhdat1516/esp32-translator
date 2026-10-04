@@ -47,6 +47,8 @@ void ui_set_connected(bool connected);
 void ui_set_recording(rec_lang_t lang);
 void ui_show_text(const char *utf8);
 void ui_show_status(const char *utf8);
+/* Voice level ring around the round screen, 0 = hidden, 1..100 = louder. Safe from any task. */
+void ui_set_level(int percent);
 /* Keeps the screen on (or wakes it). Safe from any task except LVGL callbacks. */
 void ui_mark_activity(void);
 /* Shows the sleep message and turns the panel off before deep sleep */

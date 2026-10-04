@@ -105,6 +105,7 @@ private struct Panel: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(line.source).font(.subheadline).foregroundStyle(.secondary)
                                 Text(line.target).font(.body.weight(.medium))
+                                    .foregroundStyle(line.unclear ? .orange : .primary)
                             }
                             .id(line.id)
                         }

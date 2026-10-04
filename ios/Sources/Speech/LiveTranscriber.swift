@@ -6,8 +6,8 @@ import Speech
 enum TranscriptEvent: Sendable {
     /// Volatile result that may still change; each one replaces the previous volatile text
     case partial(String)
-    /// Finalized phrase, will not change
-    case final(String)
+    /// Finalized phrase, will not change. `confidence` is the mean word confidence (0…1) when the engine reports it.
+    case final(String, confidence: Double?)
 }
 
 /// Continuous, fully on-device speech recognition with SpeechAnalyzer (iOS 26).
@@ -35,7 +35,7 @@ final class LiveTranscriber: @unchecked Sendable {
         case .speech:
             module = SpeechTranscriber(locale: locale, transcriptionOptions: [],
                                        reportingOptions: [.volatileResults, .fastResults],
-                                       attributeOptions: [])
+                                       attributeOptions: [.transcriptionConfidence])
         case .dictation:
             module = DictationTranscriber(locale: locale, contentHints: [],
                                           transcriptionOptions: [.punctuation],
@@ -130,6 +130,9 @@ final class LiveTranscriber: @unchecked Sendable {
 
     private static func event(text: AttributedString, isFinal: Bool) -> TranscriptEvent {
         let s = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-        return isFinal ? .final(s) : .partial(s)
+        guard isFinal else { return .partial(s) }
+        let confidences = text.runs.compactMap(\.transcriptionConfidence)
+        let mean = confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count)
+        return .final(s, confidence: mean)
     }
 }

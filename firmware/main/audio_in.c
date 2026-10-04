@@ -33,6 +33,11 @@ static const char *TAG = "audio";
 #define VAD_MIN_DB          -58.0f /* and above this absolute level */
 #define FLOOR_RISE_DB       0.01f  /* per frame (0.5 dB/s): floor follows slowly rising noise */
 
+/* Level ring: -55 dBFS (faint, far) .. -25 dBFS (close, clear) → 1..100 */
+#define RING_MIN_DB   -55.0f
+#define RING_MAX_DB   -25.0f
+#define RING_EVERY    6          /* update every 120 ms while speaking */
+
 static int16_t s_preroll[VAD_PREROLL_FRAMES][FRAME_SAMPLES];
 static int s_preroll_head;
 static int s_preroll_count;
@@ -117,6 +122,7 @@ static void audio_task(void *arg)
                 ESP_LOGI(TAG, "recording started");
             } else {
                 esp_codec_dev_close(mic);
+                ui_set_level(0);
                 ESP_LOGI(TAG, "recording stopped");
             }
             open = want;
@@ -172,6 +178,11 @@ static void audio_task(void *arg)
                 hangover = VAD_HANGOVER_FRAMES;
             } else if (--hangover <= 0) {
                 speaking = false;
+                ui_set_level(0);
+            }
+            if (speaking && frames % RING_EVERY == 0) {
+                float pct = (db - RING_MIN_DB) * 100.0f / (RING_MAX_DB - RING_MIN_DB);
+                ui_set_level(pct < 1 ? 1 : (int)pct);
             }
         } else {
             memcpy(s_preroll[s_preroll_head], mono, sizeof(mono));

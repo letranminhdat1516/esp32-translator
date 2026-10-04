@@ -4,6 +4,8 @@
  *   middle : live English subtitles for the other person (streamed by the app while you speak)
  *   bottom : board mic on/off button
  */
+#include <stdlib.h>
+
 #include "bsp/esp-bsp.h"
 #include "esp_timer.h"
 #include "lvgl.h"
@@ -18,6 +20,8 @@ LV_FONT_DECLARE(font_vi_36);
 #define COLOR_MUTED 0xc8c8c8
 
 static lv_obj_t *s_status;
+static lv_obj_t *s_ring;
+static int s_level = -1;
 static lv_obj_t *s_text_box;
 static lv_obj_t *s_text;
 static lv_obj_t *s_btn_mic;
@@ -90,6 +94,30 @@ static void on_double_tap(lv_event_t *e)
     set_screen(!s_manual_off);
 }
 
+void ui_set_level(int percent)
+{
+    if (percent < 0) {
+        percent = 0;
+    } else if (percent > 100) {
+        percent = 100;
+    }
+    /* Redrawing the ring touches the whole screen: skip small changes */
+    if (s_level >= 0 && (percent == 0) == (s_level == 0) && abs(percent - s_level) < 8) {
+        return;
+    }
+    s_level = percent;
+    lock();
+    if (percent == 0) {
+        lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_remove_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
+        /* Faint speech: thin and dim; clear speech: thick and bright */
+        lv_obj_set_style_arc_width(s_ring, 3 + percent / 12, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(60 + percent * 195 / 100), LV_PART_INDICATOR);
+    }
+    unlock();
+}
+
 void ui_mark_activity(void)
 {
     s_last_activity_us = esp_timer_get_time();
@@ -152,6 +180,19 @@ void ui_init(void)
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 48);
+
+    /* Level ring: tells the speaker the board hears them (and to come closer when it is faint) */
+    s_ring = lv_arc_create(scr);
+    lv_obj_set_size(s_ring, 462, 462);
+    lv_obj_center(s_ring);
+    lv_arc_set_bg_angles(s_ring, 0, 360);
+    lv_arc_set_angles(s_ring, 0, 360);
+    lv_obj_remove_style(s_ring, NULL, LV_PART_KNOB);
+    lv_obj_remove_flag(s_ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_ring, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_EN), LV_PART_INDICATOR);
+    lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
 
     s_text_box = lv_obj_create(scr);
     lv_obj_set_size(s_text_box, 400, 236);

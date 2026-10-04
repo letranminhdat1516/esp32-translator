@@ -16,6 +16,8 @@ final class ConversationEngine {
         let id = UUID()
         var source: String
         var target: String
+        /// Recognized with low confidence: shown dimmed, not translated or spoken
+        var unclear = false
     }
 
     enum Phase: Equatable {
@@ -46,6 +48,11 @@ final class ConversationEngine {
     private let turnGap: TimeInterval = 2.0
     /// Keep dropping ESP32 mic results this long after you stop (finalization lags slightly)
     private let echoHold: TimeInterval = 1.0
+    /// English phrases below this mean word confidence are not spoken (measured: garbage 0.25–0.30, real ≥ 0.46)
+    private let minConfidence = 0.4
+    /// Don't repeat "không nghe rõ" more often than this
+    private let unclearCooldown: TimeInterval = 4
+    private var lastUnclearCue = Date.distantPast
 
     // MARK: Components
 
@@ -186,9 +193,26 @@ final class ConversationEngine {
         switch event {
         case .partial(let text):
             theirPartial = text
-        case .final(let text):
+        case .final(let text, let confidence):
             theirPartial = ""
-            if text.count > 1 { theirFinals?.yield(text) }
+            guard text.count > 1 else { return }
+            if let confidence, confidence < minConfidence {
+                handleUnclear(text, confidence: confidence)
+            } else {
+                theirFinals?.yield(text)
+            }
+        }
+    }
+
+    /// A phrase the recognizer is unsure about (crowd noise, overlapping voices). Speaking a wrong
+    /// translation is worse than saying nothing, so it is only shown dimmed and a short cue is spoken.
+    private func handleUnclear(_ text: String, confidence: Double) {
+        Diag.log(String(format: "EN unclear (%.2f): \"%@\"", confidence, text))
+        theirLines.append(Line(source: text, target: "Không nghe rõ", unclear: true))
+        let now = Date()
+        if now.timeIntervalSince(lastUnclearCue) > unclearCooldown {
+            lastUnclearCue = now
+            speaker?.speak("Không nghe rõ", quiet: true)
         }
     }
 
@@ -222,7 +246,7 @@ final class ConversationEngine {
         let text: String
         switch event {
         case .partial(let t): text = t
-        case .final(let t): text = t
+        case .final(let t, _): text = t
         }
         guard !text.isEmpty else {
             myPartial = ""
@@ -238,7 +262,7 @@ final class ConversationEngine {
         switch event {
         case .partial(let t):
             myPartial = t
-        case .final(let t):
+        case .final(let t, _):
             myPartial = ""
             myTurnCommitted = myTurnCommitted.isEmpty ? t : myTurnCommitted + " " + t
         }
@@ -311,7 +335,7 @@ final class ConversationEngine {
     private static func describe(_ event: TranscriptEvent) -> String {
         switch event {
         case .partial(let t): "partial(\(t.count)) \"\(t.suffix(40))\""
-        case .final(let t): "FINAL(\(t.count)) \"\(t.suffix(40))\""
+        case .final(let t, let c): "FINAL(\(t.count)) conf=\(c.map { String(format: "%.2f", $0) } ?? "-") \"\(t.suffix(40))\""
         }
     }
 

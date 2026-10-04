@@ -35,8 +35,9 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
         Task { @MainActor in self.queued -= 1 }
     }
 
-    func speak(_ text: String) {
+    func speak(_ text: String, quiet: Bool = false) {
         let utterance = AVSpeechUtterance(string: text)
+        if quiet { utterance.volume = 0.5 }
         utterance.voice = voice
         utterance.rate = rate
         utterance.preUtteranceDelay = 0
