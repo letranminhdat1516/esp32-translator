@@ -80,6 +80,7 @@ private func tag(_ m: BoardMessage) -> String {
     case .permission(let id, _, _, _): "perm\(id)"
     case .cancel(let id): "cancel\(id)"
     case .finished(let id, _, _): "fin\(id)"
+    case .time: "time"
     }
 }
 

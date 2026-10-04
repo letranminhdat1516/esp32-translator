@@ -8,7 +8,13 @@ func log(_ s: String) { FileHandle.standardError.write(Data("[claude-board] \(s)
 let board = BoardLink()
 let requests = RequestQueue(send: { board.send($0) })
 board.onAnswer = { a in Task { await requests.handle(a) } }
-board.onConnectionChange = { up in if !up { Task { await requests.boardDisconnected() } } }
+board.onConnectionChange = { up in
+    if up {
+        board.send(.timeSync())   // the board has no clock of its own: set it on every connect
+    } else {
+        Task { await requests.boardDisconnected() }
+    }
+}
 let processor = HookProcessor(board: board, requests: requests, log: log)
 
 // Socket: ~/.claude-board/sock, owner-only
