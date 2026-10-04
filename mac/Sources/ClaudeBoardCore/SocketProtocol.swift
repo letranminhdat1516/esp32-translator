@@ -20,20 +20,63 @@ public enum HookOutput {
     }
 }
 
+extension HookOutput {
+    /// Maps the daemon reply to the text the hook prints. nil = print nothing (Claude shows its normal prompt).
+    /// Only an explicit "allow" or "deny" is ever turned into a decision.
+    public static func output(for reply: BridgeReply?) -> String? {
+        switch reply?.decision {
+        case "allow": return json(for: .allow)
+        case "deny": return json(for: .deny)
+        default: return nil
+        }
+    }
+}
+
+private func monotonicNow() -> Double {
+    Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+}
+
+/// Waits until `fd` is ready for `events` or the deadline passes. true = ready.
+private func waitReady(_ fd: Int32, _ events: Int16, deadline: Double) -> Bool {
+    while true {
+        let remaining = deadline - monotonicNow()
+        if remaining <= 0 { return false }
+        var p = pollfd(fd: fd, events: events, revents: 0)
+        let ms = Int32(min(remaining * 1000, 60_000).rounded(.up))
+        let r = poll(&p, 1, ms)
+        if r > 0 { return true }
+        if r < 0 && errno != EINTR { return false }
+    }
+}
+
+/// Longest reply line accepted from the daemon.
+let maxReplyBytes = 4096
+
 /// Hook side. Writes the event followed by "\n"; if `waitForReply`, reads one line back.
-/// Any failure (no daemon, timeout, garbage) returns nil so the caller can fall through.
-public func bridgeRoundTrip(event: Data, waitForReply: Bool, timeout: TimeInterval) -> BridgeReply? {
+/// The whole round trip (write + read) shares one absolute deadline of `timeout` seconds.
+/// Any failure (no daemon, timeout, oversized or garbage reply) returns nil so the caller can fall through.
+public func bridgeRoundTrip(
+    event: Data, waitForReply: Bool, timeout: TimeInterval,
+    socketPath: String = BridgeSocket.path
+) -> BridgeReply? {
+    let seconds = timeout.isFinite && timeout > 0 ? timeout : 0.01
+    let deadline = monotonicNow() + seconds
+
     let fd = socket(AF_UNIX, SOCK_STREAM, 0)
     guard fd >= 0 else { return nil }
     defer { close(fd) }
 
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+    let flags = fcntl(fd, F_GETFL)
+    guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else { return nil }
+
     var addr = sockaddr_un()
     addr.sun_family = sa_family_t(AF_UNIX)
-    let path = BridgeSocket.path
-    guard path.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
+    guard socketPath.utf8.count < MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
     withUnsafeMutableBytes(of: &addr.sun_path) { buf in
-        buf.copyBytes(from: path.utf8)
-        buf[path.utf8.count] = 0
+        buf.copyBytes(from: socketPath.utf8)
+        buf[socketPath.utf8.count] = 0
     }
     let connected = withUnsafePointer(to: &addr) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -42,19 +85,35 @@ public func bridgeRoundTrip(event: Data, waitForReply: Bool, timeout: TimeInterv
     }
     guard connected == 0 else { return nil }
 
-    var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
-    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-
     var payload = event
     payload.append(0x0a)
-    let written = payload.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-    guard written == payload.count, waitForReply else { return nil }
+    var offset = 0
+    while offset < payload.count {
+        let n = payload.withUnsafeBytes { write(fd, $0.baseAddress! + offset, $0.count - offset) }
+        if n > 0 { offset += n; continue }
+        if n < 0 && errno == EINTR { continue }
+        if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+            guard waitReady(fd, Int16(POLLOUT), deadline: deadline) else { return nil }
+            continue
+        }
+        return nil
+    }
+    guard waitForReply else { return nil }
 
     var line = Data()
-    var byte: UInt8 = 0
-    while read(fd, &byte, 1) == 1 {
-        if byte == 0x0a { break }
-        line.append(byte)
+    var chunk = [UInt8](repeating: 0, count: 512)
+    while true {
+        guard waitReady(fd, Int16(POLLIN), deadline: deadline) else { return nil }
+        let n = read(fd, &chunk, chunk.count)
+        if n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
+        guard n > 0 else { return nil }  // EOF or error before a full line
+        if let nl = chunk[0..<n].firstIndex(of: 0x0a) {
+            line.append(contentsOf: chunk[0..<nl])
+            break
+        }
+        line.append(contentsOf: chunk[0..<n])
+        if line.count > maxReplyBytes { return nil }
     }
+    guard line.count <= maxReplyBytes else { return nil }
     return try? JSONDecoder().decode(BridgeReply.self, from: line)
 }

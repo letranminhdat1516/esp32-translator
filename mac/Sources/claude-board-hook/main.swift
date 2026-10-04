@@ -9,7 +9,7 @@ guard let event = try? HookEvent.parse(input) else { exit(0) }
 let isPermission = event.name == "PermissionRequest"
 let reply = bridgeRoundTrip(event: input, waitForReply: isPermission, timeout: 92)
 
-if isPermission, let raw = reply?.decision, let decision = raw == "allow" ? Decision.allow : raw == "deny" ? .deny : nil {
-    print(HookOutput.json(for: decision))
+if isPermission, let out = HookOutput.output(for: reply) {
+    print(out)
 }
 exit(0)
