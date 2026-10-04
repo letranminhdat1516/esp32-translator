@@ -40,7 +40,8 @@ public enum TmuxSocket {
 
 public enum PaneCheck {
     /// The pane's root process is in the session's recorded chain, and the chain member just below it (if any)
-    /// is still its child: Claude Code (or cb exec'd into it) is still running in that pane.
+    /// is still its child: Claude Code is still running in that pane (cb exec's claude in place, so the pane process
+    /// is either Claude Code itself or the shell that started it).
     public static func belongs(panePid: Int32, ancestors: [Int32], parentOf: (Int32) -> Int32?) -> Bool {
         sessionProcess(panePid: panePid, ancestors: ancestors, parentOf: parentOf) != nil
     }

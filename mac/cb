@@ -19,16 +19,16 @@ CLAUDE_BIN=$(command -v claude || true)
 if [ -n "${TMUX:-}" ]; then
   [ -n "${TMUX_PANE:-}" ] || { echo "cb: \$TMUX is set but \$TMUX_PANE is not; cannot tell which pane to mark" >&2; exit 1; }
   if "$TMUX_BIN" set-option -p -t "$TMUX_PANE" @claude_board 1; then
-    # Not exec: the pane's process is the user's shell, so the mark must be removed when claude ends.
-    unmark() { "$TMUX_BIN" set-option -p -u -t "$TMUX_PANE" @claude_board 2>/dev/null || true; }
-    trap unmark EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM HUP
+    # claude is exec'd (the chain must stay shell -> claude), so a detached watcher clears the mark once this
+    # pid (which becomes claude) is gone. It has no terminal: all its descriptors are /dev/null.
+    (
+      while kill -0 "$$" 2>/dev/null; do sleep 2; done
+      "$TMUX_BIN" set-option -p -u -t "$TMUX_PANE" @claude_board
+    ) </dev/null >/dev/null 2>&1 &
   else
     echo "cb: could not mark this pane; voice commands disabled for this pane" >&2
   fi
-  "$CLAUDE_BIN" "$@" && rc=0 || rc=$?
-  exit "$rc"
+  exec "$CLAUDE_BIN" "$@"
 fi
 
 # Session name: sanitised directory name (tmux rejects "." and ":") plus a hash of the full path, so

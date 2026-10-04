@@ -366,3 +366,63 @@ func realTmuxAcceptsBackgroundHelpersOfClaude() async throws {
     let screen = await t.lines(pane)
     #expect(screen.contains("got:hello"), "\(screen)")
 }
+
+/// A real nested cb pane (private tmux server): the pane process is a shell, claude is its direct child, the
+/// cb watcher holds no terminal, and TmuxTyper.verify accepts the pane.
+@Suite struct NestedCbPaneTests {
+    private func sh(_ args: [String], env: [String: String]? = nil) -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: args[0])
+        p.arguments = Array(args.dropFirst())
+        if let env { p.environment = env }
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @Test func nestedCbPaneIsAccepted() async throws {
+        let tmux = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let tmux else { return }
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("cbn\(getpid())")
+        let sockDir = "/tmp/cbn\(getpid())"
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(atPath: sockDir, withIntermediateDirectories: true)
+        defer {
+            _ = sh([tmux, "-S", sockDir + "/s", "-f", "/dev/null", "kill-server"])
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(atPath: sockDir)
+        }
+        let claude = root.appendingPathComponent("bin/claude")
+        try "#!/bin/bash\nexec sleep 300\n".write(to: claude, atomically: true, encoding: .utf8)
+        chmod(claude.path, 0o755)
+        let cb = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("cb").path
+        let sock = sockDir + "/s"
+        let pane = sh([tmux, "-S", sock, "-f", "/dev/null", "new-session", "-d", "-P", "-F", "#{pane_id}",
+                       "-e", "PATH=\(root.path)/bin:/usr/bin:/bin", "-e", "CB_TMUX=\(tmux)",
+                       "/bin/sh", "-c", "\(cb); :"])
+        #expect(pane.hasPrefix("%"))
+        var claudePid: Int32 = 0
+        var shellPid: Int32 = 0
+        for _ in 0..<100 {
+            shellPid = Int32(sh([tmux, "-S", sock, "display-message", "-p", "-t", pane, "#{pane_pid}"])) ?? 0
+            claudePid = Int32(sh(["/usr/bin/pgrep", "-P", "\(shellPid)"]).split(separator: "\n").first ?? "") ?? 0
+            if claudePid > 0, sh(["/bin/ps", "-o", "command=", "-p", "\(claudePid)"]).contains("sleep") { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(shellPid > 1 && claudePid > 1)
+        #expect(ProcessTree.parent(of: claudePid) == shellPid)
+        #expect(sh([tmux, "-S", sock, "display-message", "-p", "-t", pane, "#{@claude_board}"]) == "1")
+        #expect(ProcessTree.ttyDescendants(of: claudePid).isEmpty)
+        let typer = TmuxTyper(run: { args in
+            (0, self.sh([tmux] + args))
+        }, parentOf: { ProcessTree.parent(of: $0) }, isForeground: { ProcessTree.isForeground($0) },
+        ttyDescendants: { ProcessTree.ttyDescendants(of: $0) }, socketIsUsers: { _ in true })
+        let problem = await typer.verify(PaneTarget(pane: pane, socket: sock, ancestors: [claudePid, shellPid]))
+        #expect(problem == nil, Comment(rawValue: problem ?? ""))
+    }
+}

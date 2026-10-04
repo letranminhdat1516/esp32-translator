@@ -109,7 +109,11 @@ class CbTests(unittest.TestCase):
         env = dict(self.env, TMUX=sock + ",1,0", TMUX_PANE=pane)
         r = subprocess.run([CB], cwd=self.project("inner2"), env=env, capture_output=True, timeout=20)
         self.assertEqual(r.returncode, 3)
-        self.assertEqual(self.tmux("show-options", "-p", "-v", "-t", pane, "@claude_board"), "")
+        for _ in range(100):                                   # the watcher polls every 2 s
+            if self.tmux("show-options", "-p", "-v", "-t", pane, "@claude_board") == "":
+                return
+            time.sleep(0.1)
+        self.fail("the mark was not cleared after claude exited")
 
     def test_tmux_without_pane_is_an_error(self):
         env = dict(self.env, TMUX="/x,1,0")
