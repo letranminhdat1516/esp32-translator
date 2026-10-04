@@ -103,16 +103,20 @@ private func rawConnection(_ port: UInt16) -> NWConnection {
 }
 
 /// A raw connection that runs the handshake itself, then sends `bytes` unchecked (RelayClient refuses to)
-private func rawAuthenticated(_ port: UInt16, then bytes: Data) -> NWConnection {
+private func rawAuthenticated(_ port: UInt16, beforeAuth: @escaping @Sendable () -> Void = {},
+                              welcomed: @escaping @Sendable (Bool) -> Void = { _ in },
+                              then bytes: Data) -> NWConnection {
     let raw = rawConnection(port)
     let hs = HandshakeBox(ClientHandshake(secret: secret))
     WebSocketIO.receive(on: raw) { r in                  // challenge
         guard case .binary(let d) = r, let f = RelayFrame.decode(d, from: .mac),
               case .send(let auth) = hs.receive(f) else { return }
+        beforeAuth()
         WebSocketIO.send(auth.encode(), on: raw)
         WebSocketIO.receive(on: raw) { r in              // welcome
             guard case .binary(let d) = r, let f = RelayFrame.decode(d, from: .mac),
-                  hs.receive(f) == .authenticated else { return }
+                  hs.receive(f) == .authenticated else { welcomed(false); return }
+            welcomed(true)
             WebSocketIO.send(bytes, on: raw)
         }
     }
@@ -213,4 +217,130 @@ private final class HandshakeBox: @unchecked Sendable {
     #expect(await eventually { secondFrames.all == [.voiceBegin(4)] })
     second.send(.boardLink(true))
     #expect(await eventually { frames.all == [.boardLink(true)] })
+}
+
+// MARK: - Fix round 1: per-remote lockout, pending cap, stop, listener lifecycle
+
+private func gate(maxFailures: Int = 5) -> HandshakeGate {
+    HandshakeGate(maxFailures: maxFailures, failureWindow: 60, lockout: 60, maxPending: 4, maxPendingPerRemote: 2)
+}
+
+@Test func oneDevicesFailuresDoNotLockOutAnother() {
+    var g = gate()
+    let t = Date()
+    var locked: [Bool] = []
+    for i in 0..<5 { locked.append(g.fail("100.64.0.2", now: t + Double(i))) }
+    #expect(locked == [false, false, false, false, true])              // the fifth within 60 s locks B
+    let b = g.admit("100.64.0.2", now: t + 5)
+    let a = g.admit("100.64.0.1", now: t + 5)
+    #expect(b == .locked)
+    #expect(a == nil)                                                  // A is unaffected
+    g.release("100.64.0.1")
+    let bLater = g.admit("100.64.0.2", now: t + 65)
+    #expect(bLater == nil)                                             // B again after the lockout
+}
+
+@Test func failuresOutsideTheWindowDoNotCount() {
+    var g = gate(maxFailures: 2)
+    let t = Date()
+    let first = g.fail("100.64.0.2", now: t)
+    let second = g.fail("100.64.0.2", now: t + 61)                     // the first one has aged out
+    let admitted = g.admit("100.64.0.2", now: t + 62)
+    #expect(!first && !second && admitted == nil)
+}
+
+@Test func pendingConnectionsAreCappedInTotalAndPerRemote() {
+    var g = gate()
+    let t = Date()
+    let r1 = [g.admit("a", now: t), g.admit("a", now: t), g.admit("a", now: t)]
+    #expect(r1 == [nil, nil, .busy])                                   // 2 per remote
+    let r2 = [g.admit("b", now: t), g.admit("b", now: t), g.admit("c", now: t)]
+    #expect(r2 == [nil, nil, .busy])                                   // 4 in total
+    g.release("a")
+    let r3 = g.admit("c", now: t)
+    #expect(r3 == nil)
+    #expect(g.pendingCount == 4)
+}
+
+/// A raw connection's first message: the challenge (true), or the end without one (false)
+private func firstMessage(_ raw: NWConnection, into box: Box<Bool>) {
+    WebSocketIO.receive(on: raw) { r in
+        if case .binary = r { box.add(true) } else { box.add(false) }
+    }
+}
+
+@Test func silentConnectionsBeyondTheCapAreRefused() async throws {
+    let (server, port, _, _) = try await startServer()
+    defer { server.stop() }
+    let first = Box<Bool>()
+    let silent = [rawConnection(port), rawConnection(port)]           // the per-remote cap (2) from 127.0.0.1
+    defer { silent.forEach { $0.cancel() } }
+    silent.forEach { firstMessage($0, into: first) }
+    #expect(await eventually { first.all == [true, true] })
+    let extra = rawConnection(port)
+    defer { extra.cancel() }
+    let extraFirst = Box<Bool>()
+    firstMessage(extra, into: extraFirst)
+    #expect(await eventually { extraFirst.all == [false] })           // refused: no challenge
+    silent[0].cancel()                                                 // a slot frees up once the server sees it
+    #expect(await eventually {
+        let (c, states, _) = client(port)
+        defer { c.disconnect() }
+        let end = Date().addingTimeInterval(1)
+        while Date() < end, !states.all.contains(where: { $0 != .connecting && $0 != .idle }) { usleep(10_000) }
+        return states.all.contains(.authenticated)
+    })
+}
+
+@Test func stopMidHandshakeNeverAuthenticates() async throws {
+    let (server, port, relays, frames) = try await startServer()
+    let welcomed = Box<Bool>()
+    // stop() lands between the challenge and the (valid) auth
+    let raw = rawAuthenticated(port, beforeAuth: { server.stop() }, welcomed: { welcomed.add($0) },
+                               then: RelayFrame.boardLink(true).encode())
+    defer { raw.cancel() }
+    #expect(await eventually { welcomed.all == [false] })             // closed instead of welcomed
+    #expect(relays.all.isEmpty && frames.all.isEmpty)
+}
+
+@Test func aSecondServerOnTheSamePortFails() async throws {
+    let (server, port, _, _) = try await startServer()
+    defer { server.stop() }
+    var p = loopbackPolicy()
+    p.port = port
+    let second = RelayServer(secret: secret, policy: p)
+    defer { second.stop() }
+    let bound: UInt16? = await withCheckedContinuation { c in
+        do { try second.start { c.resume(returning: $0) } } catch { c.resume(returning: nil) }
+    }
+    #expect(bound == nil)
+}
+
+@Test func startingAgainReplacesTheListener() async throws {
+    let (server, oldPort, _, _) = try await startServer()
+    defer { server.stop() }
+    let newPort: UInt16? = await withCheckedContinuation { c in
+        do { try server.start { c.resume(returning: $0) } } catch { c.resume(returning: nil) }
+    }
+    let port = try #require(newPort)
+    let (old, oldStates, _) = client(oldPort)
+    defer { old.disconnect() }
+    #expect(await eventually { oldStates.all.contains { if case .failed = $0 { true } else { false } } })
+    let (c, states, _) = client(port)
+    defer { c.disconnect() }
+    #expect(await eventually { states.all.contains(.authenticated) })
+}
+
+@Test func droppedConnectionsAreNotHandshakeFailures() async throws {
+    let (server, port, _, _) = try await startServer(loopbackPolicy(maxFailures: 1))   // one definite failure locks
+    defer { server.stop() }
+    let first = Box<Bool>()
+    let raw = rawConnection(port)
+    firstMessage(raw, into: first)
+    #expect(await eventually { first.all == [true] })
+    raw.cancel()                                                       // connect, get the challenge, hang up
+    try await Task.sleep(for: .milliseconds(200))
+    let (c, states, _) = client(port)
+    defer { c.disconnect() }
+    #expect(await eventually { states.all.contains(.authenticated) })
 }
