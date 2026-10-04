@@ -13,13 +13,31 @@ static void copy_text(char dst[CLAUDE_TEXT_MAX + 1], const char *src)
 void voice_vad_init(voice_vad_t *v)
 {
     memset(v, 0, sizeof(*v));
-    v->floor_db = VOICE_FLOOR_MIN_DB;
+    for (int i = 0; i < VOICE_FLOOR_BLOCKS; i++) {
+        v->block_min[i] = VOICE_FLOOR_SEED_DB;
+    }
+    v->floor_db = VOICE_FLOOR_SEED_DB;
+    v->seed_peak = -200.0f;
+    v->prev_db = -200.0f;
 }
 
+static float clamp_floor(float db)
+{
+    return db < VOICE_FLOOR_MIN_DB ? VOICE_FLOOR_MIN_DB : db;
+}
+
+/*
+ * Noise floor: the quietest frame of the last 1.5 s (a sliding minimum over 5-frame blocks). Steady noise,
+ * however loud, is its own floor; speech has gaps, so the floor stays at the room level under it.
+ * Start: the window is seeded with VOICE_FLOOR_SEED_DB, so speech that begins at the tap is heard at once. Until
+ * the seeds have rolled out (1.5 s) that is provisional: it is kept only if the first 1.5 s held a level
+ * VOICE_MARGIN_DB above their own quietest frame (speech swings; a steady noise does not, and then ends as
+ * nothing said).
+ * After speech is heard the floor may not rise more than VOICE_ONSET_RISE_DB above its level at that moment, so
+ * a held vowel or speech with shallow dips is not taken for noise; the capture ends once the level falls back.
+ */
 voice_vad_result_t voice_vad_step(voice_vad_t *v, float db)
 {
-    /* Noise floor: the quietest frame of the last 1.5 s (a sliding minimum over 5-frame blocks). Steady noise,
-     * however loud, is its own floor; speech has gaps, so the floor stays at the room level under it. */
     int in_block = v->frames % VOICE_FLOOR_BLOCK;
     if (in_block == 0 && v->frames > 0) {
         v->block = (v->block + 1) % VOICE_FLOOR_BLOCKS;
@@ -28,23 +46,41 @@ voice_vad_result_t voice_vad_step(voice_vad_t *v, float db)
         v->block_min[v->block] = db;
     }
     v->frames++;
-    int blocks = (v->frames + VOICE_FLOOR_BLOCK - 1) / VOICE_FLOOR_BLOCK;
-    if (blocks > VOICE_FLOOR_BLOCKS) {
-        blocks = VOICE_FLOOR_BLOCKS;
-    }
-    float floor_db = v->block_min[v->block];
-    for (int i = 1; i < blocks; i++) {
-        float m = v->block_min[(v->block + VOICE_FLOOR_BLOCKS - i) % VOICE_FLOOR_BLOCKS];
-        if (m < floor_db) {
-            floor_db = m;
+    float window = v->block_min[0];
+    for (int i = 1; i < VOICE_FLOOR_BLOCKS; i++) {
+        if (v->block_min[i] < window) {
+            window = v->block_min[i];
         }
     }
-    v->floor_db = floor_db < VOICE_FLOOR_MIN_DB ? VOICE_FLOOR_MIN_DB : floor_db;
+    window = clamp_floor(window);
 
+    if (v->frames <= VOICE_FLOOR_WINDOW_FRAMES) {
+        float held = db < v->prev_db ? db : v->prev_db;   /* level held for two frames */
+        if (held > v->seed_peak) {
+            v->seed_peak = held;
+        }
+    }
+    v->prev_db = db;
+    if (v->frames == VOICE_FLOOR_WINDOW_FRAMES && v->heard) {
+        /* The seeds are gone: the window is the first 1.5 s itself. Keep the provisional speech only if it
+         * stood out of them. */
+        if (v->seed_peak > window + VOICE_MARGIN_DB && v->seed_peak > VOICE_MIN_DB) {
+            v->onset_db = window;
+        } else {
+            v->heard = false;
+            v->above = 0;
+        }
+    }
+
+    v->floor_db = window;
+    if (v->heard && v->frames >= VOICE_FLOOR_WINDOW_FRAMES && v->floor_db > v->onset_db + VOICE_ONSET_RISE_DB) {
+        v->floor_db = v->onset_db + VOICE_ONSET_RISE_DB;
+    }
     bool voiced = db > v->floor_db + VOICE_MARGIN_DB && db > VOICE_MIN_DB;
     v->above = voiced ? v->above + 1 : 0;
-    if (v->above >= VOICE_START_FRAMES) {
+    if (v->above >= VOICE_START_FRAMES && !v->heard) {
         v->heard = true;
+        v->onset_db = v->floor_db;   /* after the first 1.5 s; earlier it is set when the seeds are gone */
     }
     v->quiet = voiced ? 0 : v->quiet + 1;
     if (v->frames >= VOICE_MAX_FRAMES) {

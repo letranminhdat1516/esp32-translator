@@ -418,6 +418,8 @@ static void announce_gatt_changes(void)
             ble_svc_gatt_changed(start, 0xffff);
             nvs_set_u32(nvs, "gatt_hash", hash);
             nvs_commit(nvs);
+        } else {
+            ESP_LOGW(TAG, "GATT table changed but the Claude service was not found: no Service Changed sent");
         }
     }
     nvs_close(nvs);

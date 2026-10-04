@@ -22,7 +22,10 @@
 #define VOICE_FLOOR_BLOCK    5       /* the floor window is kept as minima of 5-frame blocks */
 #define VOICE_FLOOR_BLOCKS   15      /* the current block and the 14 before it: the last 71..75 frames */
 #define VOICE_FLOOR_WINDOW_FRAMES (VOICE_FLOOR_BLOCK * VOICE_FLOOR_BLOCKS)   /* 1.5 s */
-#define VOICE_FLOOR_MIN_DB   -75.0f  /* floor never below this: one near-silent frame must not pin it */
+#define VOICE_FLOOR_MIN_DB   -68.0f  /* floor never below this (VOICE_MIN_DB - margin: the absolute gate decides
+                                        below it anyway): one near-silent frame must not pin it */
+#define VOICE_FLOOR_SEED_DB  -60.0f  /* the window starts full of this: speech at the tap is heard at once */
+#define VOICE_ONSET_RISE_DB  3.0f    /* once speech is heard the floor stays within this of its level then */
 
 typedef enum { VOICE_VAD_GO = 0, VOICE_VAD_SILENCE, VOICE_VAD_NOTHING, VOICE_VAD_MAX } voice_vad_result_t;
 
@@ -31,9 +34,12 @@ typedef struct {
     float block_min[VOICE_FLOOR_BLOCKS];  /* ring of block minima; block_min[block] is the current one */
     int block;
     int frames;
-    int above;    /* consecutive voiced frames */
-    int quiet;    /* consecutive unvoiced frames */
-    bool heard;   /* speech seen in this capture */
+    int above;          /* consecutive voiced frames */
+    int quiet;          /* consecutive unvoiced frames */
+    bool heard;         /* speech seen in this capture (provisional during the first 1.5 s) */
+    float onset_db;     /* the floor when speech was heard: the floor stays below onset_db + VOICE_ONSET_RISE_DB */
+    float seed_peak;    /* first 1.5 s: loudest level held for VOICE_START_FRAMES frames */
+    float prev_db;
 } voice_vad_t;
 
 void voice_vad_init(voice_vad_t *v);
