@@ -119,8 +119,9 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 | Path | Contents |
 |---|---|
 | `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `phone_ui.c` + `ancs_client.c` + `ancs.c` (iPhone notifications, ANCS), `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
+| `relay/` | Swift package `ClaudeRelay`, shared by the daemon and the iPhone app: relay frames, mutual HMAC handshake, pairing code (QR URL), Tailscale address check, WebSocket server and client |
 | `tools/` | `gen_logo.py`: generates the lock-face logo (`firmware/main/logo_img.c`) from `assets/cicca-dark.png` |
-| `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
+| `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing, Tailscale relay listener) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
@@ -132,7 +133,7 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 | `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect) |
 | `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
 | `…0010` Claude service | (service) | Claude companion mode, see below. Requires a bonded, encrypted link |
-| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options), 8 voice (id = the board's voice id; `<p\|f\|x\|k>\ntext`: `p` live transcript, `f` final transcript (exactly what Send types, at most 300 bytes, empty = nothing heard), `x` error, `k` done; the Mac only sends them for the current capture). Session flags (kind 4) also have bit2 = voice (the session runs in a `cb` tmux pane the Mac can type into). See `firmware/main/claude_proto.h` |
+| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options), 8 voice (id = the board's voice id; `<p\|f\|x\|k>\ntext`: `p` live transcript, `f` final transcript (exactly what Send types, at most 300 bytes, empty = nothing heard), `x` error, `k` done; the Mac only sends them for the current capture). 9 link hello (id 0; text `mac` or `relay`, sent once right after the answer subscription is confirmed: the board uses it to tell the Mac from the iPhone relay; ignored everywhere else, and an older firmware just logs an unknown kind). Session flags (kind 4) also have bit2 = voice (the session runs in a `cb` tmux pane the Mac can type into). See `firmware/main/claude_proto.h` |
 | `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session; `[voice u32][0x30][purpose u8][target u32 LE]` voice capture start (voice id never 0, chosen by the board; purpose low nibble 0 = command, target = session handle; 1 = Other answer, target = request id, question index in the high nibble; 2 = deny with reason, target = request id); `[voice u32][0x31]` audio complete, `[voice u32][0x32]` cancel, `[voice u32][0x33]` send the final transcript. Bit 7 of a question mask = the spoken Other answer |
 | `…0013` Claude voice | notify, encrypted | Board → Mac, only during a voice capture: the board mic as `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono, like `…0002`. The board offers voice only once the Mac has subscribed and the ATT MTU is at least 168, so a full frame fits in one notification |
 
@@ -283,6 +284,60 @@ Voice commands were verified on hardware on 2026-10-05 with Claude Code 2.1.289:
 
 Daemon log: `~/.claude-board/daemon.log`.
 
+## Away from the Mac (iPhone relay)
+
+When the Mac is out of Bluetooth range, the Claude screen reads "Claude · via iPhone" and everything keeps working through the translator app on the iPhone: permission requests, questions, sessions and voice. When the Mac is back in range, the board and the daemon switch back to the direct link by themselves.
+
+**Setup (once).**
+1. Install Tailscale on the Mac and on the iPhone and sign both in to the same tailnet.
+2. Run `bash mac/install.sh`, or `~/.claude-board/bin/claude-board --pair` if Tailscale came later. It creates the relay secret and prints a QR code in the terminal (exit 2 and a hint if the Mac has no Tailscale address).
+3. In the iPhone app: **Claude relay** → **Pair with Mac** → scan the code (allow the camera and local network prompts).
+4. If the macOS firewall is on, allow incoming connections for `claude-board`.
+
+The relay screen then reads "Relay ready" while the app is connected. **Forget this Mac** there removes the pairing from the iPhone.
+
+**How it works.**
+- The board prefers the Mac: its Claude link goes to the Mac when the Mac is connected, otherwise to the iPhone relay. Each side says which one it is with the link hello (kind 9, `mac` / `relay`). Which role is active decides the "via iPhone" label.
+- The daemon likewise prefers the direct BLE path and uses the relay only when direct is down. While the relay is active it keeps using it until direct reconnects (the board prefers direct too, so a board that reports its mode over the relay has lost the Mac link first).
+- The iPhone never answers anything. It passes the board's bytes to the Mac and the Mac's bytes to the board unchanged (chunked like the Mac does), so every id check and every Allow / Deny / Send tap rules apply exactly as on the direct link. Nothing is ever auto-approved.
+- Voice: the board's voice audio goes to the iPhone, which transcribes it on device (`DictationTranscriber` vi-VN, same options as the Mac's) and sends only text to the Mac. The transcript is shown on the board, and typed only after Send, as with the direct link. If the Vietnamese model is missing, the board shows why ("Open Live Translator once to install the Vietnamese speech model"). This uses the board's audio, not the iPhone or AirPods microphone, so it does not start a translator conversation (see "Conversation on / off").
+- A request that is on the board at the moment the path changes falls through to the terminal, as on any disconnect. Sessions are resynced and the clock is resent on the new path.
+- Battery: the app keeps one WebSocket open only while it is paired and the board's Claude service is connected. A WebSocket ping every 60 s; failed connections retry with backoff (5 s doubling to 5 min) and once at each network change. No other polling.
+
+**Relay protocol.** One WebSocket (binary messages only, at most 2048 bytes) at `ws://<Mac Tailscale address>:47821/relay`, carried inside Tailscale's WireGuard tunnel. The first byte is the frame type, integers are little-endian, text is UTF-8. A malformed frame, an unknown type or a frame from the wrong sender closes the connection. The board's own bytes travel unchanged inside `toBoard` / `fromBoard`.
+
+| Type | Name | From | Body | Limits |
+|---|---|---|---|---|
+| `0x01` | toBoard | Mac | one board message `[kind][id u32][text]` | 5…405 bytes |
+| `0x02` | fromBoard | iPhone | one answer-characteristic notification, as the board sent it | 5…10 bytes |
+| `0x03` | boardLink | iPhone | `[up u8]`: the iPhone holds the board's relay role | 1 byte |
+| `0x04` | voiceStatus | iPhone | `[0]` ready, or `[1][reason]` | reason 1…200 bytes |
+| `0x10` | voiceBegin | Mac | `[session u32]`: transcribe the board's current capture | session ≠ 0 |
+| `0x11` | voiceFinish | Mac | `[session u32]`: end it and send the final transcript | session ≠ 0 |
+| `0x12` | voiceCancel | Mac | `[session u32]`: drop it | session ≠ 0 |
+| `0x13` | transcript | iPhone | `[session u32][final u8][text]` | text ≤ 1000 bytes |
+| `0x14` | voiceFailed | iPhone | `[session u32][reason]` | reason 1…200 bytes |
+| `0x20` | challenge | Mac | `[version u8 = 1][nonceS 32]` | 33 bytes |
+| `0x21` | auth | iPhone | `[nonceC 32][proof 32]` | 64 bytes |
+| `0x22` | welcome | Mac | `[proof 32]` | 32 bytes |
+
+Handshake (mutual HMAC-SHA256; the secret never crosses the network): the Mac sends `challenge` with a fresh nonceS; the iPhone answers `auth` with a fresh nonceC and `HMAC(secret, "cbrelay1 client" ‖ nonceS ‖ nonceC)`; the Mac checks it in constant time and replies `welcome` with `HMAC(secret, "cbrelay1 server" ‖ nonceS ‖ nonceC)`, which the iPhone checks, so each side proves it holds the secret. Fresh nonces stop replays, the two labels stop reflection. The handshake must finish within 10 s. One relay is connected at a time (a newer authenticated one replaces the old). The pairing code is `claudeboard://relay?v=1&h=<Tailscale address>&p=47821&s=<secret, base64url>`.
+
+**Security.**
+- The daemon listens only on the Mac's Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48, on a `utun` interface), never on Wi-Fi / LAN, loopback or the internet, and only accepts peers with a Tailscale address. It re-checks the address when the network changes; with no Tailscale address the relay is off.
+- Brute force: 5 failed handshakes from one remote address within a minute lock that address out for a minute. At most 4 unauthenticated connections are held at once (2 per remote address).
+- The secret is 32 random bytes in `~/.claude-board/relay.secret`, mode 0600 in a 0700 directory, owned by you. The daemon refuses a file that is a symlink, someone else's or readable by others (the relay stays off; it is never silently replaced). On the iPhone it is in the Keychain (this device only, after first unlock). It is never printed as text and appears only inside the QR code, so do not share a screenshot of it.
+- Rotate with `claude-board --pair --new-secret`, then restart the daemon (`launchctl kickstart -k gui/$(id -u)/dev.cicca.claude-board`) and scan the new code. `mac/uninstall.sh` deletes the secret.
+- The channel's confidentiality and integrity after the handshake rely on Tailscale (WireGuard); the relay itself does not add encryption on top of the WebSocket.
+
+**Limits.**
+- The iPhone app must be running (it already runs in the background for the translator). With a free developer account the app must be reinstalled every 7 days.
+- Voice through the relay uses the iPhone's Vietnamese speech model.
+- A switch between the direct link and the relay makes a pending request fall back to the terminal.
+- Update the firmware, the daemon and the app together: the firmware needs the Mac's `mac` hello, which only the new daemon sends.
+
+Daemon log: `iPhone relay listening on 100.x… port 47821 (Tailscale only)`, `relay: iPhone authenticated`, `relay: board link up on the iPhone`, `BOARD PATH SWITCHED: direct -> relay`. Board monitor: `Claude link up: via the iPhone relay`.
+
 ## iPhone notifications (Claude app)
 
 The board shows notifications from the Claude iPhone app (App Identifier `com.anthropic.claude`, confirmed on the
@@ -350,6 +405,7 @@ still pending).
 - iPhone notifications: one at a time (a newer one replaces the one shown); text only in the fonts' character set (other characters are dropped); notifications already on the iPhone when the board connects are not shown; notices that arrive while the board is in deep sleep are missed.
 - Using the AirPods microphone switches the AirPods to the call (HFP) profile. Speech output stays clear, but it is not music quality: during a conversation a video in another app also plays in call quality (ducked) until the conversation ends.
 - The ESP32-S3 has BLE only (no Bluetooth Classic), so it cannot stream audio to the AirPods directly. The iPhone handles that leg.
+- The iPhone relay needs Tailscale on both devices and the iPhone app running.
 - Only one language pair (EN ↔ VI) is wired up. Other pairs are a matter of changing the locales in `ConversationEngine`.
 
 ## License
