@@ -18,6 +18,8 @@ final class ConversationEngine {
         var target: String
         /// Recognized with low confidence: shown dimmed, not translated or spoken
         var unclear = false
+        /// "You say" turn number (0 for "They say" lines)
+        var turn = 0
     }
 
     enum Phase: Equatable {
@@ -45,7 +47,7 @@ final class ConversationEngine {
     // MARK: Tuning
 
     /// A pause longer than this starts a new subtitle screen
-    private let turnGap: TimeInterval = 2.0
+    private var myTurns = TurnAssembler(turnGap: 2.0)
     /// Keep dropping ESP32 mic results this long after you stop (finalization lags slightly)
     private let echoHold: TimeInterval = 1.0
     /// English phrases below this mean word confidence are not spoken (measured: garbage 0.25–0.30, real ≥ 0.46)
@@ -62,11 +64,10 @@ final class ConversationEngine {
     private var vietnameseIn: LiveTranscriber?
     private var espSource: ESPAudioSource?
     private var mic: MicSource?
-    private var subtitleTranslator: LatestWinsTranslator?
+    private var subtitleTranslator: SubtitleTranslator?
     private var theirFinals: AsyncStream<String>.Continuation?
 
     private var myLastSpeech = Date.distantPast
-    private var myTurnCommitted = ""
 
     init() {
         link.onStateChange = { [weak self] state in
@@ -126,10 +127,9 @@ final class ConversationEngine {
             vietnameseIn = vietnamese
 
             startTheirPipeline(Translator(from: Self.english, to: Self.vietnamese))
-            subtitleTranslator = LatestWinsTranslator(
-                translator: Translator(from: Self.vietnamese, to: Self.english)
-            ) { [weak self] english in
-                self?.showSubtitle(english)
+            let viToEn = Translator(from: Self.vietnamese, to: Self.english)
+            subtitleTranslator = SubtitleTranslator(translate: { try await viToEn.translate($0) }) { [weak self] turn, english in
+                self?.showSubtitle(english, turn: turn)
             }
 
             let speaker = Speaker()
@@ -252,42 +252,34 @@ final class ConversationEngine {
     // MARK: You → Them
 
     private func handleMine(_ event: TranscriptEvent) {
-        Diag.log("VI \(Self.describe(event))")
+        Diag.log("VI \(Self.describe(event, full: true))")
         let now = Date()
-        // The panel shows the recognized text with loanwords fixed (VietnameseFixup)
-        let text: String
-        switch event {
-        case .partial(let t): text = VietnameseFixup.fixLoanwords(t)
-        case .final(let t, _): text = VietnameseFixup.fixLoanwords(t)
-        }
-        guard !text.isEmpty else {
-            myPartial = ""
-            return
-        }
+        guard let change = myTurns.handle(event, at: now), let turn = myTurns.turn else { return }
+        myPartial = turn.partial
+        if !turn.partial.isEmpty || change.final != nil { myLastSpeech = now }
 
-        if now.timeIntervalSince(myLastSpeech) > turnGap {
-            myTurnCommitted = ""
-            myLines.append(Line(source: "", target: ""))
+        if myLines.last?.turn != turn.id {
+            myLines.append(Line(source: "", target: "", turn: turn.id))
         }
-        myLastSpeech = now
-
-        switch event {
-        case .partial:
-            myPartial = text
-        case .final:
-            myPartial = ""
-            myTurnCommitted = myTurnCommitted.isEmpty ? text : myTurnCommitted + " " + text
+        if let index = myLines.lastIndex(where: { $0.turn == turn.id }) {
+            myLines[index].source = turn.text
         }
-
-        let turnText = [myTurnCommitted, myPartial].filter { !$0.isEmpty }.joined(separator: " ")
-        if !myLines.isEmpty { myLines[myLines.count - 1].source = turnText }
-        // The translator gets it with vocatives dropped and service phrases spelled out
-        subtitleTranslator?.submit(VietnameseFixup.forTranslation(turnText))
+        // The panel shows the recognized text (loanwords fixed); the translator gets it with vocatives
+        // dropped and service phrases spelled out (VietnameseFixup)
+        if let final = change.final {
+            Diag.log("VI turn \(turn.id): \"\(turn.text)\"")
+            subtitleTranslator?.addFinal(VietnameseFixup.forTranslation(final), turn: turn.id)
+        }
+        subtitleTranslator?.setPartial(VietnameseFixup.forTranslation(turn.partial), turn: turn.id)
     }
 
-    private func showSubtitle(_ english: String) {
+    private func showSubtitle(_ english: String, turn: Int) {
+        guard let index = myLines.lastIndex(where: { $0.turn == turn }) else { return }
+        Diag.log("EN turn \(turn): \"\(english)\"")
+        myLines[index].target = english
+        // The board shows the current turn only; late results for an earlier turn just fix its line
+        guard index == myLines.count - 1 else { return }
         mySubtitle = english
-        if !myLines.isEmpty { myLines[myLines.count - 1].target = english }
         link.send(text: english, kind: .subtitle)
     }
 
@@ -345,10 +337,10 @@ final class ConversationEngine {
         }
     }
 
-    private static func describe(_ event: TranscriptEvent) -> String {
+    private static func describe(_ event: TranscriptEvent, full: Bool = false) -> String {
         switch event {
-        case .partial(let t): "partial(\(t.count)) \"\(t.suffix(40))\""
-        case .final(let t, let c): "FINAL(\(t.count)) conf=\(c.map { String(format: "%.2f", $0) } ?? "-") \"\(t.suffix(40))\""
+        case .partial(let t): "partial(\(t.count)) \"\(full ? Substring(t) : t.suffix(40))\""
+        case .final(let t, let c): "FINAL(\(t.count)) conf=\(c.map { String(format: "%.2f", $0) } ?? "-") \"\(full ? Substring(t) : t.suffix(40))\""
         }
     }
 

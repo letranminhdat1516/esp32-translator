@@ -21,31 +21,3 @@ actor Translator {
         await LanguageAvailability().status(from: source, to: target) == .installed
     }
 }
-
-/// Runs only the latest translation request and drops stale ones.
-/// Used for live subtitles: the text changes constantly and only the current sentence matters.
-@MainActor
-final class LatestWinsTranslator {
-    private let translator: Translator
-    private let onResult: (String) -> Void
-    private var running = false
-    private var pending: String?
-
-    init(translator: Translator, onResult: @escaping (String) -> Void) {
-        self.translator = translator
-        self.onResult = onResult
-    }
-
-    func submit(_ text: String) {
-        pending = text
-        guard !running else { return }
-        running = true
-        Task {
-            while let next = pending {
-                pending = nil
-                if let out = try? await translator.translate(next) { onResult(out) }
-            }
-            running = false
-        }
-    }
-}
