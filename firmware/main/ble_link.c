@@ -20,6 +20,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 
 #include "app.h"
+#include "claude_proto.h"
 
 static const char *TAG = "ble";
 
@@ -31,6 +32,12 @@ static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 
+/* Claude companion service (the Mac). Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr.
+ * Answers (notify): [id u32 LE][decision u8: 1 allow, 2 deny] */
+static const ble_uuid128_t s_claude_svc_uuid = SVC_UUID(0x10);
+static const ble_uuid128_t s_claude_req_uuid = SVC_UUID(0x11);
+static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
+
 #define TEXT_FLAG_FIRST 0x01
 #define TEXT_FLAG_LAST  0x02
 #define TEXT_KIND_MAIN   0
@@ -41,8 +48,14 @@ static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
 static uint16_t s_ctrl_handle;
 
-static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-static volatile bool s_audio_subscribed;
+static uint16_t s_claude_req_handle;
+static uint16_t s_claude_ans_handle;
+static claude_rx_t s_claude_rx;
+
+/* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
+static uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+static uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
+static int s_connections;
 static uint8_t s_own_addr_type;
 
 static char s_text_buf[TEXT_MAX + 1];
@@ -102,6 +115,15 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         }
         handle_text_write(buf, len);
         return 0;
+    } else if (attr_handle == s_claude_req_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if (ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof(buf), &len) != 0) {
+            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        }
+        static claude_msg_t msg;
+        if (claude_rx_feed(&s_claude_rx, buf, len, &msg)) {
+            app_on_claude_message(&msg);
+        }
+        return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
 }
@@ -132,6 +154,25 @@ static const struct ble_gatt_svc_def s_services[] = {
             { 0 },
         },
     },
+    {
+        .type = BLE_GATT_SVC_TYPE_PRIMARY,
+        .uuid = &s_claude_svc_uuid.u,
+        .characteristics = (struct ble_gatt_chr_def[]) {
+            {
+                .uuid = &s_claude_req_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .val_handle = &s_claude_req_handle,
+            },
+            {
+                .uuid = &s_claude_ans_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &s_claude_ans_handle,
+            },
+            { 0 },
+        },
+    },
     { 0 },
 };
 
@@ -143,10 +184,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             start_advertising();
             break;
         }
-        s_conn_handle = event->connect.conn_handle;
-        ESP_LOGI(TAG, "connected");
+        s_connections++;
+        ESP_LOGI(TAG, "connected (%d link%s)", s_connections, s_connections > 1 ? "s" : "");
         /* 2M PHY + a connection interval that fits real-time audio without waking the radio too often */
-        ble_gap_set_prefered_le_phy(s_conn_handle, BLE_GAP_LE_PHY_2M_MASK,
+        ble_gap_set_prefered_le_phy(event->connect.conn_handle, BLE_GAP_LE_PHY_2M_MASK,
                                     BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_CODED_ANY);
         struct ble_gap_upd_params params = {
             .itvl_min = 24,   /* 30 ms: two 20 ms audio packets per event, half the radio wake-ups of 15 ms */
@@ -154,22 +195,47 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             .latency = 0,
             .supervision_timeout = 400,
         };
-        ble_gap_update_params(s_conn_handle, &params);
-        app_on_connection_changed(true);
+        ble_gap_update_params(event->connect.conn_handle, &params);
+        if (s_connections < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
+            start_advertising();   /* keep the second slot open (iPhone + Mac) */
+        }
         break;
 
     case BLE_GAP_EVENT_DISCONNECT:
+        if (s_connections > 0) {
+            s_connections--;
+        }
         ESP_LOGI(TAG, "disconnected, reason 0x%x", event->disconnect.reason);
-        s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
-        s_audio_subscribed = false;
-        app_on_connection_changed(false);
+        if (event->disconnect.conn.conn_handle == s_phone_conn) {
+            s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+            app_on_connection_changed(false);
+        }
+        if (event->disconnect.conn.conn_handle == s_mac_conn) {
+            s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
+            s_claude_rx.len = 0;
+            app_on_claude_link(false);
+        }
         start_advertising();
         break;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == s_audio_handle) {
-            s_audio_subscribed = event->subscribe.cur_notify;
-            ESP_LOGI(TAG, "audio notify %s", s_audio_subscribed ? "on" : "off");
+            bool on = event->subscribe.cur_notify;
+            if (on || event->subscribe.conn_handle == s_phone_conn) {
+                s_phone_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
+                ESP_LOGI(TAG, "iPhone audio %s", on ? "on" : "off");
+                app_on_connection_changed(on);
+            }
+        } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
+            bool on = event->subscribe.cur_notify;
+            if (on || event->subscribe.conn_handle == s_mac_conn) {
+                s_mac_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
+                if (!on) {
+                    s_claude_rx.len = 0;
+                }
+                ESP_LOGI(TAG, "Mac Claude link %s", on ? "on" : "off");
+                app_on_claude_link(on);
+            }
         }
         break;
 
@@ -251,15 +317,15 @@ void ble_link_init(void)
 
 bool ble_link_audio_ready(void)
 {
-    return s_conn_handle != BLE_HS_CONN_HANDLE_NONE && s_audio_subscribed;
+    return s_phone_conn != BLE_HS_CONN_HANDLE_NONE;
 }
 
 uint16_t ble_link_payload_max(void)
 {
-    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) {
+    if (s_phone_conn == BLE_HS_CONN_HANDLE_NONE) {
         return 20;
     }
-    return ble_att_mtu(s_conn_handle) - 3;
+    return ble_att_mtu(s_phone_conn) - 3;
 }
 
 bool ble_link_send_audio(const uint8_t *data, uint16_t len)
@@ -273,7 +339,7 @@ bool ble_link_send_audio(const uint8_t *data, uint16_t len)
             vTaskDelay(pdMS_TO_TICKS(2));
             continue;
         }
-        int rc = ble_gatts_notify_custom(s_conn_handle, s_audio_handle, om);
+        int rc = ble_gatts_notify_custom(s_phone_conn, s_audio_handle, om);
         if (rc == 0) {
             return true;
         }
@@ -288,7 +354,23 @@ bool ble_link_send_audio(const uint8_t *data, uint16_t len)
 void ble_link_notify_control(uint8_t state)
 {
     (void)state; /* the value is read back through chr_access */
-    if (s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE) {
         ble_gatts_chr_updated(s_ctrl_handle);
     }
+}
+
+bool ble_link_claude_connected(void)
+{
+    return s_mac_conn != BLE_HS_CONN_HANDLE_NONE;
+}
+
+bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
+{
+    if (s_mac_conn == BLE_HS_CONN_HANDLE_NONE) {
+        return false;
+    }
+    uint8_t payload[5];
+    claude_encode_answer(id, decision, payload);
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(payload, sizeof(payload));
+    return om && ble_gatts_notify_custom(s_mac_conn, s_claude_ans_handle, om) == 0;
 }

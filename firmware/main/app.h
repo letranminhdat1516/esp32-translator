@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "claude_proto.h"
+
 /* Board microphone streaming state */
 typedef enum {
     REC_NONE = 0,
@@ -13,7 +15,11 @@ typedef enum {
 /* main.c: every recording state change goes through this queue */
 void app_request_recording(rec_lang_t lang);
 rec_lang_t app_get_recording(void);
+/* iPhone translation link (audio characteristic subscribed) up/down */
 void app_on_connection_changed(bool connected);
+/* Mac Claude link (answer characteristic subscribed) up/down, and an incoming Claude message */
+void app_on_claude_link(bool connected);
+void app_on_claude_message(const claude_msg_t *msg);
 /* audio_in.c: the board VAD detected the start of speech */
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */
@@ -37,6 +43,8 @@ bool ble_link_audio_ready(void);
 uint16_t ble_link_payload_max(void);
 bool ble_link_send_audio(const uint8_t *data, uint16_t len);
 void ble_link_notify_control(uint8_t state);
+bool ble_link_claude_connected(void);
+bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* 1 allow, 2 deny */
 
 /* audio_in.c */
 void audio_in_start(void);

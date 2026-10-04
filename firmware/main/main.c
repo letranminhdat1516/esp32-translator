@@ -21,6 +21,7 @@ static volatile int64_t s_disconnected_since;
 static QueueHandle_t s_cmd_queue;
 static volatile rec_lang_t s_recording = REC_NONE;
 static volatile bool s_connected;
+static volatile bool s_claude_link;
 
 void app_request_recording(rec_lang_t lang)
 {
@@ -46,6 +47,21 @@ void app_on_connection_changed(bool connected)
         app_request_recording(REC_NONE);
     }
     ui_set_connected(connected);
+}
+
+void app_on_claude_link(bool connected)
+{
+    s_claude_link = connected;
+    if (!connected && !s_connected) {
+        s_disconnected_since = esp_timer_get_time();
+    }
+    ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
+    ui_mark_activity();
+}
+
+void app_on_claude_message(const claude_msg_t *msg)
+{
+    ESP_LOGI(TAG, "claude msg kind=%d id=%lu text=\"%s\"", msg->kind, (unsigned long)msg->id, msg->text);
 }
 
 static void enable_power_management(void)
@@ -116,7 +132,7 @@ void app_main(void)
     rec_lang_t lang;
     while (true) {
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (!s_connected && s_disconnected_since != 0 &&
+            if (!s_connected && !s_claude_link && s_disconnected_since != 0 &&
                     esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
                 app_enter_deep_sleep();
             }
