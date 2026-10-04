@@ -13,6 +13,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "app.h"
@@ -31,6 +32,15 @@ static const char *const EV_NAMES[] = {
     "session picked",
 };
 _Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_PICK + 1, "EV_NAMES out of sync");
+_Static_assert(CLAUDE_BOARD_OTHER == 0 && CLAUDE_BOARD_CLAUDE == 1 && CLAUDE_BOARD_PICKER == 2,
+               "modes_report() returns CLAUDE_BOARD_* values");
+
+/* Last board mode the Mac was told (modes_report_due); MODES_REPORT_UNSENT = tell it again. Session rows flow
+ * only while it is Claude or picker. Read and written under s_mux together with s_state; s_report_lock keeps a
+ * whole report (decide, then notify) in order between the shell task and the NimBLE host task (link-up). */
+static int s_reported = MODES_REPORT_UNSENT;
+static SemaphoreHandle_t s_report_lock;
+static StaticSemaphore_t s_report_lock_buf;
 
 void shell_post(modes_event_t ev)
 {
@@ -44,6 +54,41 @@ void shell_snapshot(modes_t *out)
     taskENTER_CRITICAL(&s_mux);
     *out = s_state;
     taskEXIT_CRITICAL(&s_mux);
+}
+
+/* Shell task or NimBLE host task, never with the display lock held and never from LVGL callbacks or timers
+ * (it may wait for the other task's report). again: the Mac link just came up, tell it whatever the mode. */
+static void report_mode(bool again)
+{
+    if (s_report_lock == NULL) {
+        return;   /* before shell_start */
+    }
+    xSemaphoreTake(s_report_lock, portMAX_DELAY);
+    taskENTER_CRITICAL(&s_mux);
+    if (again) {
+        s_reported = MODES_REPORT_UNSENT;
+    }
+    bool due = modes_report_due(&s_reported, &s_state);
+    int mode = s_reported;
+    taskEXIT_CRITICAL(&s_mux);
+    if (due) {
+        uint8_t buf[CLAUDE_INPUT_MAX];
+        size_t n = claude_encode_mode((uint8_t)mode, buf);
+        if (ble_link_send_claude_input(buf, n)) {
+            ESP_LOGI(TAG, "told the Mac: board mode %d", mode);
+        } else {
+            /* No Mac subscribed, or the notify failed: tell it on the next change or when the link comes up */
+            taskENTER_CRITICAL(&s_mux);
+            s_reported = MODES_REPORT_UNSENT;
+            taskEXIT_CRITICAL(&s_mux);
+        }
+    }
+    xSemaphoreGive(s_report_lock);
+}
+
+void shell_resend_mode(void)
+{
+    report_mode(true);
 }
 
 static void IRAM_ATTR boot_isr(void *arg)
@@ -102,12 +147,14 @@ static void shell_task(void *arg)
         if (wake && !shutting_down) {
             ui_force_screen_on();
         }
+        report_mode(false);   /* after every input, not only waking ones: locking changes the report too */
     }
 }
 
 void shell_start(void)
 {
     modes_init(&s_state);
+    s_report_lock = xSemaphoreCreateMutexStatic(&s_report_lock_buf);
     /* Fail safe without a queue or task: shell_post drops inputs, the board stays unlocked on the translator
      * and the panel keeps its usual idle policy (MODES_PANEL_AUTO) */
     QueueHandle_t q = xQueueCreate(16, sizeof(modes_event_t));
@@ -115,7 +162,7 @@ void shell_start(void)
         ESP_LOGE(TAG, "no memory for the input queue: buttons and lock disabled");
         return;
     }
-    if (xTaskCreate(shell_task, "shell", 3072, q, 5, NULL) != pdPASS) {
+    if (xTaskCreate(shell_task, "shell", 4096, q, 5, NULL) != pdPASS) {
         ESP_LOGE(TAG, "no memory for the shell task: buttons and lock disabled");
         vQueueDelete(q);
         return;

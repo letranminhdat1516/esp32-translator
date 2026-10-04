@@ -114,6 +114,19 @@ static void send_needs_every_page(void)
     assert(memcmp(out, want, 8) == 0);
 }
 
+static void an_overwritten_page_loses_its_selection(void)
+{
+    question_reset(&s);
+    claude_question_t p0 = page(0, 2, false, 3), p1 = page(1, 2, true, 3);
+    question_add(&s, 7, &p0);
+    question_add(&s, 7, &p1);
+    question_tap(&s, 2);
+    assert(question_page_answered(&s, 0));
+    claude_question_t again = page(0, 2, false, 2);   /* the Mac resends page 0 with other options */
+    assert(!question_add(&s, 7, &again));
+    assert(!question_page_answered(&s, 0) && s.q[0].nopt == 2);
+}
+
 int main(void)
 {
     completes_when_every_page_arrived();
@@ -123,6 +136,7 @@ int main(void)
     single_select_replaces_and_retap_keeps();
     multi_select_needs_one();
     send_needs_every_page();
+    an_overwritten_page_loses_its_selection();
     puts("question: all tests passed");
     return 0;
 }

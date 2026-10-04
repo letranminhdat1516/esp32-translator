@@ -44,7 +44,9 @@ uint16_t ble_link_payload_max(void);
 bool ble_link_send_audio(const uint8_t *data, uint16_t len);
 void ble_link_notify_control(uint8_t state);
 bool ble_link_claude_connected(void);
-bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* 1 allow, 2 deny */
+bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* CLAUDE_DECISION_* */
+/* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX; false if no Mac */
+bool ble_link_send_claude_input(const uint8_t *data, size_t len);
 
 /* audio_in.c */
 void audio_in_start(void);
@@ -80,24 +82,36 @@ bool pmu_usb_powered(void);
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);
 lv_obj_t *claude_ui_screen(void);
-void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
+/* Copies the text; takes the display lock. True when a request is now ready to show (take over the screen). */
+bool claude_ui_on_message(const claude_msg_t *m);
 void claude_ui_set_link(bool connected);
-void claude_ui_set_touch_enabled(bool on);          /* LVGL task: Allow/Deny ignore taps while the panel is dark */
-bool claude_ui_pending(void);                       /* a permission request awaits an answer */
+void claude_ui_set_touch_enabled(bool on);          /* LVGL task: answers ignore taps while the panel is dark */
+bool claude_ui_pending(void);                       /* a request awaits an answer */
+void claude_ui_refresh_session_locked(void);        /* display lock held: status badge + focused session view */
+/* Every answer control (claude_ui.c, question_ui.c), LVGL task */
+void claude_ui_note_press(void);                    /* call from LV_EVENT_PRESSED */
+bool claude_ui_tap_allowed(void);                   /* request pending, panel lit, press armed (dark: wakes) */
+void claude_ui_rearm(void);                         /* new controls under the finger (page change) */
 
 /* lock_ui.c: lock screen (pixel cat, clock, battery) */
 void lock_ui_init(void);
 lv_obj_t *lock_ui_screen(void);
 void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the cat */
 
-/* picker_ui.c: Claude session picker (Phase 1: placeholder) */
+/* picker_ui.c: Claude session picker; owns the session table */
 void picker_ui_init(void);
 lv_obj_t *picker_ui_screen(void);
+void picker_ui_on_message(const claude_msg_t *m);   /* kinds 4-6; takes the display lock */
+void picker_ui_set_link(bool connected);            /* takes the display lock; a lost link clears the rows */
+void picker_ui_set_touch_enabled(bool on);          /* LVGL task */
+const claude_session_t *picker_ui_focused_locked(void);
+int picker_ui_badge_locked(void);
 
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);
 void shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks */
 void shell_snapshot(modes_t *out);                  /* current state, for the panel policy */
+void shell_resend_mode(void);                       /* tell the Mac the board mode again (Mac link up) */
 
 /* chime.c: non-blocking notification chime on the speaker */
 typedef enum { CHIME_REQUEST, CHIME_DONE } chime_t;

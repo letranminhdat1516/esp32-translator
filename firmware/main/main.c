@@ -61,6 +61,10 @@ void app_on_claude_link(bool connected)
     }
     ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
     claude_ui_set_link(connected);
+    picker_ui_set_link(connected);
+    if (connected) {
+        shell_resend_mode();   /* the Mac pushes session rows only while the board shows Claude or the picker */
+    }
     ui_mark_activity();
 }
 
@@ -70,27 +74,32 @@ void app_on_claude_message(const claude_msg_t *msg)
     ESP_LOGI(TAG, "claude msg kind=%d id=%lu", msg->kind, (unsigned long)msg->id);
     switch (msg->kind) {
     case CLAUDE_PERMISSION:
-        claude_ui_on_message(msg);
-        shell_post(MODES_EV_URGENT);   /* takes over the screen (even when locked) and wakes the panel */
-        chime_play(CHIME_REQUEST);
-        break;
-    case CLAUDE_FINISHED:
-        claude_ui_on_message(msg);
-        {
-            /* "Claude finished: <project>" (project = first line). Host task only, so a static buffer is fine. */
-            static char toast[CLAUDE_TEXT_MAX + 32];
-            const char *nl = strchr(msg->text, '\n');
-            int project_len = nl ? (int)(nl - msg->text) : (int)strlen(msg->text);
-            snprintf(toast, sizeof(toast), "Claude finished: %.*s", project_len, msg->text);
-            ui_toast(toast, 3000);
+    case CLAUDE_QUESTION:
+        if (claude_ui_on_message(msg)) {
+            shell_post(MODES_EV_URGENT);   /* takes over the screen (even when locked) and wakes the panel */
+            chime_play(CHIME_REQUEST);
         }
+        break;
+    case CLAUDE_FINISHED: {
+        /* The focused session finished a turn: "<project> · <last line>". Host task only: static buffer. */
+        static char toast[CLAUDE_TEXT_MAX + 8];
+        const char *nl = strchr(msg->text, '\n');
+        int project_len = nl ? (int)(nl - msg->text) : (int)strlen(msg->text);
+        snprintf(toast, sizeof(toast), "%.*s · %s", project_len, msg->text, nl ? nl + 1 : "");
+        ui_toast(toast, 3000);
         chime_play(CHIME_DONE);
         break;
+    }
     case CLAUDE_CANCEL:
         claude_ui_on_message(msg);
         break;
     case CLAUDE_TIME:
         clock_sync_text(msg->text);
+        break;
+    case CLAUDE_SESSION:
+    case CLAUDE_SESSION_REMOVE:
+    case CLAUDE_SESSIONS_CLEAR:
+        picker_ui_on_message(msg);
         break;
     default:
         ESP_LOGW(TAG, "ignoring unknown claude kind %d", msg->kind);

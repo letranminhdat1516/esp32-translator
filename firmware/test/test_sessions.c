@@ -74,6 +74,70 @@ static void a_full_table_drops_the_least_relevant_row(void)
     assert(!has_1 && has_99);
 }
 
+static bool has(const sessions_t *s, uint32_t handle)
+{
+    for (int i = 0; i < s->n; i++) {
+        if (s->rows[i].handle == handle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void handle_zero_is_ignored(void)
+{
+    sessions_t s;
+    sessions_clear(&s);
+    claude_session_t a = row(1, 'i', 1, 0, "a"), zero = row(0, 'w', 5, CLAUDE_SESSION_FOCUSED, "zero");
+    sessions_upsert(&s, &a);
+    sessions_upsert(&s, &zero);
+    assert(s.n == 1 && s.rows[0].handle == 1 && sessions_focused(&s) == NULL);
+    sessions_remove(&s, 0);
+    assert(s.n == 1);
+}
+
+static void a_full_table_drops_an_incoming_row_that_would_sort_last(void)
+{
+    sessions_t s;
+    sessions_clear(&s);
+    for (uint32_t h = 1; h <= SESSIONS_MAX; h++) {
+        claude_session_t r = row(h, 'i', 10 + h, 0, "p");
+        sessions_upsert(&s, &r);
+    }
+    claude_session_t stale = row(99, 'e', 1, 0, "old");   /* older than every row held */
+    sessions_upsert(&s, &stale);
+    assert(s.n == SESSIONS_MAX && !has(&s, 99) && has(&s, 1));
+}
+
+static void a_full_table_never_evicts_the_focused_row(void)
+{
+    sessions_t s;
+    sessions_clear(&s);
+    claude_session_t f = row(1, 'e', 1, CLAUDE_SESSION_FOCUSED, "focused");   /* sorts last */
+    sessions_upsert(&s, &f);
+    for (uint32_t h = 2; h <= SESSIONS_MAX; h++) {
+        claude_session_t r = row(h, 'i', 10 + h, 0, "p");
+        sessions_upsert(&s, &r);
+    }
+    claude_session_t extra = row(99, 'w', 100, 0, "new");
+    sessions_upsert(&s, &extra);
+    assert(s.n == SESSIONS_MAX && has(&s, 1) && has(&s, 99) && !has(&s, 2));
+    assert(sessions_focused(&s)->handle == 1);
+}
+
+static void a_full_table_keeps_an_incoming_focused_row(void)
+{
+    sessions_t s;
+    sessions_clear(&s);
+    for (uint32_t h = 1; h <= SESSIONS_MAX; h++) {
+        claude_session_t r = row(h, 'i', 10 + h, 0, "p");
+        sessions_upsert(&s, &r);
+    }
+    claude_session_t f = row(99, 'e', 1, CLAUDE_SESSION_FOCUSED, "focused");   /* sorts last, but focused */
+    sessions_upsert(&s, &f);
+    assert(s.n == SESSIONS_MAX && has(&s, 99) && !has(&s, 1) && sessions_focused(&s)->handle == 99);
+}
+
 static void remove_and_clear(void)
 {
     sessions_t s;
@@ -145,6 +209,10 @@ int main(void)
     order_is_needs_you_then_recent_then_handle();
     shows_at_most_six();
     a_full_table_drops_the_least_relevant_row();
+    handle_zero_is_ignored();
+    a_full_table_drops_an_incoming_row_that_would_sort_last();
+    a_full_table_never_evicts_the_focused_row();
+    a_full_table_keeps_an_incoming_focused_row();
     remove_and_clear();
     focus_is_exclusive_and_clears_unseen();
     badge_counts_unseen_rows_that_are_not_focused();

@@ -51,3 +51,17 @@ bool clock_now_hhmm(char out[6])
     clock_format_hhmm((int64_t)tv.tv_sec, s_offset_min, out);
     return true;
 }
+
+bool clock_now_unix(int64_t *out)
+{
+    if (!s_known) {
+        return false;
+    }
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    if (!clock_plausible((int64_t)tv.tv_sec)) {
+        return false;
+    }
+    *out = (int64_t)tv.tv_sec;
+    return true;
+}

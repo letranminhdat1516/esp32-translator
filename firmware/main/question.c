@@ -24,6 +24,7 @@ bool question_add(question_set_t *s, uint32_t id, const claude_question_t *page)
     }
     bool was_complete = question_complete(s);
     s->q[page->index] = *page;
+    s->mask[page->index] = 0;   /* a resent page may carry other options: its old selection no longer applies */
     s->have |= (uint8_t)(1u << page->index);
     return !was_complete && question_complete(s);
 }

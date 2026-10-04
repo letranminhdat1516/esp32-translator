@@ -27,3 +27,5 @@ bool clock_sync_text(const char *text);
 /* Device: "HH:MM", or "--:--" until a time has been received (or if the system time is implausible).
  * Returns whether the time is known. */
 bool clock_now_hhmm(char out[6]);
+/* Device: the current Unix time; false until a time has been received (or if it is implausible). */
+bool clock_now_unix(int64_t *out);

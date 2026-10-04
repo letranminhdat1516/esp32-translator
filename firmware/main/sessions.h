@@ -21,9 +21,10 @@ typedef struct {
 
 void sessions_clear(sessions_t *s);
 /* Adds or replaces the row with this handle; a row carrying FOCUSED takes the flag from the others.
- * A full table drops its least relevant row. */
+ * A full table drops its least relevant row (the incoming one if it sorts after every other row), never the
+ * focused one. Rows with handle 0 are ignored. */
 void sessions_upsert(sessions_t *s, const claude_session_t *row);
-void sessions_remove(sessions_t *s, uint32_t handle);
+void sessions_remove(sessions_t *s, uint32_t handle);   /* handle 0: nothing */
 /* true when a comes before b in the picker */
 bool sessions_before(const claude_session_t *a, const claude_session_t *b);
 /* Fills out with at most max rows in picker order; returns the count */

@@ -21,8 +21,8 @@ typedef struct {
 } question_set_t;
 
 void question_reset(question_set_t *s);
-/* Stores one page; a page with another id (or page count) starts a new set. True when the set has just
- * become complete. */
+/* Stores one page; a page with another id (or page count) starts a new set, a resent page loses its
+ * selection. True when the set has just become complete. */
 bool question_add(question_set_t *s, uint32_t id, const claude_question_t *page);
 bool question_complete(const question_set_t *s);
 void question_tap(question_set_t *s, uint8_t option);

@@ -30,18 +30,35 @@ bool sessions_before(const claude_session_t *a, const claude_session_t *b)
     return a->handle > b->handle;
 }
 
+/* Full table: the row that sorts last among those that may go (never the focused one); -1 if none */
+static int least_relevant(const sessions_t *s)
+{
+    int last = -1;
+    for (int j = 0; j < s->n; j++) {
+        if (s->rows[j].flags & CLAUDE_SESSION_FOCUSED) {
+            continue;
+        }
+        if (last < 0 || sessions_before(&s->rows[last], &s->rows[j])) {
+            last = j;
+        }
+    }
+    return last;
+}
+
 void sessions_upsert(sessions_t *s, const claude_session_t *row)
 {
+    if (row->handle == 0) {
+        return;   /* handles are never 0 */
+    }
     int i = find(s, row->handle);
     if (i < 0) {
         if (s->n < SESSIONS_MAX) {
             i = s->n++;
         } else {
-            i = 0;   /* full: replace the row that sorts last */
-            for (int j = 1; j < s->n; j++) {
-                if (sessions_before(&s->rows[i], &s->rows[j])) {
-                    i = j;
-                }
+            i = least_relevant(s);
+            /* A new row that sorts after every row that could go is the one dropped (unless it is focused) */
+            if (i < 0 || (!(row->flags & CLAUDE_SESSION_FOCUSED) && sessions_before(&s->rows[i], row))) {
+                return;
             }
         }
     }
@@ -57,6 +74,9 @@ void sessions_upsert(sessions_t *s, const claude_session_t *row)
 
 void sessions_remove(sessions_t *s, uint32_t handle)
 {
+    if (handle == 0) {
+        return;
+    }
     int i = find(s, handle);
     if (i >= 0) {
         s->rows[i] = s->rows[--s->n];

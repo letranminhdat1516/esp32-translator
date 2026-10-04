@@ -45,7 +45,7 @@ static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 
 /* Claude companion service (the Mac). Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr.
- * Answers (notify): [id u32 LE][decision u8: 1 allow, 2 deny] */
+ * Answers (notify): answers, board mode and focus, at most CLAUDE_INPUT_MAX bytes (see claude_proto.h) */
 static const ble_uuid128_t s_claude_svc_uuid = SVC_UUID(0x10);
 static const ble_uuid128_t s_claude_req_uuid = SVC_UUID(0x11);
 static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
@@ -425,13 +425,19 @@ bool ble_link_claude_connected(void)
     return s_mac_conn != BLE_HS_CONN_HANDLE_NONE;
 }
 
-bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
+bool ble_link_send_claude_input(const uint8_t *data, size_t len)
 {
-    if (s_mac_conn == BLE_HS_CONN_HANDLE_NONE) {
+    uint16_t conn = s_mac_conn;
+    if (conn == BLE_HS_CONN_HANDLE_NONE || len == 0 || len > CLAUDE_INPUT_MAX) {
         return false;
     }
+    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
+    return om && ble_gatts_notify_custom(conn, s_claude_ans_handle, om) == 0;
+}
+
+bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
+{
     uint8_t payload[5];
     claude_encode_answer(id, decision, payload);
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(payload, sizeof(payload));
-    return om && ble_gatts_notify_custom(s_mac_conn, s_claude_ans_handle, om) == 0;
+    return ble_link_send_claude_input(payload, sizeof(payload));
 }
