@@ -29,27 +29,33 @@ Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 
 
 | Input | Unlocked | Locked |
 |---|---|---|
-| PWR ×1 | Lock | Unlock (back to the mode in use before locking) |
-| PWR ×2 | Claude mode | Unlock → Claude mode |
-| PWR ×3 (4 or more presses count as ×3) | Session picker | Unlock → Session picker |
+| PWR ×1 | Lock | Lock face for 5 s (never unlocks) |
+| PWR ×2 | Translator mode | Unlock → Translator mode |
+| PWR ×3 (4 or more presses count as ×3) | Claude mode | Unlock → Claude mode |
 | PWR hold 3 s | Power off (battery) / screen off (USB; on the Claude or picker screen a tap wakes it) | same |
 | BOOT ×1 | Translator mode | Unlock → Translator mode |
-| Tap ×1 | normal UI | Lock face for 5 s: logo, clock, battery (`NN%`, `NN% · charging`, or `USB power` without a battery) |
-| Tap ×2 | Translator: screen off / on | Unlock |
+| Tap ×1 | normal UI | Lock face for 5 s: logo, clock, battery (`NN%`, `NN% · charging`, or `USB power` without a battery), a bouncing arrow and "Vuốt lên để mở khoá" |
+| Swipe up (on the visible lock face) | — | Unlock (back to the mode in use before locking): the face slides up and fades out |
+| Tap ×2 | Translator: screen off / on | Unlock (back to the mode in use before locking) |
+| Tap the top of the Claude screen (status / project / title) | Session picker | — |
+
+A swipe only counts when it starts on the lock face while it is shown (at least 60 px up, more up than
+sideways); on the dark panel it at most does what a tap does (shows the face), so a pocket cannot unlock the board.
 
 A notification from the Claude iPhone app takes the screen over any mode, even when locked (see iPhone notifications). PWR ×1 then only closes it (the lock stays as it was); BOOT and PWR ×2/×3 close it and switch as usual. A Claude request from the Mac always wins over it.
 
 Presses count as one series while each follows the previous release within about 0.5 s.
-Locked means the panel is off and touch only answers the two lock gestures (except while a request is
-shown: then neither tap does anything); translation and Claude notifications keep running. A Claude
+Locked means the panel is off and touch only answers the lock gestures (except while a request is
+shown: then no tap or swipe does anything; PWR ×1 puts the request away and shows the lock face); translation and Claude notifications keep running. A Claude
 permission request lights the panel and shows Allow/Deny (taps in the first 700 ms are ignored); once it is
-answered or cancelled the board goes dark and stays locked. A request you leave on screen (PWR ×1 to lock,
-BOOT, PWR ×3) stays pending: unlocking with PWR ×1 or a double tap brings it back on top, and PWR ×2 shows
+answered or cancelled the board goes dark and stays locked. A request you leave on screen (PWR ×1, BOOT,
+PWR ×2) stays pending: unlocking with a swipe up or a double tap brings it back on top, and PWR ×3 shows
 it on the Claude screen, each time with Allow/Deny ignoring taps for the first 700 ms again.
 The clock is set by the iPhone app and by the Mac daemon each time they connect, and again when the phone's
 or the Mac's clock or time zone changes (`--:--` until then). Update the firmware and the iOS app together:
 older firmware shows the app's time message (`"<seconds> <offset>"`) as a subtitle.
-The session picker (PWR ×3) lists up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
+The session picker (tap the top of the Claude screen: status, project or title; not while a request, its
+result or the voice overlay is shown) lists up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
 recent: a red dot needs you, yellow is working, green is idle, grey has ended (ended sessions leave after
 10 min). "· new" marks a session that finished while another one was focused. Tap a row to focus it.
 The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` (needs Pillow;
