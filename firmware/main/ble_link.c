@@ -6,7 +6,8 @@
  *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
  *                              kind 0 = subtitle (large), kind 1 = status line,
  *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect)
- *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on
+ *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
+ *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
  * On the iPhone's link the board is also a GATT client of Apple's Notification Center Service (ancs_client.c):
  * ANCS needs an encrypted, bonded link, so the board asks for encryption (one-time pairing prompt on the iPhone).
@@ -14,6 +15,7 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "host/ble_hs.h"
@@ -31,6 +33,7 @@ void ble_store_config_init(void);
 #include "app.h"
 #include "claude_proto.h"
 #include "clock.h"
+#include "phone_idle.h"
 
 static const char *TAG = "ble";
 
@@ -99,6 +102,13 @@ static volatile uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
  * becomes the iPhone audio link on the app's first write to the text or control characteristic (ESPLink writes
  * the time and the mic state on every connect). */
 static uint16_t s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
+/* Last app write (text, control or keepalive) on s_phone_conn, and the host-task timer that checks it: an iPhone
+ * that keeps the bonded link for ANCS after the app was swiped away must not keep the board streaming audio */
+static int64_t s_phone_last_write_us;
+static struct ble_npl_callout s_phone_idle_timer;
+/* The link the board already asked for encryption: at most one pairing prompt per connection, also when the user
+ * declined it and the app's role comes and goes */
+static uint16_t s_enc_asked_conn = BLE_HS_CONN_HANDLE_NONE;
 static int s_connections;
 static uint8_t s_own_addr_type;
 
@@ -112,9 +122,10 @@ static void start_advertising(void);
 static void request_encryption(uint16_t conn)
 {
     struct ble_gap_conn_desc desc;
-    if (ble_gap_conn_find(conn, &desc) != 0 || desc.sec_state.encrypted) {
+    if (conn == s_enc_asked_conn || ble_gap_conn_find(conn, &desc) != 0 || desc.sec_state.encrypted) {
         return;
     }
+    s_enc_asked_conn = conn;
     int rc = ble_gap_security_initiate(conn);
     ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
 }
@@ -133,17 +144,54 @@ static void phone_audio_on(uint16_t conn)
         return;
     }
     s_phone_conn = conn;
+    s_phone_last_write_us = esp_timer_get_time();
+    ble_npl_callout_reset(&s_phone_idle_timer, ble_npl_time_ms_to_ticks32(PHONE_IDLE_TIMEOUT_MS));
     ESP_LOGI(TAG, "iPhone audio on");
     app_on_connection_changed(true);
     request_encryption(conn);   /* the translator app: ANCS needs it */
 }
 
-/* A write to the translator characteristics: on a link whose audio CCCD was only restored, the app is there */
+/* The iPhone audio role ends (unsubscribe, disconnect, silent app): stop streaming */
+static void phone_audio_off(void)
+{
+    s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+    ble_npl_callout_stop(&s_phone_idle_timer);
+    app_on_connection_changed(false);
+}
+
+/* Host task (NimBLE callout): the app has not written for PHONE_IDLE_TIMEOUT_US? Then it is gone (swiped away,
+ * crashed) while iOS keeps the link for ANCS: leave the role like an audio unsubscribe, keep the link, and wait for
+ * the app on it again (a later write promotes it, as on a restored link) */
+static void on_phone_idle_check(struct ble_npl_event *ev)
+{
+    (void)ev;
+    uint16_t conn = s_phone_conn;
+    if (conn == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+    uint32_t ms = phone_idle_check_ms(s_phone_last_write_us, esp_timer_get_time());
+    if (ms != 0) {
+        ble_npl_callout_reset(&s_phone_idle_timer, ble_npl_time_ms_to_ticks32(ms));
+        return;
+    }
+    ESP_LOGI(TAG, "iPhone app silent for %d s — audio off", (int)(PHONE_IDLE_TIMEOUT_US / 1000000));
+    phone_audio_off();
+    s_audio_pending_conn = conn;
+}
+
+/* A write to the translator characteristics: the app is alive. On a link whose audio CCCD was only restored (or
+ * whose app went silent), the app is back. */
 static void translator_write_from(uint16_t conn)
 {
+    if (conn == s_phone_conn) {
+        s_phone_last_write_us = esp_timer_get_time();
+        return;
+    }
     if (conn == s_audio_pending_conn) {
         ESP_LOGI(TAG, "translator app active on the restored link");
         phone_audio_on(conn);
+        /* The board mic went off with the role: tell the app (it may still show it on after a silent spell) */
+        ble_link_notify_control(app_get_recording());
     }
 }
 
@@ -189,7 +237,14 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
             return os_mbuf_append(ctxt->om, &state, 1) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-            if (ble_hs_mbuf_to_flat(ctxt->om, buf, 1, &len) != 0 || len != 1 || buf[0] > REC_VI) {
+            if (ble_hs_mbuf_to_flat(ctxt->om, buf, 1, &len) != 0 || len != 1) {
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            if (buf[0] == PHONE_CTRL_KEEPALIVE) {
+                translator_write_from(conn_handle);   /* the app is alive; the mic state is unchanged */
+                return 0;
+            }
+            if (buf[0] > REC_VI) {
                 return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             }
             translator_write_from(conn_handle);
@@ -306,8 +361,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         ESP_LOGI(TAG, "disconnected, reason 0x%x", event->disconnect.reason);
         if (event->disconnect.conn.conn_handle == s_phone_conn) {
-            s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
-            app_on_connection_changed(false);
+            phone_audio_off();
+        }
+        if (event->disconnect.conn.conn_handle == s_enc_asked_conn) {
+            s_enc_asked_conn = BLE_HS_CONN_HANDLE_NONE;
         }
         if (event->disconnect.conn.conn_handle == s_audio_pending_conn) {
             s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -342,9 +399,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                     s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
                 }
                 if (conn == s_phone_conn) {
-                    s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
                     ESP_LOGI(TAG, "iPhone audio off");
-                    app_on_connection_changed(false);
+                    phone_audio_off();
                 }
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
@@ -396,6 +452,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         break;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
+        /* A failure (the user declined or ignored the pairing prompt: Pairing Failed from iOS, or the 30 s SMP
+         * timeout) keeps the link: NimBLE only drops it for a broken bond, and the translator service needs no
+         * encryption. The app keeps streaming unencrypted, without ANCS; request_encryption() does not ask again
+         * on this connection. */
         ESP_LOGI(TAG, "link %d: encryption %s (status %d)", event->enc_change.conn_handle,
                  event->enc_change.status == 0 ? "on" : "failed", event->enc_change.status);
         if (event->enc_change.status == 0) {
@@ -538,6 +598,7 @@ static void host_task(void *param)
 void ble_link_init(void)
 {
     ESP_ERROR_CHECK(nimble_port_init());
+    ble_npl_callout_init(&s_phone_idle_timer, nimble_port_get_dflt_eventq(), on_phone_idle_check, NULL);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
     /* Just Works bonding (no keypad); only the Claude characteristics demand encryption */

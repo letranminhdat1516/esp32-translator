@@ -25,6 +25,12 @@ final class ESPLink: NSObject, @unchecked Sendable {
     private var textCharacteristic: CBCharacteristic?
     private var controlCharacteristic: CBCharacteristic?
     private var pendingChunks: [Data] = []
+    /// Keepalive on the control characteristic while connected (BLE queue). The board stops streaming audio after
+    /// 60 s without any app write: a bonded iPhone keeps the link for notifications (ANCS) after the app is gone.
+    private var keepalive: DispatchSourceTimer?
+    /// Control byte the board takes as "the app is alive" (0...2 are mic states); see firmware/main/phone_idle.h
+    static let keepaliveByte: UInt8 = 0xFF
+    static let keepaliveInterval: TimeInterval = 20
 
     /// The round screen fits about 5 lines of 36 px text, so only the tail is sent
     private let maxTextBytes = 150
@@ -68,6 +74,24 @@ final class ESPLink: NSObject, @unchecked Sendable {
             guard let peripheral, let controlCharacteristic else { return }
             peripheral.writeValue(Data([on ? 1 : 0]), for: controlCharacteristic, type: .withResponse)
         }
+    }
+
+    /// BLE queue. A dispatch timer, not a run-loop one: it keeps firing in the background (bluetooth-central / audio)
+    private func startKeepalive() {
+        stopKeepalive()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.keepaliveInterval, repeating: Self.keepaliveInterval, leeway: .seconds(2))
+        timer.setEventHandler { [weak self] in
+            guard let self, let peripheral, peripheral.state == .connected, let controlCharacteristic else { return }
+            peripheral.writeValue(Data([Self.keepaliveByte]), for: controlCharacteristic, type: .withResponse)
+        }
+        timer.resume()
+        keepalive = timer
+    }
+
+    private func stopKeepalive() {
+        keepalive?.cancel()
+        keepalive = nil
     }
 
     private func flush(_ peripheral: CBPeripheral, _ characteristic: CBCharacteristic) {
@@ -118,6 +142,7 @@ extension ESPLink: CBCentralManagerDelegate {
         if central.state == .poweredOn {
             startScan()
         } else {
+            stopKeepalive()
             setState(.off)
         }
     }
@@ -136,6 +161,7 @@ extension ESPLink: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        stopKeepalive()
         textCharacteristic = nil
         controlCharacteristic = nil
         pendingChunks.removeAll()
@@ -167,6 +193,7 @@ extension ESPLink: CBPeripheralDelegate {
         // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {
             peripheral.writeValue(Data([1]), for: controlCharacteristic, type: .withResponse)
+            startKeepalive()
         }
         setState(.ready)
     }
