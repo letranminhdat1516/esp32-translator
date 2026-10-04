@@ -5,7 +5,8 @@
   <key>Label</key><string>dev.cicca.claude-board</string>
   <key>ProgramArguments</key><array><string>__BIN__/claude-board</string></array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
   <key>StandardErrorPath</key><string>__HOME__/.claude-board/daemon.log</string>
 </dict>
 </plist>
