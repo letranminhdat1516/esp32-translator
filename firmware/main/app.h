@@ -70,6 +70,10 @@ lv_obj_t *ui_translator_screen(void);
 /* Wakes the panel and clears a double-tap screen-off (within ~250 ms) */
 void ui_force_screen_on(void);
 void ui_attach_screen_gestures(lv_obj_t *screen);
+/* Blanks (true) or wakes (false) the panel like a double-tap. Safe from any task except LVGL callbacks. */
+void ui_set_manual_screen_off(bool off);
+/* pmu.c: true when external USB power (VBUS) is present; false if the PMU is unavailable */
+bool pmu_usb_powered(void);
 
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);

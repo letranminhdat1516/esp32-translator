@@ -145,6 +145,15 @@ void ui_force_screen_on(void)
     ui_mark_activity();
 }
 
+void ui_set_manual_screen_off(bool off)
+{
+    /* The 250 ms screen timer applies the flag */
+    s_manual_off = off;
+    if (!off) {
+        ui_mark_activity();
+    }
+}
+
 static void toast_done_cb(lv_timer_t *t)
 {
     refresh_status(app_get_recording());

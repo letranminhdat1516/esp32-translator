@@ -157,7 +157,17 @@ void app_main(void)
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
             if (!s_connected && !s_claude_link && s_disconnected_since != 0 &&
                     esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
-                app_enter_deep_sleep();
+                /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power */
+                static bool usb_logged;
+                if (pmu_usb_powered()) {
+                    if (!usb_logged) {
+                        ESP_LOGI(TAG, "idle timeout, but USB powered: not sleeping");
+                        usb_logged = true;
+                    }
+                } else {
+                    usb_logged = false;
+                    app_enter_deep_sleep();
+                }
             }
             continue;
         }

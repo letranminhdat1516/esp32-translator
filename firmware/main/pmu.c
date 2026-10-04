@@ -4,7 +4,7 @@
  * PWR button (polled from the PMU interrupt status, 10 Hz):
  *   single press  → show battery level
  *   double press  → switch app mode
- *   hold 3 s      → power off (on USB power, where the PMU would turn straight back on: deep sleep)
+ *   hold 3 s      → power off (on USB power, where the PMU would turn straight back on: screen off)
  */
 #include "bsp/esp-bsp.h"
 #include "driver/i2c_master.h"
@@ -68,6 +68,12 @@ bool pmu_battery(pmu_battery_t *out)
     return true;
 }
 
+bool pmu_usb_powered(void)
+{
+    pmu_battery_t b = { 0 };
+    return pmu_battery(&b) && b.usb_power;
+}
+
 static void show_battery(void)
 {
     pmu_battery_t b;
@@ -84,11 +90,12 @@ static void show_battery(void)
 
 static void power_off(void)
 {
-    pmu_battery_t b = { 0 };
-    pmu_battery(&b);
-    if (b.usb_power) {
-        ESP_LOGI(TAG, "hold: on USB power, deep sleep instead of power off");
-        app_enter_deep_sleep();
+    if (pmu_usb_powered()) {
+        /* The PMU would power straight back on, and deep sleep would drop the USB port: just blank the screen */
+        ESP_LOGI(TAG, "hold: on USB power, screen off instead of power off");
+        ui_toast("On USB power: screen off", 1500);
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        ui_set_manual_screen_off(true);
         return;
     }
     ESP_LOGI(TAG, "hold: power off");
