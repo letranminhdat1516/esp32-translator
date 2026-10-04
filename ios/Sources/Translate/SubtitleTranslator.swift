@@ -43,12 +43,26 @@ final class SubtitleTranslator {
         state.placeholders.append(state.partial)
         state.partial = ""
         state.partialSource = ""
+        if partialJob?.turn == turn { partialJob = nil }
+        if text.isEmpty {
+            // Nothing to translate (e.g. the phrase was only "em ơi")
+            state.finals[state.finals.count - 1] = ""
+            turns[turn] = state
+            onResult(turn, state.english)
+            return
+        }
         turns[turn] = state
         finalJobs.append((turn, state.finals.count - 1, text))
-        if partialJob?.turn == turn { partialJob = nil }
         // Keep only the last few turns (late results for older lines are dropped)
         turns = turns.filter { $0.key > turn - 3 }
         run()
+    }
+
+    /// Drops every turn and pending request (history cleared)
+    func reset() {
+        turns.removeAll()
+        finalJobs.removeAll()
+        partialJob = nil
     }
 
     /// The current volatile phrase of `turn` (empty: none)

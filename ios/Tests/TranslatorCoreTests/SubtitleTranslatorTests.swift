@@ -89,4 +89,27 @@ final class Results {
         #expect(longest <= "câu số 29 xong".count)
         #expect(results.byTurn[1]?.split(separator: " ").count == 30 * 4)
     }
+
+    @Test func emptyPhrasesAreNotTranslated() async throws {
+        let fake = FakeTranslator()
+        let results = Results()
+        let st = SubtitleTranslator(translate: { try await fake.translate($0) }) { results.byTurn[$0] = $1 }
+        st.addFinal("một", turn: 1)
+        st.addFinal("", turn: 1)
+        st.addFinal("hai", turn: 1)
+        try await settle()
+        #expect(await fake.requests.contains("") == false)
+        #expect(results.byTurn[1] == "MỘT HAI")
+    }
+
+    @Test func resetDropsPendingWork() async throws {
+        let fake = FakeTranslator(delay: .milliseconds(50))
+        let results = Results()
+        let st = SubtitleTranslator(translate: { try await fake.translate($0) }) { results.byTurn[$0] = $1 }
+        st.addFinal("một", turn: 1)
+        st.addFinal("hai", turn: 1)
+        st.reset()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(results.byTurn[1] == nil || results.byTurn[1] == "")
+    }
 }

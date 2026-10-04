@@ -171,6 +171,9 @@ final class ConversationEngine {
     func clearHistory() {
         theirLines.removeAll()
         myLines.removeAll()
+        myTurns.reset()
+        myPartial = ""
+        subtitleTranslator?.reset()
         mySubtitle = ""
         link.send(text: "", kind: .subtitle)
     }
@@ -220,6 +223,7 @@ final class ConversationEngine {
     private func handleUnclear(_ text: String, confidence: Double) {
         Diag.log(String(format: "EN unclear (%.2f): \"%@\"", confidence, text))
         theirLines.append(Line(source: text, target: "Không nghe rõ", unclear: true))
+        Self.trim(&theirLines)
         let now = Date()
         if now.timeIntervalSince(lastUnclearCue) > unclearCooldown {
             lastUnclearCue = now
@@ -244,6 +248,7 @@ final class ConversationEngine {
                 Diag.log(String(format: "translate EN→VI %.0f ms", Date().timeIntervalSince(t0) * 1000))
                 guard let self else { return }
                 self.theirLines.append(Line(source: english, target: vietnamese))
+                Self.trim(&self.theirLines)
                 self.speaker?.speak(vietnamese)
             }
         }
@@ -260,6 +265,7 @@ final class ConversationEngine {
 
         if myLines.last?.turn != turn.id {
             myLines.append(Line(source: "", target: "", turn: turn.id))
+            Self.trim(&myLines)
         }
         if let index = myLines.lastIndex(where: { $0.turn == turn.id }) {
             myLines[index].source = turn.text
@@ -335,6 +341,11 @@ final class ConversationEngine {
                 Diag.log("stats/5s board=\(self.board) pkts=\(c["esp.packets"] ?? 0) micBufs=\(c["mic.buffers"] ?? 0) feedEN=\(c["feed.en-US"] ?? 0) feedVI=\(c["feed.vi-VN"] ?? 0) rmsEN=\((c["rms.en-US"] ?? 0) / max(1, c["bufs.en-US"] ?? 1))‰ rmsVI=\((c["rms.vi-VN"] ?? 0) / max(1, c["bufs.vi-VN"] ?? 1))‰ fedEN=\(Int(self.englishIn?.fed ?? 0))s fedVI=\(Int(self.vietnameseIn?.fed ?? 0))s gate=\(self.userIsSpeaking) myPartial=\"\(self.myPartial.prefix(30))\" ttsQueue=\(self.speaker?.queued ?? -1)")
             }
         }
+    }
+
+    /// The panels keep the last 50 lines, so hours of conversation do not grow memory without bound
+    private static func trim(_ lines: inout [Line]) {
+        if lines.count > 50 { lines.removeFirst(lines.count - 50) }
     }
 
     private static func describe(_ event: TranscriptEvent, full: Bool = false) -> String {

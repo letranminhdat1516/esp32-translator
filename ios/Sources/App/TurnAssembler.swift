@@ -29,14 +29,29 @@ struct TurnAssembler {
     let turnGap: TimeInterval
     /// If a volatile phrase is never finalized, give up waiting after this long
     let staleGap: TimeInterval
+    /// A turn longer than this (characters or seconds) ends at its next final phrase, so hours of talk
+    /// without a pause never grow one line without bound
+    let maxCharacters: Int
+    let maxDuration: TimeInterval
 
     private(set) var turn: Turn?
     private var lastEvent = Date.distantPast
+    private var turnStart = Date.distantPast
+    private var closeTurn = false
     private var nextID = 1
 
-    init(turnGap: TimeInterval = 2, staleGap: TimeInterval = 10) {
+    init(turnGap: TimeInterval = 2, staleGap: TimeInterval = 10, maxCharacters: Int = 600,
+         maxDuration: TimeInterval = 60) {
         self.turnGap = turnGap
         self.staleGap = staleGap
+        self.maxCharacters = maxCharacters
+        self.maxDuration = maxDuration
+    }
+
+    /// Forget the current turn (history cleared); the next event starts a new one
+    mutating func reset() {
+        turn = nil
+        closeTurn = false
     }
 
     /// Applies one recognizer event; returns nil when nothing changed
@@ -59,9 +74,11 @@ struct TurnAssembler {
         var change = Change()
         let quiet = now.timeIntervalSince(lastEvent)
         let pending = !(turn?.partial.isEmpty ?? true)
-        if turn == nil || (!pending && quiet > turnGap) || quiet > staleGap {
+        if turn == nil || (!pending && (quiet > turnGap || closeTurn)) || quiet > staleGap {
             turn = Turn(id: nextID)
             nextID += 1
+            turnStart = now
+            closeTurn = false
             change.started = true
         }
         lastEvent = now
@@ -73,6 +90,7 @@ struct TurnAssembler {
             turn!.partial = ""
             turn!.finals.append(text)
             change.final = text
+            closeTurn = turn!.text.count > maxCharacters || now.timeIntervalSince(turnStart) > maxDuration
         }
         return change
     }

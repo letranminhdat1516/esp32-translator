@@ -88,4 +88,30 @@ func replay(_ events: [(Double, TranscriptEvent)]) -> [String] {
         _ = a.handle(.final("Mình nhắn tin qua giữa lo cho tiện nhé", confidence: nil), at: Date())
         #expect(a.turn?.text == "Mình nhắn tin qua Zalo cho tiện nhé")
     }
+
+    /// Hours of talk without a 2 s pause must not grow one line forever: past 600 characters or 60 s a
+    /// new turn starts at the next phrase after a final
+    @Test func capsAVeryLongTurn() {
+        var a = TurnAssembler(turnGap: 2, maxCharacters: 600, maxDuration: 60)
+        let t0 = Date()
+        var ids: Set<Int> = []
+        for i in 0..<100 {
+            let t = t0 + Double(i)
+            _ = a.handle(.partial("câu \(i)"), at: t)
+            _ = a.handle(.final("câu số \(i) hôm nay trời đẹp", confidence: nil), at: t + 0.5)
+            ids.insert(a.turn!.id)
+            #expect(a.turn!.text.count < 600 + 40)
+        }
+        #expect(ids.count >= 2)
+    }
+
+    @Test func resetForgetsTheTurn() {
+        var a = TurnAssembler()
+        let t0 = Date()
+        _ = a.handle(.partial("xin chào"), at: t0)
+        a.reset()
+        #expect(a.turn == nil)
+        #expect(a.handle(.partial("anh"), at: t0 + 0.5)?.started == true)
+        #expect(a.turn?.text == "anh")
+    }
 }
