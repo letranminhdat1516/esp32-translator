@@ -259,6 +259,7 @@ Changed) and the daemon rediscovers it, so no re-pairing is needed.
 **Safety rules**
 - Nothing is ever auto-approved. Only an explicit Allow / Always allow tap approves a request, and only a Send tap answers a question; taps in the first 700 ms after anything appears, and taps on a dark panel, never count.
 - Voice text is typed, stored as an answer or used as a deny reason only after an explicit Send / Use tap on the transcript shown, and typed only into a tmux pane the Mac verified for that session (see Voice commands).
+- An iPhone notification's action runs only from an explicit tap on its button on the board (armed, lit panel, the notification on screen); nothing is done on the iPhone automatically, and only the Claude app's notifications are ever shown.
 - If the daemon is not running, the board is off or not connected, or the request times out, the hook prints nothing and exits 0, so Claude Code shows its normal terminal prompt.
 
 Voice commands were verified on hardware on 2026-10-05 with Claude Code 2.1.289: a spoken command typed into a `cb` pane, an empty capture, Other (speak) and Deny + why.
