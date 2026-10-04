@@ -4,14 +4,19 @@ import Foundation
 /// every style is implemented so the spike only has to pick one.
 public enum AnswerMapping {
     /// The suggestion "Always allow" would apply, or nil when the button must not be offered.
-    /// suggestionsVerbatim (verified): the first `addRules` suggestion with a rules[] array, sent as is; other types
-    /// (addDirectories did not stop the re-prompt, setMode) and the {"rule": …} string form are not offerable.
+    /// suggestionsVerbatim (verified): the first `addRules` suggestion with a rules[] array and `behavior` "allow" (or
+    /// absent), sent as is; other types (addDirectories did not stop the re-prompt, setMode), addRules with any other
+    /// behavior (deny/ask would add a deny or ask rule behind an "Always allow" button) and the {"rule": …} string form
+    /// are not offerable. A non-array `permission_suggestions` offers nothing.
     /// ruleRemember (unverified): the {"rule": …} form is read as well.
     static func usableSuggestion(_ suggestions: JSONValue?, style: AlwaysAllowStyle) -> (suggestion: JSONValue, caption: String)? {
         guard style != .unsupported, let list = suggestions?.array else { return nil }
         for item in list {
             guard let o = item.object else { continue }
-            if o["type"]?.string == "addRules", let rules = o["rules"]?.array {
+            if o["type"]?.string == "addRules" {
+                // Only an allow rule may sit behind "Always allow"; a present non-"allow" behavior is skipped
+                if let behavior = o["behavior"], behavior.string != "allow" { continue }
+                guard let rules = o["rules"]?.array else { continue }
                 let names = rules.compactMap { r -> String? in
                     guard let ro = r.object, let tool = ro["toolName"]?.string, !tool.isEmpty else { return nil }
                     if let content = ro["ruleContent"]?.string, !content.isEmpty { return "\(tool)(\(content))" }

@@ -37,7 +37,8 @@ public enum HookOutput {
     public static func output(for reply: BridgeReply?) -> String? {
         guard let reply, let behavior = reply.decision, behavior == "allow" || behavior == "deny" else { return nil }
         var decision: [String: JSONValue] = ["behavior": .string(behavior)]
-        if let m = reply.message, !m.isEmpty { decision[HookSchema.denyMessageKey] = .string(m) }
+        // `message` is a deny-only field: never sent with an allow
+        if behavior == "deny", let m = reply.message, !m.isEmpty { decision[HookSchema.denyMessageKey] = .string(m) }
         if behavior == "allow" {
             if let u = reply.updatedInput { decision["updatedInput"] = u }
             if let p = reply.updatedPermissions { decision["updatedPermissions"] = p }

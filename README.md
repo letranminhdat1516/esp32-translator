@@ -150,7 +150,8 @@ questions or 4 options stay in the terminal, and there is no "Other" free-text r
 
 **Always allow.** When Claude Code suggests a permission rule (an `addRules` suggestion) for the request, a
 third button "Always allow" applies that rule (shown as "Rule: …"), so the same kind of call is not asked again.
-Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button.
+Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button. Only allow rules are offered: an `addRules` suggestion whose
+`behavior` is `deny` or `ask` (anything but `allow` or absent) never gets the button.
 
 **Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again after you rebuild and reinstall. If the prompt reappears after rebuilding or reinstalling the daemon, allow it again; if you denied it, enable `claude-board` in System Settings → Privacy & Security → Bluetooth.
 

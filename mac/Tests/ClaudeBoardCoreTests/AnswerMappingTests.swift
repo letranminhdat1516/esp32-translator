@@ -67,3 +67,41 @@ private let sdkSuggestion = JSONValue.array([.object(["type": .string("addRules"
     #expect(AnswerMapping.permissionReply(.deny, suggestions: docsSuggestion) == BridgeReply(decision: "deny"))
     #expect(AnswerMapping.permissionReply(.answers([1]), suggestions: nil) == BridgeReply(decision: nil))
 }
+
+private func addRules(behavior: JSONValue?) -> JSONValue {
+    var o: [String: JSONValue] = ["type": .string("addRules"),
+                                  "rules": .array([.object(["toolName": .string("Bash"), "ruleContent": .string("rm *")])]),
+                                  "destination": .string("localSettings")]
+    if let behavior { o["behavior"] = behavior }
+    return .object(o)
+}
+
+@Test func alwaysAllowIsOnlyOfferedForAllowRules() {
+    for style in [AlwaysAllowStyle.suggestionsVerbatim, .ruleRemember] {
+        // deny / ask rules must never sit behind an "Always allow" button
+        #expect(AnswerMapping.alwaysRule(suggestions: .array([addRules(behavior: .string("deny"))]), style: style) == nil)
+        #expect(AnswerMapping.alwaysRule(suggestions: .array([addRules(behavior: .string("ask"))]), style: style) == nil)
+        #expect(AnswerMapping.alwaysRule(suggestions: .array([addRules(behavior: .bool(true))]), style: style) == nil)
+        // behavior absent counts as allow
+        #expect(AnswerMapping.alwaysRule(suggestions: .array([addRules(behavior: nil)]), style: style) == "Bash(rm *)")
+        #expect(AnswerMapping.alwaysRule(suggestions: .array([addRules(behavior: .string("allow"))]), style: style) == "Bash(rm *)")
+    }
+    // a deny suggestion first: the later allow one is the one offered and applied
+    let mixed = JSONValue.array([addRules(behavior: .string("deny")), sdkSuggestion.array![0]])
+    #expect(AnswerMapping.alwaysRule(suggestions: mixed, style: .suggestionsVerbatim) == "Bash(npm test:*)")
+    #expect(AnswerMapping.permissionReply(.alwaysAllow, suggestions: mixed, style: .suggestionsVerbatim)
+            == BridgeReply(decision: "allow", updatedPermissions: .array([sdkSuggestion.array![0]])))
+    // tapping Always allow on a deny-only suggestion list is a plain allow, never the deny rule
+    #expect(AnswerMapping.permissionReply(.alwaysAllow, suggestions: .array([addRules(behavior: .string("deny"))]),
+                                          style: .suggestionsVerbatim) == BridgeReply(decision: "allow"))
+}
+
+@Test func nonArraySuggestionsAreNotOffered() throws {
+    for raw in [#"{"type":"addRules","behavior":"allow","rules":[{"toolName":"Bash"}]}"#, #""Bash(*)""#, "42", "null", "true"] {
+        let e = try HookEvent.parse(Data((#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/p","tool_name":"Bash","tool_input":{},"permission_suggestions":"# + raw + "}").utf8))
+        #expect(AnswerMapping.alwaysRule(suggestions: e.permissionSuggestions, style: .suggestionsVerbatim) == nil)
+        #expect(AnswerMapping.alwaysRule(suggestions: e.permissionSuggestions, style: .ruleRemember) == nil)
+        #expect(AnswerMapping.permissionReply(.alwaysAllow, suggestions: e.permissionSuggestions, style: .suggestionsVerbatim)
+                == BridgeReply(decision: "allow"))
+    }
+}

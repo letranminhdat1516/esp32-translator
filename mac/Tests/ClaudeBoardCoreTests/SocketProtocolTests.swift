@@ -156,3 +156,11 @@ func roundTrip(_ d: FakeDaemon, timeout: TimeInterval = 2) -> BridgeReply? {
     #expect(bridgeRoundTrip(event: Data("{}".utf8), waitForReply: true, timeout: .nan, socketPath: "/tmp/none-x.sock") == nil)
     #expect(Date().timeIntervalSince(start) < 1)
 }
+
+@Test func messageIsOnlySentWithADeny() throws {
+    let allow = HookOutput.output(for: BridgeReply(decision: "allow", message: "should not leak"))!
+    #expect(!allow.contains("should not leak") && !allow.contains(#""message""#))
+    let deny = HookOutput.output(for: BridgeReply(decision: "deny", message: "why"))!
+    #expect(deny.contains(#""message":"why""#))
+    #expect(HookOutput.output(for: BridgeReply(decision: "ask", message: "x")) == nil)
+}
