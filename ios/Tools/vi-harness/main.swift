@@ -10,7 +10,7 @@
 // clean speech region read from a sibling .region file: [start, end] seconds), or seg-new / seg-legacy
 // (gate only, no recognizer: prints the fed time ranges, fast).
 // RT=1 paces the audio in real time (gated results are misleading when fed faster, see the spike report).
-// GATE_OPEN, GATE_HOLD, GATE_VOICING, GATE_PCT, GATE_WIN, GATE_ONSET, GATE_ONSET_WIN, GATE_NEAR override
+// GATE_OPEN, GATE_HOLD, GATE_VOICING, GATE_PCT, GATE_WIN, GATE_ONSET, GATE_ONSET_WIN, GATE_NEAR, GATE_HOLDNEAR,
 // VoiceGate.Config. One gate runs across all files of a run, like one app session (GATE_PERSIST=0: per file).
 // Output TSV: path \t finals joined \t seconds \t -1 \t "You say" lines (TurnAssembler, " | " between lines)
 // \t translator input per final (VietnameseFixup) \t lines with the old assembly (for comparison).
@@ -29,6 +29,12 @@ func gateConfig() -> VoiceGate.Config {
     if let v = env["GATE_ONSET"].flatMap(Int.init) { c.onsetFrames = v }
     if let v = env["GATE_ONSET_WIN"].flatMap(Double.init) { c.onsetWindow = v }
     if let v = env["GATE_NEAR"].flatMap(Float.init) { c.nearMarginDB = v }
+    if let v = env["GATE_HOLDNEAR"].flatMap(Float.init) { c.holdNearMarginDB = v }
+    if let v = env["GATE_RISE"].flatMap(Float.init) { c.maxRisePerUtterance = v }
+    if let v = env["GATE_DECAYMAX"].flatMap(Float.init) { c.maxDecayDB = v }
+    if let v = env["GATE_UPCT"].flatMap(Double.init) { c.userPercentile = v }
+    if let v = env["GATE_SOFTGAP"].flatMap(Double.init) { c.softHoldGap = v }
+    if let v = env["GATE_RELEARN"].flatMap(Float.init) { c.relearnMarginDB = v }
     return c
 }
 

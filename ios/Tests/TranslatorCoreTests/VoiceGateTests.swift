@@ -158,14 +158,63 @@ struct GateRun {
         #expect(run.passed >= 30)
     }
 
-    @Test func aSofterVoiceIsNotLockedOutForLong() {
+    /// Review C1: one loud call-out used to drag the learned level up ~22 dB in a second, and the wearer's
+    /// normal speech was then dropped for 45-100 s
+    @Test func aShoutDoesNotLockOutNormalSpeech() {
         var s = Signal()
-        // Learned loud; the wearer then speaks 12 dB softer: shut out at first, through after a minute
-        let soft = Signal.voice(2, db: -26)
-        let x = s.noise(0.5, db: -62) + Signal.voice(3, db: -14) + s.noise(3, db: -62) + soft
-            + s.noise(60, db: -62) + soft + s.noise(1, db: -62)
+        let normal = Signal.voice(3, db: -20)
+        var x = s.noise(0.5, db: -62) + normal + s.noise(1.5, db: -62) + Signal.voice(1, db: -6) + s.noise(1.5, db: -62)
+        for _ in 0..<3 { x += normal + s.noise(1.5, db: -62) }
         let run = GateRun(x)
-        #expect(run.opens.count == 2, "opens \(run.opens)")
-        #expect(run.opens.last! > 60)
+        #expect(run.opens.count == 5, "opens \(run.opens)")
+        #expect(run.passed >= 3 + 1 + 3 * 3, "passed \(run.passed)")
+    }
+
+    /// Review I1: a sentence whose last second is 14 dB softer must not lose its ending
+    @Test func keepsASoftEnding() {
+        var s = Signal()
+        let x = s.noise(0.5, db: -62) + Signal.voice(3, db: -20) + s.noise(1.5, db: -62)
+            + Signal.voice(2, db: -20) + Signal.voice(1.2, db: -34) + s.noise(2, db: -62)
+        let run = GateRun(x)
+        #expect(run.ends.count == 2)
+        // second utterance ends at 0.5 + 3 + 1.5 + 3.2 = 8.2 s; the gate must close only after it
+        #expect(run.ends.last! >= 8.2 + 0.7, "ends \(run.ends)")
+    }
+
+    /// Review I2: after the mic gain drops 14 dB (AirPods auto-gain, fallback to the iPhone mic) the
+    /// wearer gets through again within a few seconds
+    @Test func relearnsAfterAGainDrop() {
+        var s = Signal()
+        var x = s.noise(0.5, db: -62) + Signal.voice(3, db: -18) + s.noise(1.5, db: -62)
+        let start = Double(x.count) / Signal.rate
+        for _ in 0..<4 { x += Signal.voice(2, db: -32) + s.noise(1, db: -76) }
+        let run = GateRun(x)
+        let later = run.opens.filter { $0 > start }
+        #expect(later.count >= 2, "opens \(run.opens)")
+        // the first lowered utterance may be lost while the gate relearns, the rest must pass
+        #expect(run.passed >= 3 + 3 * 2, "passed \(run.passed)")
+    }
+
+    @Test func routeChangeForgetsTheWearer() {
+        var s = Signal()
+        let gate = VoiceGate()
+        _ = GateRun(s.noise(0.5, db: -62) + Signal.voice(3, db: -14) + s.noise(1.5, db: -62), gate: gate)
+        gate.resetWearerLevel()
+        let run = GateRun(Signal.voice(2, db: -34) + s.noise(1.5, db: -62), gate: gate)
+        #expect(run.opens.count == 1)
+    }
+
+    /// Review I3: while you only listen for minutes, the person you talk to (15-20 dB quieter at the
+    /// AirPods) must not start opening the gate
+    @Test(arguments: [Float(15), 20])
+    func partnerStaysOutDuringLongListening(quieterBy: Float) {
+        var s = Signal()
+        var x = s.noise(0.5, db: -62) + Signal.voice(3, db: -18) + s.noise(1.5, db: -62)
+        let start = Double(x.count) / Signal.rate
+        let partner = Signal.mix(Signal.voice(4, db: -18 - quieterBy, f0: 210, syllableRate: 3.3), s.noise(4, db: -62))
+        for _ in 0..<60 { x += partner + s.noise(1, db: -62) }  // 5 minutes
+        let run = GateRun(x)
+        let later = run.opens.filter { $0 > start }
+        #expect(later.isEmpty, "partner opened the gate at \(later.prefix(5))")
     }
 }

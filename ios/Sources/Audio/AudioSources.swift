@@ -93,7 +93,20 @@ final class MicSource {
         self.onSpeechEnd = onSpeechEnd
     }
 
+    private var observers: [NSObjectProtocol] = []
+
     func start() throws {
+        // A different mic (AirPods ↔ iPhone) or a new engine configuration changes the wearer's level
+        let center = NotificationCenter.default
+        var names: [Notification.Name] = [.AVAudioEngineConfigurationChange]
+        #if os(iOS)
+        names.append(AVAudioSession.routeChangeNotification)
+        #endif
+        for name in names {
+            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { [gate] _ in
+                gate.resetWearerLevel()
+            })
+        }
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
         let format = input.outputFormat(forBus: 0)
@@ -119,6 +132,8 @@ final class MicSource {
     }
 
     func stop() {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers.removeAll()
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }
