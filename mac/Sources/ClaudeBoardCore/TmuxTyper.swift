@@ -70,19 +70,30 @@ public enum ProcessTree {
     /// Processes in `pid`'s process group that descend from it and have a terminal open (Ctrl-G $EDITOR, any
     /// child that inherited the terminal): keys typed into the pane could reach them. Children in their own session
     /// (Claude Code's Bash tool) are not in the group; MCP servers are, but hold only pipes and /dev/null.
-    /// A member whose descriptors cannot be read counts as holding the terminal.
-    public static func ttyDescendants(of pid: Int32) -> [Int32] {
-        guard let pgid = info(pid)?.kp_eproc.e_pgid, pgid > 0 else { return [] }
-        return group(pgid).filter { $0 != pid && chain(from: $0, max: 64).contains(pid) && holdsTerminal($0) }
+    /// A member whose descriptors cannot be read counts as holding the terminal. Fails closed: nil when the
+    /// process or its group cannot be read (the caller then sends nothing).
+    public static func ttyDescendants(of pid: Int32) -> [Int32]? {
+        ttyDescendants(of: pid, pgidOf: { info($0)?.kp_eproc.e_pgid }, group: group(_:),
+                       parentOf: parent(of:), holdsTerminal: holdsTerminal(_:))
     }
 
-    private static func group(_ pgid: Int32) -> [Int32] {
+    /// The same with the process table injected (tests)
+    static func ttyDescendants(of pid: Int32, pgidOf: (Int32) -> Int32?, group: (Int32) -> [Int32]?,
+                               parentOf: (Int32) -> Int32?, holdsTerminal: (Int32) -> Bool) -> [Int32]? {
+        guard let pgid = pgidOf(pid), pgid > 0, let members = group(pgid), members.contains(pid) else { return nil }
+        return members.filter {
+            $0 != pid && chain(from: $0, max: 64, parentOf: parentOf).contains(pid) && holdsTerminal($0)
+        }
+    }
+
+    /// The pids in process group `pgid`, nil when the process table cannot be read
+    private static func group(_ pgid: Int32) -> [Int32]? {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PGRP, pgid]
         var size = 0
-        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
         size += 8 * MemoryLayout<kinfo_proc>.stride                 // room for processes started meanwhile
         var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
-        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [] }
+        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return nil }
         return procs.prefix(size / MemoryLayout<kinfo_proc>.stride).map { $0.kp_proc.p_pid }
     }
 
@@ -139,13 +150,13 @@ public struct TmuxTyper: PaneTyping {
     private let run: Runner?
     private let parentOf: @Sendable (Int32) -> Int32?
     private let isForeground: @Sendable (Int32) -> Bool
-    private let ttyDescendants: @Sendable (Int32) -> [Int32]
+    private let ttyDescendants: @Sendable (Int32) -> [Int32]?
     private let socketIsUsers: @Sendable (String) -> Bool
     private let enterDelay: Duration
 
     public init(run: Runner?, parentOf: @escaping @Sendable (Int32) -> Int32?,
                 isForeground: @escaping @Sendable (Int32) -> Bool,
-                ttyDescendants: @escaping @Sendable (Int32) -> [Int32],
+                ttyDescendants: @escaping @Sendable (Int32) -> [Int32]?,
                 socketIsUsers: @escaping @Sendable (String) -> Bool, enterDelay: Duration = .milliseconds(200)) {
         self.run = run
         self.parentOf = parentOf
@@ -179,7 +190,8 @@ public struct TmuxTyper: PaneTyping {
         // Ctrl-Z leaves a shell prompt in the pane that would run the text as a command
         guard isForeground(session) else { return "Claude Code is suspended or in the background — nothing sent" }
         // A program it runs on the terminal (Ctrl-G editor…) would take the keys instead
-        guard ttyDescendants(session).isEmpty else {
+        guard let others = ttyDescendants(session) else { return "Couldn't inspect the terminal — nothing sent" }
+        guard others.isEmpty else {
             return "Claude is running another program in the terminal — nothing sent"
         }
         // send-keys is copied to every synchronized pane in the window, and those are not verified

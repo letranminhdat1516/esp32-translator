@@ -31,7 +31,7 @@ private let target = PaneTarget(pane: "%3", socket: "/tmp/s", ancestors: [500, 4
 private let liveParents: @Sendable (Int32) -> Int32? = { [500: 400, 400: 300, 300: 1][$0] }
 
 private func typer(_ fake: FakeTmux, parentOf: @escaping @Sendable (Int32) -> Int32? = liveParents,
-                   foreground: Bool = true, others: [Int32] = [], socketIsUsers: Bool = true) -> TmuxTyper {
+                   foreground: Bool = true, others: [Int32]? = [], socketIsUsers: Bool = true) -> TmuxTyper {
     TmuxTyper(run: fake.runner, parentOf: parentOf, isForeground: { _ in foreground },
               ttyDescendants: { _ in others }, socketIsUsers: { _ in socketIsUsers }, enterDelay: .zero)
 }
@@ -130,6 +130,35 @@ private let goodInfo = "%3\t400\t0\t0\t1\t0\n"
     #expect(await typer(fake, others: [800]).type("x", into: target)
             == .failed("Claude is running another program in the terminal — nothing sent"))
     #expect(fake.sendCalls.isEmpty)
+}
+
+@Test func uninspectableTerminalIsRefused() async {
+    // The process table could not be read: fail closed, nothing typed
+    let fake = FakeTmux(info: goodInfo)
+    #expect(await typer(fake, others: nil).type("x", into: target)
+            == .failed("Couldn't inspect the terminal — nothing sent"))
+    #expect(fake.sendCalls.isEmpty)
+}
+
+@Test func ttyDescendantsFailsClosed() {
+    // Claude 500 in group 500 with its child 600 (no terminal) and editor 700 (terminal), and an unrelated 900
+    let parents: (Int32) -> Int32? = { [600: 500, 700: 600, 900: 1, 500: 400][$0] }
+    let members: [Int32] = [500, 600, 700, 900]
+    let tty: (Int32) -> Bool = { $0 == 700 || $0 == 900 }
+    #expect(ProcessTree.ttyDescendants(of: 500, pgidOf: { _ in 500 }, group: { _ in members }, parentOf: parents,
+                                       holdsTerminal: tty) == [700])
+    // sysctl failed for the process, for its group, or the group read back without it
+    #expect(ProcessTree.ttyDescendants(of: 500, pgidOf: { _ in nil }, group: { _ in members }, parentOf: parents,
+                                       holdsTerminal: tty) == nil)
+    #expect(ProcessTree.ttyDescendants(of: 500, pgidOf: { _ in 0 }, group: { _ in members }, parentOf: parents,
+                                       holdsTerminal: tty) == nil)
+    #expect(ProcessTree.ttyDescendants(of: 500, pgidOf: { _ in 500 }, group: { _ in nil }, parentOf: parents,
+                                       holdsTerminal: tty) == nil)
+    #expect(ProcessTree.ttyDescendants(of: 500, pgidOf: { _ in 500 }, group: { _ in [600, 700] }, parentOf: parents,
+                                       holdsTerminal: tty) == nil)
+    // A process that does not exist cannot be inspected
+    #expect(ProcessTree.ttyDescendants(of: Int32.max) == nil)
+    #expect(ProcessTree.ttyDescendants(of: getpid()) != nil)
 }
 
 @Test func foregroundIsCheckedOnTheSessionProcess() async {
@@ -449,7 +478,7 @@ func realTmuxAcceptsBackgroundHelpersOfClaude() async throws {
         #expect(shellPid > 1 && claudePid > 1)
         #expect(ProcessTree.parent(of: claudePid) == shellPid)
         #expect(sh([tmux, "-S", sock, "display-message", "-p", "-t", pane, "#{@claude_board}"]) == "1")
-        #expect(ProcessTree.ttyDescendants(of: claudePid).isEmpty)
+        #expect(ProcessTree.ttyDescendants(of: claudePid) == [])
         let typer = TmuxTyper(run: { args in
             (0, self.sh([tmux] + args))
         }, parentOf: { ProcessTree.parent(of: $0) }, isForeground: { ProcessTree.isForeground($0) },

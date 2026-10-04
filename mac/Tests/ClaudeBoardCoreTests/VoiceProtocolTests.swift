@@ -80,6 +80,37 @@ import Testing
     #expect(!VoiceText.forTyping(spaced).hasSuffix(" ") && VoiceText.forTyping(spaced).utf8.count <= 300)
 }
 
+@Test func forTypingKeepsOnlyWhatTheBoardCanDraw() {
+    // NFD Vietnamese (as some recognisers return it) becomes the precomposed letters the font has
+    let nfd = "Vie\u{0302}\u{0301}t mo\u{0323}\u{0302}t ba\u{0300}i tho\u{031B}"
+    #expect(VoiceText.forTyping(nfd) == "Viết một bài thơ")
+    #expect(VoiceText.forTyping(nfd).unicodeScalars.count == "Viết một bài thơ".unicodeScalars.count)
+    // Letters outside the font fall back to their base letter; emoji, CJK and stray marks are dropped
+    #expect(VoiceText.forTyping("Łódź ōkē") == "ódz oke")                    // Ł has no base letter: dropped
+    #expect(VoiceText.forTyping("ok 👍 fine 漢字") == "ok fine")
+    #expect(VoiceText.forTyping("a\u{0301}\u{0301}b") == "áb")
+    #expect(VoiceText.forTyping("x\u{2003}y \u{2212}1 \u{2010}z") == "x y -1 -z")
+    // Dashes and the ellipsis the font has stay; quotes become ASCII
+    #expect(VoiceText.forTyping("a – b — c…") == "a – b — c…")
+    #expect(VoiceText.forTyping("„x‟ ‚y‛") == "\"x\" 'y'")
+    // Every output scalar is drawable, and cleaning twice changes nothing (TmuxTyper re-checks)
+    for raw in [nfd, "Łódź 👍 ōkē", "a\u{0301}\u{0301}b", "Ж ש ع"] {
+        let once = VoiceText.forTyping(raw)
+        #expect(once.unicodeScalars.allSatisfy(VoiceText.drawable))
+        #expect(VoiceText.forTyping(once).unicodeScalars.elementsEqual(once.unicodeScalars))
+    }
+}
+
+@Test func forTypingStripsATrailingBackslash() {
+    // Backslash + Enter inserts a newline in Claude Code instead of submitting
+    #expect(VoiceText.forTyping("run it \\") == "run it")
+    #expect(VoiceText.forTyping("a\\\\ \\") == "a")
+    #expect(VoiceText.forTyping("a\\b") == "a\\b")
+    #expect(VoiceText.forTyping("\\") == "")
+    let capped = String(repeating: "a", count: 299) + "\\b"               // the cut leaves a backslash last
+    #expect(VoiceText.forTyping(capped) == String(repeating: "a", count: 299))
+}
+
 @Test func adpcmDecodesTheSharedVector() {
     var d = ADPCMDecoder()
     #expect(d.decode(Data([0, 0, 0, 0, 0, 0x07])) == [11, 13])

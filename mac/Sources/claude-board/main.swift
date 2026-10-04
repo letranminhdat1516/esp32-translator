@@ -87,8 +87,10 @@ try? FileManager.default.createDirectory(atPath: (path as NSString).deletingLast
                                          withIntermediateDirectories: true,
                                          attributes: [.posixPermissions: 0o700])
 // Every complete line is handled, even one whose hook closed right after writing it (HookSocketServer)
+// Lines are handled in arrival order (session state), each request's wait for the board on its own task
+let hookFeed = HookFeed(processor)
 let server = HookSocketServer(path: path) { line, conn in
-    Task { await processor.process(line, conn) }
+    hookFeed.submit(line, conn)
 }
 do {
     try server.start()

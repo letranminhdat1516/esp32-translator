@@ -20,8 +20,13 @@ if [ -n "${TMUX:-}" ]; then
   [ -n "${TMUX_PANE:-}" ] || { echo "cb: \$TMUX is set but \$TMUX_PANE is not; cannot tell which pane to mark" >&2; exit 1; }
   if "$TMUX_BIN" set-option -p -t "$TMUX_PANE" @claude_board 1; then
     # claude is exec'd (the chain must stay shell -> claude), so a detached watcher clears the mark once this
-    # pid (which becomes claude) is gone. It has no terminal: all its descriptors are /dev/null.
+    # pid (which becomes claude) is gone. It has no terminal: 0-2 are /dev/null and every inherited descriptor
+    # above 2 (a terminal the caller left open…) is closed, so the daemon never sees it holding the pane's tty.
     (
+      for fd in /dev/fd/*; do
+        fd=${fd##*/}
+        if [ "$fd" -gt 2 ] 2>/dev/null; then eval "exec $fd>&-"; fi
+      done
       while kill -0 "$$" 2>/dev/null; do sleep 2; done
       "$TMUX_BIN" set-option -p -u -t "$TMUX_PANE" @claude_board
     ) </dev/null >/dev/null 2>&1 &

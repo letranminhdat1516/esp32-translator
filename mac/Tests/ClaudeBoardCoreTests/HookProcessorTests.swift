@@ -332,3 +332,46 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
         if name == "UserPromptSubmit" { #expect(seen.contains("post")) }   // the new row is still sent
     }
 }
+
+@Test func hookFeedHandlesLinesInArrivalOrder() async throws {
+    // The first line's session update is slow: the lines behind it must still be recorded after it
+    let order = OSAllocatedUnfairLock<[Int]>(initialState: [])
+    let feed = HookFeed(accept: { line, _ in
+        let n = Int(String(decoding: line, as: UTF8.self))!
+        if n == 0 { try? await Task.sleep(for: .milliseconds(80)) }
+        order.withLock { $0.append(n) }
+        return nil
+    })
+    for n in 0..<20 { feed.submit(Data("\(n)".utf8), FakeConn()) }
+    for _ in 0..<100 where order.withLock({ $0.count }) < 20 { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(order.withLock { $0 } == Array(0..<20))
+}
+
+@Test func hookFeedRecordsStateInOrderWithoutWaitingForARequest() async throws {
+    // A request waiting for the board does not hold up the events behind it, and the session's state is the
+    // one of the last line received (Stop after the prompt: idle, the focused session's "done")
+    let board = FakeBoard(ready: true)
+    let requests = RequestQueue(send: { board.send($0) })
+    let finished = OSAllocatedUnfairLock<[String]>(initialState: [])
+    let hub = SessionHub(sessionHooks: true, post: { await requests.post($0) },
+                         finished: { p, _ in finished.withLock { $0.append(p) } })
+    let feed = HookFeed(HookProcessor(board: board, requests: requests, hub: hub))
+    await hub.boardInput(.mode(.claude))
+    let request = FakeConn()
+    feed.submit(permissionLine.replacingSession("other"), request)
+    var conns: [FakeConn] = []
+    for name in ["SessionStart", "UserPromptSubmit", "Stop"] {
+        let c = FakeConn()
+        conns.append(c)
+        feed.submit(event(name), c)
+    }
+    for _ in 0..<100 where !(conns.allSatisfy(\.closed) && !board.permissionIds.isEmpty) {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(conns.allSatisfy { $0.closed && $0.replies.isEmpty })
+    #expect(board.permissionIds.count == 1 && request.replies.isEmpty)   // still waiting for the board
+    #expect(await hub.focusedSessionId == "other")                        // the first line recorded first
+    request.hookGoesAway()
+    for _ in 0..<100 where request.replies.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(request.replies == [BridgeReply(decision: nil)])
+}

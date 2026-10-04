@@ -115,6 +115,39 @@ class CbTests(unittest.TestCase):
             time.sleep(0.1)
         self.fail("the mark was not cleared after claude exited")
 
+    def test_inside_tmux_the_watcher_holds_no_inherited_descriptor(self):
+        # A terminal fd the caller left open (above 2) must not reach the watcher: the daemon would see a
+        # process holding the pane's terminal
+        pane = self.tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "host", "sleep 60")
+        sock = self.tmux("display-message", "-p", "-t", pane, "#{socket_path}")
+        env = dict(self.env, TMUX=sock + ",1,0", TMUX_PANE=pane)
+        master, slave = os.openpty()
+        extra = os.dup(slave)                                   # some fd above 2
+        tty = os.ttyname(slave)
+        p = subprocess.Popen([CB], cwd=self.project("fds"), env=env, pass_fds=(slave, extra),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            self.claude_args()
+            watchers = []
+            for _ in range(50):
+                watchers = subprocess.run(["/usr/bin/pgrep", "-P", str(p.pid)], capture_output=True,
+                                          text=True).stdout.split()
+                if watchers:
+                    break
+                time.sleep(0.1)
+            self.assertTrue(watchers, "no watcher found")
+            for w in watchers:
+                fds = subprocess.run(["/usr/sbin/lsof", "-a", "-p", w, "-d", "3-9999", "-F", "fn"],
+                                     capture_output=True, text=True).stdout.splitlines()
+                names = [line[1:] for line in fds if line.startswith("n")]
+                self.assertNotIn(tty, names, f"watcher {w} holds {tty}: {fds}")
+                self.assertFalse(any(n.startswith("/dev/tty") or n.startswith("/dev/pty") for n in names), fds)
+        finally:
+            p.kill()
+            p.wait()
+            for fd in (master, slave, extra):
+                os.close(fd)
+
     def test_tmux_without_pane_is_an_error(self):
         env = dict(self.env, TMUX="/x,1,0")
         env.pop("TMUX_PANE", None)

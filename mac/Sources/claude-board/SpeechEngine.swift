@@ -107,7 +107,15 @@ final class SpeechEngine: VoiceEngine, @unchecked Sendable {
             } catch {}
             return joined()
         }
-        try await analyzer.start(inputSequence: stream)
+        do {
+            try await analyzer.start(inputSequence: stream)
+        } catch {
+            // Nothing is left running: no open input, no results task, no analyzer holding the model
+            input.finish()
+            results.cancel()
+            await analyzer.cancelAndFinishNow()
+            throw error
+        }
         return SpeechStream(analyzer: analyzer, input: input, results: results, converter: PCMConverter(target: format))
     }
 }

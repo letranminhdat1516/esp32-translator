@@ -35,29 +35,35 @@ public struct HookProcessor: Sendable {
     }
 
     public func process(_ line: Data, _ conn: any HookConnection) async {
-        guard let e = try? HookEvent.parse(line) else { conn.close(); return }
+        if let request = await accept(line, conn) { await request() }
+    }
+
+    /// The part of `process` that must follow arrival order: parses the line, releases a hook that waits for
+    /// nothing, and records the event's session state. Returns the request's wait for the board (run it on its
+    /// own task, so one request never holds up the hooks behind it), nil when there is nothing to answer.
+    func accept(_ line: Data, _ conn: any HookConnection) async -> (@Sendable () async -> Void)? {
+        guard let e = try? HookEvent.parse(line) else { conn.close(); return nil }
         // Stop / Notification / session events: nothing to answer, so release the hook (it waits for the close)
         // before the board work
         let isRequest = e.name == "PermissionRequest"
         if !isRequest { conn.close() }
         await hub?.record(e)       // every event: session state (PermissionRequest → needs you)
+        guard isRequest else { return nil }   // already closed; the hub sent the focused session's "done" and the rows
+        return { await self.answer(e, conn) }
+    }
+
+    private func answer(_ e: HookEvent, _ conn: any HookConnection) async {
         let project = Summary.project(cwd: e.cwd)
-        switch e.name {
-        case "PermissionRequest":
-            guard board.isReady else { conn.reply(BridgeReply(decision: nil)); return }
-            let gone = PeerGone()
-            let reply = e.toolName == "AskUserQuestion"
-                ? await askQuestion(e, project: project, conn: conn, gone: gone)
-                : await askPermission(e, project: project, conn: conn, gone: gone)
-            // Answered on the board, or in the terminal (the hook went away): either way Claude continues.
-            // A timeout or a lost board leaves the session "needs you": the terminal prompt is waiting.
-            if reply.decision != nil || gone.happened { await hub?.requestAnswered(sessionId: e.sessionId) }
-            log("\(project) \(e.toolName ?? "") → \(reply.decision ?? (gone.happened ? "answered in the terminal" : "fall through"))")
-            conn.reply(reply)
-        default:
-            // Already closed above; the hub sent the focused session's "done" and the rows
-            break
-        }
+        guard board.isReady else { conn.reply(BridgeReply(decision: nil)); return }
+        let gone = PeerGone()
+        let reply = e.toolName == "AskUserQuestion"
+            ? await askQuestion(e, project: project, conn: conn, gone: gone)
+            : await askPermission(e, project: project, conn: conn, gone: gone)
+        // Answered on the board, or in the terminal (the hook went away): either way Claude continues.
+        // A timeout or a lost board leaves the session "needs you": the terminal prompt is waiting.
+        if reply.decision != nil || gone.happened { await hub?.requestAnswered(sessionId: e.sessionId) }
+        log("\(project) \(e.toolName ?? "") → \(reply.decision ?? (gone.happened ? "answered in the terminal" : "fall through"))")
+        conn.reply(reply)
     }
 
     private func askPermission(_ e: HookEvent, project: String, conn: any HookConnection,
@@ -100,6 +106,32 @@ public struct HookProcessor: Sendable {
         conn.onPeerGone { gone.mark(); task.cancel() }
         return await task.value
     }
+}
+
+/// Hook lines from the socket, handled one at a time in arrival order (like the daemon's board events): the
+/// session state of each line is recorded before the next line's, so a late Stop never overtakes the prompt that
+/// came before it. A request's wait for the board runs on its own task.
+public final class HookFeed: Sendable {
+    public typealias Accept = @Sendable (Data, any HookConnection) async -> (@Sendable () async -> Void)?
+    private let lines: AsyncStream<(Data, any HookConnection)>.Continuation
+
+    public convenience init(_ processor: HookProcessor) {
+        self.init(accept: { await processor.accept($0, $1) })
+    }
+
+    init(accept: @escaping Accept) {
+        let (stream, lines) = AsyncStream<(Data, any HookConnection)>.makeStream()
+        self.lines = lines
+        Task {
+            for await (line, conn) in stream {
+                if let request = await accept(line, conn) { Task { await request() } }
+            }
+        }
+    }
+
+    public func submit(_ line: Data, _ conn: any HookConnection) { lines.yield((line, conn)) }
+
+    deinit { lines.finish() }
 }
 
 /// Set when the hook went away while its request waited for the board (the user answered in the terminal).
