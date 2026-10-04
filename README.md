@@ -12,14 +12,14 @@ Waveshare **ESP32-S3-Touch-AMOLED-1.75C** board, an **iPhone (iOS 26)** and **Ai
 
 ```
 Them → You   Board mics ─ADPCM / BLE, 20 ms─► SpeechTranscriber en-US ─final phrase─► Translation EN→VI ─► vi-VN speech ─► AirPods
-You → Them   AirPods mic (echo-cancelled) ──► DictationTranscriber vi-VN ─partials─► Translation VI→EN ─BLE─► subtitles on AMOLED
+You → Them   AirPods mic (echo-cancelled) ─own-voice gate─► DictationTranscriber vi-VN ─phrases─► fix-ups ─► Translation VI→EN ─BLE─► subtitles on AMOLED
 Arbiter      While you speak (and for 1 s after), "Them → You" results are dropped so the board mic never translates your own voice
 ```
 
 Latency design:
 - **On device**: speech recognition (`SpeechAnalyzer`) and translation (`Translation` framework, `.lowLatency` on iOS 26.4+) run offline, so a weak cellular signal doesn't matter.
 - **Models stay warm**: analyzers run for the whole session (`modelRetention: .processLifetime`), and the TTS voice is preloaded at launch.
-- **Subtitles follow your speech**: volatile (partial) results are translated immediately. A latest-wins translator (`LatestWinsTranslator`) drops stale requests, so the screen always tracks the current sentence.
+- **Subtitles follow your speech**: volatile (partial) results are translated immediately. `SubtitleTranslator` translates each finalized phrase once and keeps it, and re-translates only the current volatile phrase (latest wins), so requests stay one phrase long however long you talk.
 - **Phrase-level speech**: each phrase is spoken as soon as the recognizer finalizes it (`fastResults`), without waiting for the end of the turn.
 - **BLE**: 2M PHY, 15–30 ms connection interval, MTU 247. Audio uses notifications and text uses write-without-response. Each ADPCM packet is self-contained, so a lost packet costs only 20 ms of silence.
 
@@ -62,12 +62,35 @@ The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` 
 | Board | Lock (PWR ×1): panel off, the 5 s lock face is a static logo | No lit pixels, clock timer paused while locked |
 | Board | Deep sleep after 3 min without an iPhone; touch screen or BOOT wakes it | Near-zero drain when you walk away |
 | Board | CPU 160 MHz with DFS down to 80 MHz, BLE modem sleep, 30–45 ms connection interval | Fewer radio and CPU wake-ups |
-| iPhone | Same VAD on the AirPods mic; recognizers only receive speech | Neural recognition runs only while someone talks |
+| iPhone | Own-voice gate on the AirPods mic (`VoiceGate`): opens only on voiced frames well above the background and near your learned voice level | The Vietnamese recognizer runs only while *you* talk, not while the café does (gate: about 0.05 % of one core) |
 | iPhone | Runs with the screen locked (`audio` + `bluetooth-central` background modes) | Keep the phone in your pocket, just wear the AirPods |
 | iPhone | Phrase finalization on pause (`SpeechAnalyzer.finalize`) | Gating input must not delay the last phrase |
 
 Measured end-to-end: a phrase is spoken in Vietnamese about 1 s after the English speaker stops (translation itself 24–27 ms).
 Battery life has not been measured yet.
+
+### Vietnamese recognition (You → Them)
+
+The Vietnamese dictation model ignores contextual strings and custom language models; what decides its accuracy is the audio it gets. Speech from people around you, heard before or after your own words, gets transcribed and translated as if you said it. So:
+
+- **Own-voice gate** (`ios/Sources/Audio/VoiceGate.swift`). Your mouth is a few centimetres from the AirPods mics, so your voice is much louder there than anyone nearby. A 20 ms frame opens the gate only if it is at least 8 dB above the background (5th percentile of the last 3 s, so it follows café noise within seconds), periodic at a speech pitch (autocorrelation), and within 10 dB of your own level (learned from your speech; it sinks 3 dB a minute while you are silent, so a softer voice is never shut out for long). 300 ms pre-roll, 0.8 s hangover, then the phrase is finalized.
+- **Fix-ups** (`ios/Sources/Translate/VietnameseFixup.swift`). Recurring loanword mishearings are corrected in the recognized text ("giữa lo" → Zalo, "hoa phay" → Wi-Fi, "C nga co" → Singapore, …). Before translation only, vocatives are dropped and a few service phrases and idioms are spelled out ("Em ơi, tính tiền!" → "Cho tôi thanh toán!" → "Let me pay!" instead of "Baby, charge!"). The "You say" panel shows what was recognized.
+- **Turns** (`ios/Sources/App/TurnAssembler.swift`). A new subtitle screen starts only after a finalized phrase and a 2 s pause, never in the middle of a phrase that is still being recognized.
+
+Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one TTS voice, Mac with the iOS 26 frameworks, real-time feeding through the app's own code with `ios/Tools/vi-harness`). Real speech will score worse; the differences are what matter:
+
+| Audio | Old energy gate | Own-voice gate | Cut at the true speech span |
+|---|---:|---:|---:|
+| Quiet room | 3.1 % | 3.1 % | |
+| Telephone band (like the AirPods mic) | 1.2 % | 1.2 % | |
+| Café babble 10 dB below your voice | 12.5 % | 3.1 % | 1.6 % |
+| Telephone band + babble 10 dB | 9.4 % | 2.2 % | 3.1 % |
+| Babble 3 dB below your voice | 23.8 % | 12.5 % | 6.6 % |
+| Someone 12 dB quieter talking right before and after you | 117.8 % | 10.9 % | 6.9 % |
+
+(Run to run, the same audio varies by about ±0.6 points; one syllable is 0.3.)
+
+A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds before you speak, still gets through: level cannot tell them apart. Until you have spoken for about a second in a session, the gate does not know your level yet. `swift test` in `ios/` runs the unit tests (gate, turns, fix-ups, subtitle translator) on the Mac.
 
 ## Repository layout
 
@@ -170,7 +193,8 @@ Daemon log: `~/.claude-board/daemon.log`.
 | Setting | File | Default | Effect |
 |---|---|---|---|
 | `echoHold` | `ios/Sources/App/ConversationEngine.swift` | 1 s | How long board-mic results are ignored after you stop speaking. Raise it if the board still picks up your voice |
-| `turnGap` | same | 2 s | A pause longer than this starts a fresh subtitle screen |
+| `turnGap` | same | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
+| `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 10 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
 | `rate` | `ios/Sources/Speech/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 | `VAD_HANGOVER_FRAMES` | same | 40 (800 ms) | Lower = faster phrase end, but long pauses split sentences |
