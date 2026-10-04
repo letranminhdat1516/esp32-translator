@@ -131,3 +131,63 @@ private func packet(_ seq: UInt16) -> Data { Data([UInt8(seq & 0xff), UInt8(seq 
     #expect(a.packets.count == VoiceAudioBuffer.maxPackets)
     #expect(a.take().count == VoiceAudioBuffer.maxPackets && a.packets.isEmpty)
 }
+
+@Test func cancelAndLinkLossLeaveNoStaleAudio() {
+    var b = linkedBridge()
+    _ = b.handle(.mac(.voiceBegin(7)))
+    _ = b.handle(.mac(.voiceFinish(7)))
+    #expect(b.handle(.boardVoice(packet(5))).isEmpty)                    // the old capture's tail
+    #expect(b.handle(.mac(.voiceCancel(7))) == [.transcribeCancel])
+    #expect(b.handle(.mac(.voiceBegin(8))) == [.transcribeBegin(8)])      // nothing stale fed
+    _ = b.handle(.mac(.voiceCancel(8)))
+
+    var c = linkedBridge()
+    _ = c.handle(.boardVoice(packet(0))); _ = c.handle(.boardVoice(packet(1)))
+    _ = c.handle(.boardDown)
+    _ = c.handle(.boardUp(maxWrite: 21)); _ = c.handle(.boardSubscribed(true))
+    #expect(c.handle(.mac(.voiceBegin(9))) == [.transcribeBegin(9)])
+
+    var d = linkedBridge()
+    _ = d.handle(.boardVoice(packet(0)))
+    _ = d.handle(.macDown); _ = d.handle(.macUp); _ = d.handle(.boardSubscribed(true))
+    #expect(d.handle(.mac(.voiceBegin(9))) == [.transcribeBegin(9)])
+
+    var e = linkedBridge(speech: "not ready")
+    _ = e.handle(.boardVoice(packet(0)))
+    #expect(e.handle(.mac(.voiceBegin(2))) == [.toMac(.voiceFailed(2, "not ready"))])
+    _ = e.handle(.speech(nil))
+    #expect(e.handle(.mac(.voiceBegin(3))) == [.transcribeBegin(3)])     // the failed begin's audio is gone
+}
+
+@Test func aCaptureTailStartsNothing() {
+    var b = linkedBridge()
+    #expect(b.handle(.boardVoice(packet(12))).isEmpty)                   // tail of a capture whose start was missed
+    #expect(b.handle(.boardVoice(packet(0))).isEmpty)
+    #expect(b.handle(.mac(.voiceBegin(4))) == [.transcribeBegin(4), .transcribeFeed(packet(0))])
+    var a = VoiceAudioBuffer()
+    a.append(packet(3))
+    #expect(a.packets.isEmpty)
+}
+
+@Test func speechLossEndsTheOpenSession() {
+    var b = linkedBridge()
+    _ = b.handle(.mac(.voiceBegin(7)))
+    #expect(b.handle(.speech("gone")) == [.transcribeCancel, .toMac(.voiceFailed(7, "gone")),
+                                          .toMac(.voiceStatus("gone")), .subscribeVoice(false)])
+    #expect(b.handle(.transcript(7, final: true, "late")).isEmpty)
+}
+
+@Test func aFinishWithoutFinalTimesOut() {
+    var b = linkedBridge()
+    _ = b.handle(.mac(.voiceBegin(7)))
+    #expect(b.handle(.tick(20)).isEmpty)                                 // no deadline before finish
+    _ = b.handle(.mac(.voiceFinish(7)))
+    for _ in 0..<14 { #expect(b.handle(.tick(1)).isEmpty) }
+    #expect(b.handle(.tick(1)) == [.transcribeCancel, .toMac(.voiceFailed(7, RelayBridge.finishTimedOut))])
+    #expect(b.handle(.tick(1)).isEmpty)
+    #expect(b.handle(.transcript(7, final: true, "late")).isEmpty)
+    // A final in time clears the deadline
+    _ = b.handle(.mac(.voiceBegin(8))); _ = b.handle(.mac(.voiceFinish(8)))
+    _ = b.handle(.transcript(8, final: true, "ok"))
+    #expect(b.handle(.tick(30)).isEmpty)
+}

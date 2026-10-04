@@ -3,7 +3,8 @@ import Foundation
 /// The board's voice audio (IMA ADPCM packets [seq u16][predictor i16][index u8][data]) from the current
 /// capture's first packet (seq 0) until the Mac's voiceBegin. Only the latest capture is kept.
 public struct VoiceAudioBuffer: Sendable {
-    /// 32 s of 20 ms packets (a board capture stops at 30 s)
+    /// 32 s of 20 ms packets (a board capture stops at 30 s). When full, the oldest packets are kept and newer
+    /// ones dropped: a transcript of the start of an utterance beats one with a hole in the middle.
     public static let maxPackets = 1600
     public private(set) var packets: [Data] = []
 
@@ -17,6 +18,7 @@ public struct VoiceAudioBuffer: Sendable {
     public mutating func append(_ packet: Data) {
         guard let s = Self.seq(packet) else { return }
         if s == 0 { packets = [] }
+        else if packets.isEmpty { return }   // a capture's tail (its start was missed or already fed) starts nothing
         if packets.count < Self.maxPackets { packets.append(packet) }
     }
 
@@ -45,6 +47,9 @@ public struct RelayBridge: Sendable {
         case speech(String?)
         case transcript(UInt32, final: Bool, String)
         case transcriptFailed(UInt32, String)
+        /// Time passed (seconds since the previous tick). The caller must drive this (about once a second) so a
+        /// finished session that never gets a final transcript ends after `finishTimeout`.
+        case tick(TimeInterval)
     }
 
     public enum Action: Equatable, Sendable {
@@ -59,6 +64,10 @@ public struct RelayBridge: Sendable {
         case transcribeCancel
     }
 
+    /// How long after voiceFinish the transcriber has to deliver a final transcript (matches the Mac's RelayVoice)
+    public static let finishTimeout: TimeInterval = 15
+    static let finishTimedOut = "The iPhone did not finish the transcript in time"
+
     private var macUp = false
     private var maxWrite: Int?
     private var wantSubscribed = false
@@ -67,6 +76,10 @@ public struct RelayBridge: Sendable {
     private var session: UInt32?
     private var sessionFed = 0
     private var sessionAudioOpen = false
+    /// Seconds since voiceFinish, while waiting for the final transcript
+    private var finishWaited: TimeInterval?
+    /// The board started a new capture during the session: the buffered audio is that capture's, not stale
+    private var sessionRestarted = false
     private var audio = VoiceAudioBuffer()
 
     public init() {}
@@ -79,9 +92,12 @@ public struct RelayBridge: Sendable {
         let wasLinked = linked
         switch e {
         case .macUp: macUp = true
-        case .macDown: macUp = false
+        case .macDown:
+            macUp = false
+            audio = VoiceAudioBuffer()
         case .boardUp(let m): maxWrite = max(20, m)
         case .boardDown:
+            audio = VoiceAudioBuffer()
             maxWrite = nil
             wantSubscribed = false
             subscribed = false
@@ -92,6 +108,10 @@ public struct RelayBridge: Sendable {
         case .mac(let f): mac(f, &out)
         case .speech(let why):
             speech = why
+            if let why, let s = session {
+                out += [.transcribeCancel, .toMac(.voiceFailed(s, Self.reason(why)))]
+                endSession()
+            }
             if linked { out += [.toMac(.voiceStatus(why.map(Self.reason))), .subscribeVoice(why == nil)] }
         case .transcript(let s, let final, let text):
             guard s == session else { break }
@@ -101,6 +121,14 @@ public struct RelayBridge: Sendable {
             guard s == session else { break }
             out.append(.toMac(.voiceFailed(s, Self.reason(why))))
             endSession()
+        case .tick(let dt):
+            guard let s = session, let waited = finishWaited else { break }
+            let total = waited + max(0, dt)
+            finishWaited = total
+            if total >= Self.finishTimeout {
+                out += [.transcribeCancel, .toMac(.voiceFailed(s, Self.finishTimedOut))]
+                endSession()
+            }
         }
         // The board subscription follows "Mac reachable and board present"
         let want = macUp && maxWrite != nil
@@ -116,10 +144,9 @@ public struct RelayBridge: Sendable {
             if speech == nil { out.append(.subscribeVoice(true)) }
         } else if wasLinked && !linked {
             if macUp { out.append(.toMac(.boardLink(false))) }
-            if session != nil {
-                out.append(.transcribeCancel)
-                endSession()
-            }
+            if session != nil { out.append(.transcribeCancel) }
+            endSession()
+            audio = VoiceAudioBuffer()
         }
         return out
     }
@@ -131,6 +158,7 @@ public struct RelayBridge: Sendable {
             out += BLEFraming.chunks(d, maxChunk: m).map(Action.writeBoard)
         case .voiceBegin(let s):
             guard linked, speech == nil else {
+                audio = VoiceAudioBuffer()
                 out.append(.toMac(.voiceFailed(s, Self.reason(speech ?? "The board is not connected to the iPhone"))))
                 return
             }
@@ -138,6 +166,8 @@ public struct RelayBridge: Sendable {
             session = s
             sessionFed = 0
             sessionAudioOpen = true
+            sessionRestarted = false
+            finishWaited = nil
             out.append(.transcribeBegin(s))
             for p in audio.take() {
                 out.append(.transcribeFeed(p))
@@ -146,6 +176,7 @@ public struct RelayBridge: Sendable {
         case .voiceFinish(let s):
             guard s == session else { return }
             sessionAudioOpen = false
+            finishWaited = 0
             out.append(.transcribeFinish(s))
         case .voiceCancel(let s):
             guard s == session else { return }
@@ -164,14 +195,22 @@ public struct RelayBridge: Sendable {
             sessionFed += 1
             return
         }
-        if restarted { sessionAudioOpen = false }   // a new capture: the open session gets no more audio
+        if restarted {
+            sessionAudioOpen = false
+            sessionRestarted = true
+        }   // a new capture: the open session gets no more audio
         audio.append(p)
     }
 
+    /// Ends the session and drops its leftover audio. Audio of a capture the board restarted during the session
+    /// (seq 0 again) is kept: the Mac's next voiceBegin is for that capture.
     private mutating func endSession() {
+        if !sessionRestarted { audio = VoiceAudioBuffer() }
         session = nil
         sessionFed = 0
         sessionAudioOpen = false
+        sessionRestarted = false
+        finishWaited = nil
     }
 
     private static func reason(_ s: String) -> String {
