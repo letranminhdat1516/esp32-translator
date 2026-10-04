@@ -70,13 +70,16 @@ lv_obj_t *ui_translator_screen(void);
 void ui_force_screen_on(void);
 /* Blanks (true) or wakes (false) the panel like a double-tap. Safe from any task except LVGL callbacks. */
 void ui_set_manual_screen_off(bool off);
+/* LVGL task (Claude / picker screen tap): ends a manual screen-off; the panel wakes within ~250 ms */
+void ui_wake_from_tap(void);
+/* True once the power-off / sleep message is up. Read it with the display lock held. */
+bool ui_shutting_down(void);
 /* pmu.c: true when external USB power (VBUS) is present; false if the PMU is unavailable */
 bool pmu_usb_powered(void);
 
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);
 lv_obj_t *claude_ui_screen(void);
-bool claude_ui_visible(void);
 void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
 void claude_ui_set_link(bool connected);
 void claude_ui_set_touch_enabled(bool on);          /* LVGL task: Allow/Deny ignore taps while the panel is dark */

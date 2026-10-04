@@ -89,15 +89,18 @@ static void shell_task(void *arg)
 
         ESP_LOGI(TAG, "%s -> mode %d%s%s", EV_NAMES[ev], (int)next.mode, next.locked ? ", locked" : "",
                  next.urgent ? ", request shown" : "");
-        if (wake) {
-            ui_force_screen_on();
-        }
+        /* Load first, then wake: the panel never lights on the previous screen. Loading the Claude screen
+         * runs its SCREEN_LOADED handler here, under this lock (it re-arms Allow/Deny). */
         lv_obj_t *target = screen_obj(modes_screen(&next));
         bsp_display_lock((uint32_t)-1);
-        if (lv_screen_active() != target) {
+        bool shutting_down = ui_shutting_down();   /* the power-off / sleep message owns the screen */
+        if (!shutting_down && lv_screen_active() != target) {
             lv_screen_load(target);
         }
         bsp_display_unlock();
+        if (wake && !shutting_down) {
+            ui_force_screen_on();
+        }
     }
 }
 

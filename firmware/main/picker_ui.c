@@ -11,6 +11,12 @@ LV_FONT_DECLARE(font_vi_36);
 
 static lv_obj_t *s_scr;
 
+/* LVGL task: a tap on the dark panel ends a manual screen-off (PWR hold on USB) */
+static void on_tap(lv_event_t *e)
+{
+    ui_wake_from_tap();
+}
+
 static lv_obj_t *make_label(const lv_font_t *font, uint32_t color, int y, const char *text)
 {
     lv_obj_t *l = lv_label_create(s_scr);
@@ -30,6 +36,7 @@ void picker_ui_init(void)
     s_scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_scr, lv_color_black(), 0);
     lv_obj_set_scrollable(s_scr, false);
+    lv_obj_add_event_cb(s_scr, on_tap, LV_EVENT_CLICKED, NULL);
     make_label(&font_vi_22, 0xc8c8c8, 48, "Claude sessions");
     make_label(&font_vi_36, 0xffffff, 190, "No sessions yet");
     make_label(&font_vi_22, 0x9a9a9a, 250, "Sessions from your Mac\nwill appear here.");

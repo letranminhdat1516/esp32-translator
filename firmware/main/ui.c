@@ -66,11 +66,7 @@ static void set_screen(bool on)
     claude_ui_set_touch_enabled(on);
     bsp_display_brightness_set(on ? 100 : 0);
     /* While dark, a tap only wakes the screen; it must not toggle the mic */
-    if (on) {
-        lv_obj_add_flag(s_btn_mic, LV_OBJ_FLAG_CLICKABLE);
-    } else {
-        lv_obj_remove_flag(s_btn_mic, LV_OBJ_FLAG_CLICKABLE);
-    }
+    lv_obj_set_clickable(s_btn_mic, on);
 }
 
 /* Runs inside the LVGL task every 250 ms */
@@ -133,10 +129,8 @@ void ui_set_level(int percent)
     }
     s_level = percent;
     lock();
-    if (percent == 0) {
-        lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_ring, percent == 0);
+    if (percent != 0) {
         /* Faint speech: thin and dim; clear speech: thick and bright */
         lv_obj_set_style_arc_width(s_ring, 3 + percent / 12, LV_PART_INDICATOR);
         lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(60 + percent * 195 / 100), LV_PART_INDICATOR);
@@ -153,6 +147,20 @@ void ui_force_screen_on(void)
 {
     s_manual_off = false;
     ui_mark_activity();
+}
+
+void ui_wake_from_tap(void)
+{
+    /* LVGL task: only flags, the 250 ms screen timer turns the panel on (and re-arms Allow/Deny) */
+    if (s_manual_off) {
+        s_manual_off = false;
+        ui_mark_activity();
+    }
+}
+
+bool ui_shutting_down(void)
+{
+    return s_shutting_down;
 }
 
 void ui_set_manual_screen_off(bool off)
@@ -234,11 +242,11 @@ void ui_init(void)
     lv_arc_set_bg_angles(s_ring, 0, 360);
     lv_arc_set_angles(s_ring, 0, 360);
     lv_obj_remove_style(s_ring, NULL, LV_PART_KNOB);
-    lv_obj_remove_flag(s_ring, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_clickable(s_ring, false);
     lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_arc_width(s_ring, 6, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_EN), LV_PART_INDICATOR);
-    lv_obj_add_flag(s_ring, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_hidden(s_ring, true);
 
     s_text_box = lv_obj_create(scr);
     lv_obj_set_size(s_text_box, 400, 236);
@@ -248,7 +256,7 @@ void ui_init(void)
     lv_obj_set_style_pad_all(s_text_box, 0, 0);
     lv_obj_set_scroll_dir(s_text_box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_text_box, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_add_flag(s_text_box, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_event_bubble(s_text_box, true);
 
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, lv_pct(100));

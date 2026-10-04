@@ -8,7 +8,10 @@
  * by main.c); once it is answered, cancelled, timed out or the Mac link drops, this file posts
  * MODES_EV_URGENT_DONE after a short look at the result, and the shell restores the mode (or the lock).
  * If the user leaves a shown request (BOOT x1, PWR x1/x2/x3), it stays pending here and on the Mac; the
- * Claude screen shows it again (Allow/Deny re-armed) until it is answered, cancelled or the Mac drops.
+ * Claude screen shows it again (Allow/Deny re-armed) until it is answered, cancelled or the Mac drops, and
+ * unlocking (PWR x1, lock-screen double tap) brings it back on top (modes.c).
+ * A request with no answer or cancel REQUEST_CAP_MS after it arrived is dropped here as if cancelled (the
+ * Mac gives up at 90 s and sends a cancel; this covers a lost cancel).
  */
 #include <string.h>
 
@@ -43,6 +46,10 @@ static int64_t s_press_started_us;
 /* How long the result ("Allowed", "Denied", ...) stays up before the shell restores the previous screen */
 #define RESTORE_DELAY_MS 1200
 static lv_timer_t *s_restore_timer;
+
+/* Board-side cap on a shown request: dropped as "Timed out" if neither an answer nor a cancel came */
+#define REQUEST_CAP_MS 100000
+static lv_timer_t *s_cap_timer;
 
 static void arm_buttons(void)
 {
@@ -83,17 +90,42 @@ static void set_buttons(bool visible)
 static void show_idle(const char *title, const char *detail)
 {
     s_pending_id = 0;
+    if (s_cap_timer) {
+        lv_timer_delete(s_cap_timer);
+        s_cap_timer = NULL;
+    }
     set_buttons(false);
     lv_label_set_text(s_project, "");
     lv_label_set_text(s_title, title);
     lv_label_set_text(s_detail, detail);
 }
 
-/* Runs in the LVGL task (lock already held): the Claude screen came back (PWR x2, a takeover, an unlock).
- * A request left pending meanwhile must be read again before Allow/Deny take a tap. */
+/* LVGL timer, lock held: no answer and no cancel for REQUEST_CAP_MS. Drop it like a cancel. */
+static void cap_cb(lv_timer_t *t)
+{
+    s_cap_timer = NULL;   /* one-shot: LVGL deletes it after this call */
+    if (s_pending_id == 0) {
+        return;
+    }
+    ESP_LOGW(TAG, "request %lu: no answer or cancel after %d s, dropping it", (unsigned long)s_pending_id,
+             REQUEST_CAP_MS / 1000);
+    show_idle("Timed out", "Answer in the terminal.");
+    schedule_restore();
+}
+
+/* Runs inside lv_screen_load, i.e. in the shell task with the display lock held: the Claude screen came back
+ * (PWR x2, a takeover, an unlock). A request left pending meanwhile must be read again before Allow/Deny take
+ * a tap. */
 static void on_screen_loaded(lv_event_t *e)
 {
     arm_buttons();
+}
+
+/* Runs in the LVGL task (lock already held). A tap on the dark panel (Allow/Deny are not clickable then, so it
+ * lands here) ends a manual screen-off; the buttons re-arm when the panel turns on. */
+static void on_screen_tap(lv_event_t *e)
+{
+    ui_wake_from_tap();
 }
 
 /* Runs in the LVGL task (lock already held) */
@@ -160,6 +192,7 @@ void claude_ui_init(void)
     lv_obj_set_style_bg_color(s_scr, lv_color_black(), 0);
     lv_obj_set_scrollable(s_scr, false);
     lv_obj_add_event_cb(s_scr, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
+    lv_obj_add_event_cb(s_scr, on_screen_tap, LV_EVENT_CLICKED, NULL);
 
     s_status = make_label(&font_vi_22, 0xc8c8c8, 300, 48);
     s_project = make_label(&font_vi_22, 0x9a9a9a, 360, 86);
@@ -179,14 +212,6 @@ void claude_ui_init(void)
 lv_obj_t *claude_ui_screen(void)
 {
     return s_scr;
-}
-
-bool claude_ui_visible(void)
-{
-    bsp_display_lock((uint32_t)-1);
-    bool v = lv_screen_active() == s_scr;
-    bsp_display_unlock();
-    return v;
 }
 
 void claude_ui_set_link(bool connected)
@@ -229,6 +254,11 @@ void claude_ui_on_message(const claude_msg_t *m)
         lv_label_set_text(s_detail, third ? third : "");
         set_buttons(true);
         arm_buttons();
+        if (s_cap_timer) {
+            lv_timer_delete(s_cap_timer);
+        }
+        s_cap_timer = lv_timer_create(cap_cb, REQUEST_CAP_MS, NULL);
+        lv_timer_set_repeat_count(s_cap_timer, 1);
         break;
     case CLAUDE_CANCEL:
         if (m->id == s_pending_id) {
