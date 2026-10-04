@@ -102,7 +102,7 @@ static volatile uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
  * writes its own CCCD (setNotifyValue(true), every connect) nothing is reported. So the link waits here and
  * becomes the iPhone audio link on the app's first write to the text or control characteristic (ESPLink writes
  * the time and the mic state on every connect). */
-static uint16_t s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
+static volatile uint16_t s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
 /* Last app write (text, control or keepalive) on s_phone_conn, and the host-task timer that checks it: an iPhone
  * that keeps the bonded link for ANCS after the app was swiped away must not keep the board streaming audio */
 static int64_t s_phone_last_write_us;
@@ -133,8 +133,10 @@ static void request_encryption(uint16_t conn)
     if (conn == s_enc_asked_conn || ble_gap_conn_find(conn, &desc) != 0 || desc.sec_state.encrypted) {
         return;
     }
-    s_enc_asked_conn = conn;
     int rc = ble_gap_security_initiate(conn);
+    if (rc == 0 || rc == BLE_HS_EALREADY) {
+        s_enc_asked_conn = conn;   /* asked, or a pairing already runs: no second prompt on this link */
+    }
     ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
 }
 
@@ -235,6 +237,36 @@ static void on_phone_idle_check(struct ble_npl_event *ev)
     ESP_LOGI(TAG, "iPhone app silent for %d s — audio off", (int)(PHONE_IDLE_TIMEOUT_US / 1000000));
     phone_audio_off(true);
     s_audio_pending_conn = conn;
+}
+
+/* Board mic tapped while the iPhone link waits (app silent or not seen yet): host task, posted by
+ * ble_link_wake_phone(). Take the role back and turn the mic on: the control notification wakes a suspended app,
+ * whose writes keep the role; a dead app loses it again after PHONE_IDLE_TIMEOUT_US. */
+static struct ble_npl_event s_wake_ev;
+static volatile rec_lang_t s_wake_lang;
+
+static void on_wake_phone(struct ble_npl_event *ev)
+{
+    (void)ev;
+    uint16_t conn = s_audio_pending_conn;
+    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE || conn == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+    ESP_LOGI(TAG, "board mic tapped: iPhone audio back on the waiting link %d", conn);
+    phone_audio_on(conn);
+    if (s_phone_conn == conn) {
+        app_request_recording(s_wake_lang);   /* main.c turns the mic on and notifies the control value */
+    }
+}
+
+bool ble_link_wake_phone(rec_lang_t lang)
+{
+    if (s_audio_pending_conn == BLE_HS_CONN_HANDLE_NONE) {
+        return false;
+    }
+    s_wake_lang = lang;
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_wake_ev);
+    return true;
 }
 
 /* A write to the translator characteristics: the app is alive. On a link whose audio CCCD was only restored (or
@@ -677,6 +709,7 @@ void ble_link_init(void)
 {
     ESP_ERROR_CHECK(nimble_port_init());
     ble_npl_callout_init(&s_phone_idle_timer, nimble_port_get_dflt_eventq(), on_phone_idle_check, NULL);
+    ble_npl_event_init(&s_wake_ev, on_wake_phone, NULL);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
     /* Just Works bonding (no keypad); only the Claude characteristics demand encryption */
@@ -737,7 +770,8 @@ bool ble_link_send_audio(const uint8_t *data, uint16_t len)
 void ble_link_notify_control(uint8_t state)
 {
     (void)state; /* the value is read back through chr_access */
-    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE) {
+    /* The waiting link too: the notification wakes a suspended app */
+    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE || s_audio_pending_conn != BLE_HS_CONN_HANDLE_NONE) {
         ble_gatts_chr_updated(s_ctrl_handle);
     }
 }

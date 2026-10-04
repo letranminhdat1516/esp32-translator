@@ -225,7 +225,10 @@ void app_main(void)
             continue;
         }
         if (lang != REC_NONE && !s_connected) {
-            ui_show_status("iPhone not connected");
+            /* The app went silent (suspended after a call) on a link iOS kept: the tap brings the role back */
+            if (!ble_link_wake_phone(lang)) {
+                ui_show_status("iPhone not connected");
+            }
             continue;
         }
         if (lang == s_recording) {

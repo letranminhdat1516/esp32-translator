@@ -64,6 +64,7 @@ final class ConversationEngine {
     private var vietnameseIn: LiveTranscriber?
     private var espSource: ESPAudioSource?
     private var mic: MicSource?
+    private var micFormat: AVAudioFormat?
     private var subtitleTranslator: SubtitleTranslator?
     private var theirFinals: AsyncStream<String>.Continuation?
 
@@ -148,7 +149,9 @@ final class ConversationEngine {
                                 onSpeechEnd: { vietnamese.finalizeNow() })
             try mic.start()
             self.mic = mic
+            self.micFormat = micFormat
 
+            observeAudioSession()
             startPhraseEndWatcher()
             startDiagnostics()
             phase = .running
@@ -305,6 +308,42 @@ final class ConversationEngine {
                     self.englishIn?.finalizeNow()
                 }
             }
+        }
+    }
+
+    // MARK: Audio session recovery
+
+    /// A phone call or Siri interrupts the session and stops the mic engine; iOS may then suspend the app in the
+    /// background. Restart the mic when the interruption ends (and rebuild it after a media services reset), so
+    /// the app keeps running and keeps the board's translator link alive (ESPLink keepalive).
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: nil) { note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            Task { @MainActor [weak self] in self?.restartMic(rebuild: false, reason: "interruption ended") }
+        }
+        center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: nil) { _ in
+            Task { @MainActor [weak self] in self?.restartMic(rebuild: true, reason: "media services reset") }
+        }
+    }
+
+    private func restartMic(rebuild: Bool, reason: String) {
+        guard phase == .running, let vietnamese = vietnameseIn, let micFormat else { return }
+        do {
+            try configureAudioSession()
+            if rebuild || mic == nil {
+                mic?.stop()
+                let fresh = MicSource(target: micFormat, sink: { vietnamese.feed($0) },
+                                      onSpeechEnd: { vietnamese.finalizeNow() })
+                try fresh.start()
+                mic = fresh
+            } else {
+                try mic?.resume()
+            }
+            Diag.log("mic: restarted (\(reason))")
+        } catch {
+            Diag.log("mic: restart failed (\(reason)): \(error.localizedDescription)")
         }
     }
 

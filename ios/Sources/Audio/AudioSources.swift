@@ -131,6 +131,13 @@ final class MicSource {
         }
     }
 
+    /// After an audio session interruption (phone call, Siri) the engine is stopped but keeps its tap: start it again
+    func resume() throws {
+        guard !engine.isRunning else { return }
+        engine.prepare()
+        try engine.start()
+    }
+
     func stop() {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()

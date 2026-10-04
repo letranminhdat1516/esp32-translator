@@ -49,6 +49,9 @@ bool ble_link_audio_ready(void);
 uint16_t ble_link_payload_max(void);
 bool ble_link_send_audio(const uint8_t *data, uint16_t len);
 void ble_link_notify_control(uint8_t state);
+/* Board mic tapped without the iPhone audio role: if an iPhone link waits for the app, take it back (async, NimBLE
+ * host task) and request lang again; false: no such link */
+bool ble_link_wake_phone(rec_lang_t lang);
 bool ble_link_claude_connected(void);
 bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* CLAUDE_DECISION_* */
 /* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX; false if no Mac */

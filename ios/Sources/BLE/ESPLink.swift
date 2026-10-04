@@ -31,6 +31,10 @@ final class ESPLink: NSObject, @unchecked Sendable {
     /// Control byte the board takes as "the app is alive" (0...2 are mic states); see firmware/main/phone_idle.h
     static let keepaliveByte: UInt8 = 0xFF
     static let keepaliveInterval: TimeInterval = 20
+    /// Last write to the board (BLE queue): a notification from the board after a longer silence (the app was
+    /// suspended, so the timer did not fire) sends a keepalive right away
+    private var lastWrite = DispatchTime.now()
+    private static let staleWrite: UInt64 = 15_000_000_000
 
     /// The round screen fits about 5 lines of 36 px text, so only the tail is sent
     private let maxTextBytes = 150
@@ -65,14 +69,14 @@ final class ESPLink: NSObject, @unchecked Sendable {
     func sendTime() {
         queue.async { [self] in
             guard let peripheral, peripheral.state == .connected, let textCharacteristic else { return }
-            peripheral.writeValue(Self.timePayload(), for: textCharacteristic, type: .withResponse)
+            write(peripheral, Self.timePayload(), for: textCharacteristic, type: .withResponse)
         }
     }
 
     func setBoardMic(_ on: Bool) {
         queue.async { [self] in
             guard let peripheral, let controlCharacteristic else { return }
-            peripheral.writeValue(Data([on ? 1 : 0]), for: controlCharacteristic, type: .withResponse)
+            write(peripheral, Data([on ? 1 : 0]), for: controlCharacteristic, type: .withResponse)
         }
     }
 
@@ -83,10 +87,25 @@ final class ESPLink: NSObject, @unchecked Sendable {
         timer.schedule(deadline: .now() + Self.keepaliveInterval, repeating: Self.keepaliveInterval, leeway: .seconds(2))
         timer.setEventHandler { [weak self] in
             guard let self, let peripheral, peripheral.state == .connected, let controlCharacteristic else { return }
-            peripheral.writeValue(Data([Self.keepaliveByte]), for: controlCharacteristic, type: .withResponse)
+            write(peripheral, Data([Self.keepaliveByte]), for: controlCharacteristic, type: .withResponse)
         }
         timer.resume()
         keepalive = timer
+    }
+
+    /// Every write to the board goes through here (BLE queue)
+    private func write(_ peripheral: CBPeripheral, _ data: Data, for characteristic: CBCharacteristic,
+                       type: CBCharacteristicWriteType) {
+        peripheral.writeValue(data, for: characteristic, type: type)
+        lastWrite = .now()
+    }
+
+    /// The board notified something: if the app has not written for 15 s (it was suspended), prove it is alive
+    private func keepaliveIfStale(_ peripheral: CBPeripheral) {
+        guard let controlCharacteristic,
+              DispatchTime.now().uptimeNanoseconds &- lastWrite.uptimeNanoseconds > Self.staleWrite else { return }
+        Diag.log("ble: keepalive after \((DispatchTime.now().uptimeNanoseconds &- lastWrite.uptimeNanoseconds) / 1_000_000_000) s without a write")
+        write(peripheral, Data([Self.keepaliveByte]), for: controlCharacteristic, type: .withResponse)
     }
 
     private func stopKeepalive() {
@@ -96,7 +115,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
 
     private func flush(_ peripheral: CBPeripheral, _ characteristic: CBCharacteristic) {
         while !pendingChunks.isEmpty && peripheral.canSendWriteWithoutResponse {
-            peripheral.writeValue(pendingChunks.removeFirst(), for: characteristic, type: .withoutResponse)
+            write(peripheral, pendingChunks.removeFirst(), for: characteristic, type: .withoutResponse)
         }
     }
 
@@ -188,17 +207,18 @@ extension ESPLink: CBPeripheralDelegate {
         }
         // Set the board clock (with response: never dropped or replaced by a subtitle write)
         if let textCharacteristic {
-            peripheral.writeValue(Self.timePayload(), for: textCharacteristic, type: .withResponse)
+            write(peripheral, Self.timePayload(), for: textCharacteristic, type: .withResponse)
         }
         // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {
-            peripheral.writeValue(Data([1]), for: controlCharacteristic, type: .withResponse)
+            write(peripheral, Data([1]), for: controlCharacteristic, type: .withResponse)
             startKeepalive()
         }
         setState(.ready)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        keepaliveIfStale(peripheral)
         guard let value = characteristic.value else { return }
         if characteristic.uuid == Self.audioChar {
             onAudioPacket?(value)
