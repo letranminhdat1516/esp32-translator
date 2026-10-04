@@ -81,6 +81,17 @@ func roundTrip(_ d: FakeDaemon, timeout: TimeInterval = 2) -> BridgeReply? {
     #expect(HookOutput.output(for: nil) == nil)
 }
 
+@Test func largeAnswerReplyIsAccepted() {
+    // 4 questions with long option descriptions: updatedInput is well over 4 KB
+    let long = String(repeating: "mô tả dài ", count: 1500)
+    let body = #"{"decision":"allow","updatedInput":{"questions":[],"pad":""# + long + #""}}"# + "\n"
+    #expect(body.utf8.count > 8192)
+    let d = FakeDaemon { fd in readRequest(fd); send(fd, body) }
+    let reply = roundTrip(d)
+    #expect(reply?.decision == "allow")
+    #expect(reply?.updatedInput != nil)
+}
+
 @Test func daemonClosesWithoutReplyIsNil() {
     let d = FakeDaemon { fd in readRequest(fd) }
     #expect(roundTrip(d) == nil)

@@ -70,8 +70,9 @@ private func waitReady(_ fd: Int32, _ events: Int16, deadline: Double) -> Bool {
     }
 }
 
-/// Longest reply line accepted from the daemon.
-let maxReplyBytes = 4096
+/// Longest reply line accepted from the daemon. An AskUserQuestion allow echoes the whole tool input
+/// (questions + option descriptions) in updatedInput, so this must cover the daemon's request limit (4 MiB).
+let maxReplyBytes = 5 * 1024 * 1024
 
 /// Hook side. Writes the event followed by "\n"; if `waitForReply`, reads one line back.
 /// The whole round trip (write + read) shares one absolute deadline of `timeout` seconds.
@@ -122,7 +123,7 @@ public func bridgeRoundTrip(
     guard waitForReply else { return nil }
 
     var line = Data()
-    var chunk = [UInt8](repeating: 0, count: 512)
+    var chunk = [UInt8](repeating: 0, count: 16384)
     while true {
         guard waitReady(fd, Int16(POLLIN), deadline: deadline) else { return nil }
         let n = read(fd, &chunk, chunk.count)
