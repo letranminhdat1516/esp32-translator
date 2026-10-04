@@ -7,12 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		02486F5EB1F5D6A464567D5B /* VietnameseFixup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */; };
 		03A084A0E7876AC97885C3AF /* ADPCMDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */; };
+		0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */; };
 		0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D91563831394399DEB8B628 /* Diagnostics.swift */; };
 		2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A95279E4169D54A6DBEF7 /* ContentView.swift */; };
 		45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8370A481AE6CA850A659C829 /* ConversationEngine.swift */; };
 		6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458050A752F26BCC732FE5C8 /* AudioSources.swift */; };
 		ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1746279919516ABC5EF3518 /* Translator.swift */; };
+		BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */; };
+		C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */; };
 		CCEEE4771E62F23184CE2A33 /* Speaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDB2EF9FEDBFA4E8197D1E9 /* Speaker.swift */; };
 		DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */; };
 		EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A3BAF0A7DD758B7F0C7AACD /* LiveTranscriber.swift */; };
@@ -24,13 +28,17 @@
 		15691D33531FFAA79141FCBC /* ESPTranslator.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ESPTranslator.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DDB2EF9FEDBFA4E8197D1E9 /* Speaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speaker.swift; sourceTree = "<group>"; };
 		458050A752F26BCC732FE5C8 /* AudioSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSources.swift; sourceTree = "<group>"; };
+		5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VietnameseFixup.swift; sourceTree = "<group>"; };
 		6A3BAF0A7DD758B7F0C7AACD /* LiveTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriber.swift; sourceTree = "<group>"; };
+		6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceGate.swift; sourceTree = "<group>"; };
 		79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPTranslatorApp.swift; sourceTree = "<group>"; };
+		7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnAssembler.swift; sourceTree = "<group>"; };
 		8370A481AE6CA850A659C829 /* ConversationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationEngine.swift; sourceTree = "<group>"; };
 		88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADPCMDecoder.swift; sourceTree = "<group>"; };
 		A1746279919516ABC5EF3518 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
+		DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleTranslator.swift; sourceTree = "<group>"; };
 		E86A95279E4169D54A6DBEF7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -84,7 +92,9 @@
 		B0B96D28065C85B471C0EF6E /* Translate */ = {
 			isa = PBXGroup;
 			children = (
+				DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */,
 				A1746279919516ABC5EF3518 /* Translator.swift */,
+				5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */,
 			);
 			path = Translate;
 			sourceTree = "<group>";
@@ -95,6 +105,7 @@
 				8370A481AE6CA850A659C829 /* ConversationEngine.swift */,
 				0D91563831394399DEB8B628 /* Diagnostics.swift */,
 				79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */,
+				7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -104,6 +115,7 @@
 			children = (
 				88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */,
 				458050A752F26BCC732FE5C8 /* AudioSources.swift */,
+				6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -185,7 +197,11 @@
 				DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */,
 				EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */,
 				CCEEE4771E62F23184CE2A33 /* Speaker.swift in Sources */,
+				0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */,
 				ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */,
+				BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */,
+				02486F5EB1F5D6A464567D5B /* VietnameseFixup.swift in Sources */,
+				C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
