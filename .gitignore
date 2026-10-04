@@ -18,3 +18,4 @@ DerivedData/
 
 # Subagent-driven development scratch
 .superpowers/
+__pycache__/
