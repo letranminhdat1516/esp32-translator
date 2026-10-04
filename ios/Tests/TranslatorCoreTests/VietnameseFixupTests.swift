@@ -57,6 +57,8 @@ import Testing
         ("Mắc quá, giá này bớt chút đi", "Đắt quá, giá này giảm giá chút đi"),
         // Vocatives only: keep them (otherwise nothing is left to translate)
         ("Ông ơi, ông bà ơi", "Ông ơi, ông bà ơi"),
+        ("Em ơi", "Em ơi"),
+        ("Em ơi!", "Em ơi!"),
         ("Bà ơi bà ở đâu?", "Bà ở đâu?"),
     ])
     func forTranslation(spoken: String, translated: String) {

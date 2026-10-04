@@ -73,7 +73,7 @@ Battery life has not been measured yet.
 
 The Vietnamese dictation model ignores contextual strings and custom language models; what decides its accuracy is the audio it gets. Speech from people around you, heard before or after your own words, gets transcribed and translated as if you said it. So:
 
-- **Own-voice gate** (`ios/Sources/Audio/VoiceGate.swift`). Your mouth is a few centimetres from the AirPods mics, so your voice is much louder there than anyone nearby. A 20 ms frame opens the gate only if it is at least 8 dB above the background (5th percentile of the last 3 s, so it follows café noise within seconds), periodic at a speech pitch (autocorrelation), and within 10 dB of your own level (learned from your speech; it sinks 3 dB a minute while you are silent, so a softer voice is never shut out for long). 300 ms pre-roll, 0.8 s hangover, then the phrase is finalized.
+- **Own-voice gate** (`ios/Sources/Audio/VoiceGate.swift`). Your mouth is a few centimetres from the AirPods mics, so your voice is much louder there than anyone nearby. A 20 ms frame opens the gate only if it is at least 8 dB above the background (5th percentile of the last 3 s, so it follows café noise within seconds), periodic at a speech pitch (autocorrelation), and within 8 dB of your own level. Your level is learned per utterance (a median over your last five, weighted by length, so one shout does not shut out normal speech), forgotten when the audio route changes, and relearned when the mic gain drops (your voice and the background fall together). A sentence that trails off is kept as long as it continues without a gap. 300 ms pre-roll, 0.8 s hangover, then the phrase is finalized.
 - **Fix-ups** (`ios/Sources/Translate/VietnameseFixup.swift`). Recurring loanword mishearings are corrected in the recognized text ("giữa lo" → Zalo, "hoa phay" → Wi-Fi, "C nga co" → Singapore, …). Before translation only, vocatives are dropped and a few service phrases and idioms are spelled out ("Em ơi, tính tiền!" → "Cho tôi thanh toán!" → "Let me pay!" instead of "Baby, charge!"). The "You say" panel shows what was recognized.
 - **Turns** (`ios/Sources/App/TurnAssembler.swift`). A new subtitle screen starts only after a finalized phrase and a 2 s pause, never in the middle of a phrase that is still being recognized.
 
@@ -82,15 +82,16 @@ Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one T
 | Audio | Old energy gate | Own-voice gate | Cut at the true speech span |
 |---|---:|---:|---:|
 | Quiet room | 3.1 % | 3.1 % | |
-| Telephone band (like the AirPods mic) | 1.2 % | 1.2 % | |
-| Café babble 10 dB below your voice | 12.5 % | 3.1 % | 1.6 % |
-| Telephone band + babble 10 dB | 9.4 % | 2.2 % | 3.1 % |
-| Babble 3 dB below your voice | 23.8 % | 12.5 % | 6.6 % |
+| Telephone band (like the AirPods mic) | 1.2 % | 1.6 % | |
+| Café babble 10 dB below your voice | 12.5 % | 1.9 % | 1.6 % |
+| Telephone band + babble 10 dB | 9.4 % | 2.8 % | 3.1 % |
+| Babble 3 dB below your voice | 23.8 % | 11.2 % | 6.6 % |
 | Someone 12 dB quieter talking right before and after you | 117.8 % | 10.9 % | 6.9 % |
+| 5 s of café babble (10 dB) before you start | 80.6 % | 7.8 % | 2.2 % |
 
 (Run to run, the same audio varies by about ±0.6 points; one syllable is 0.3.)
 
-A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds before you speak, still gets through: level cannot tell them apart. Until you have spoken for about a second in a session, the gate does not know your level yet. `swift test` in `ios/` runs the unit tests (gate, turns, fix-ups, subtitle translator) on the Mac.
+A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds before you speak, still gets through: level cannot tell them apart. Until you have spoken for about a second in a session, the gate does not know your level yet. Whispering does not open the gate, by design: a whisper is unvoiced and far below your normal level, like a bystander. `swift test` in `ios/` runs the unit tests (gate, turns, fix-ups, subtitle translator) on the Mac.
 
 ## Repository layout
 
@@ -194,7 +195,7 @@ Daemon log: `~/.claude-board/daemon.log`.
 |---|---|---|---|
 | `echoHold` | `ios/Sources/App/ConversationEngine.swift` | 1 s | How long board-mic results are ignored after you stop speaking. Raise it if the board still picks up your voice |
 | `turnGap` | same | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
-| `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 10 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
+| `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
 | `rate` | `ios/Sources/Speech/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 | `VAD_HANGOVER_FRAMES` | same | 40 (800 ms) | Lower = faster phrase end, but long pauses split sentences |
