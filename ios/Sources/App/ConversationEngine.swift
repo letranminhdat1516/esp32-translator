@@ -254,10 +254,11 @@ final class ConversationEngine {
     private func handleMine(_ event: TranscriptEvent) {
         Diag.log("VI \(Self.describe(event))")
         let now = Date()
+        // The panel shows the recognized text with loanwords fixed (VietnameseFixup)
         let text: String
         switch event {
-        case .partial(let t): text = t
-        case .final(let t, _): text = t
+        case .partial(let t): text = VietnameseFixup.fixLoanwords(t)
+        case .final(let t, _): text = VietnameseFixup.fixLoanwords(t)
         }
         guard !text.isEmpty else {
             myPartial = ""
@@ -271,16 +272,17 @@ final class ConversationEngine {
         myLastSpeech = now
 
         switch event {
-        case .partial(let t):
-            myPartial = t
-        case .final(let t, _):
+        case .partial:
+            myPartial = text
+        case .final:
             myPartial = ""
-            myTurnCommitted = myTurnCommitted.isEmpty ? t : myTurnCommitted + " " + t
+            myTurnCommitted = myTurnCommitted.isEmpty ? text : myTurnCommitted + " " + text
         }
 
         let turnText = [myTurnCommitted, myPartial].filter { !$0.isEmpty }.joined(separator: " ")
         if !myLines.isEmpty { myLines[myLines.count - 1].source = turnText }
-        subtitleTranslator?.submit(turnText)
+        // The translator gets it with vocatives dropped and service phrases spelled out
+        subtitleTranslator?.submit(VietnameseFixup.forTranslation(turnText))
     }
 
     private func showSubtitle(_ english: String) {
