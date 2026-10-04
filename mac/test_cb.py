@@ -54,7 +54,8 @@ class CbTests(unittest.TestCase):
     def claude_args(self):
         for _ in range(100):
             if os.path.exists(self.out):
-                lines = open(self.out).read().splitlines()
+                with open(self.out) as f:
+                    lines = f.read().splitlines()
                 if lines and len(lines) == int(lines[0]) + 1:
                     return lines[1:]
             time.sleep(0.05)
@@ -67,7 +68,8 @@ class CbTests(unittest.TestCase):
         pane = self.cb(self.project("esp32-translator"), "--resume", "a b")
         self.assertTrue(pane.startswith("%"), pane)
         self.assertEqual(self.claude_args(), ["--resume", "a b"])
-        self.assertEqual(self.sessions(), ["esp32-translator"])
+        self.assertRegex(self.sessions()[0], r"^esp32-translator-[0-9a-f]{6}$")
+        self.assertEqual(len(self.sessions()), 1)
         self.assertEqual(self.tmux("show-options", "-p", "-v", "-t", pane, "@claude_board"), "1")
 
     def test_no_arguments_still_runs_claude(self):
@@ -79,12 +81,12 @@ class CbTests(unittest.TestCase):
         first = self.cb(d)
         self.claude_args()
         self.assertEqual(self.cb(d), first)
-        self.assertEqual(self.sessions(), ["api"])
+        self.assertEqual(len(self.sessions()), 1)
 
     def test_odd_directory_names_are_sanitised(self):
         self.cb(self.project("my.proj:x"))
         self.claude_args()
-        self.assertEqual(self.sessions(), ["my_proj_x"])
+        self.assertRegex(self.sessions()[0], r"^my_proj_x-[0-9a-f]{6}$")
 
     def test_inside_tmux_marks_this_pane_and_runs_claude_here(self):
         pane = self.tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "host", "sleep 60")
@@ -98,6 +100,55 @@ class CbTests(unittest.TestCase):
         finally:
             p.kill()
             p.wait()
+
+    def test_inside_tmux_unmarks_the_pane_when_claude_exits(self):
+        with open(os.path.join(self.tmp, "bin", "claude"), "w") as f:
+            f.write("#!/bin/bash\nexit 3\n")
+        pane = self.tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", "host", "sleep 60")
+        sock = self.tmux("display-message", "-p", "-t", pane, "#{socket_path}")
+        env = dict(self.env, TMUX=sock + ",1,0", TMUX_PANE=pane)
+        r = subprocess.run([CB], cwd=self.project("inner2"), env=env, capture_output=True, timeout=20)
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(self.tmux("show-options", "-p", "-v", "-t", pane, "@claude_board"), "")
+
+    def test_tmux_without_pane_is_an_error(self):
+        env = dict(self.env, TMUX="/x,1,0")
+        env.pop("TMUX_PANE", None)
+        r = subprocess.run([CB], cwd=self.project("nopane"), env=env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("TMUX_PANE", r.stderr)
+
+    def test_same_basename_in_different_directories_gets_separate_sessions(self):
+        a = self.project("a")
+        b = self.project("b")
+        os.makedirs(os.path.join(a, "api"))
+        os.makedirs(os.path.join(b, "api"))
+        self.cb(os.path.join(a, "api"), "one")
+        self.cb(os.path.join(b, "api"), "two")
+        self.assertEqual(len(set(self.sessions())), 2)
+
+    def test_dotted_and_underscored_names_do_not_collide(self):
+        self.cb(self.project("my.proj"))
+        self.cb(self.project("my_proj"))
+        self.assertEqual(len(set(self.sessions())), 2)
+
+    def test_existing_foreign_session_is_not_attached(self):
+        d = self.project("foreign")
+        self.cb(d)
+        self.claude_args()
+        name = self.sessions()[0]
+        self.tmux("set-option", "-p", "-u", "-t", "=%s:" % name, "@claude_board")
+        r = subprocess.run([CB], cwd=d, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("isn't a cb session", r.stderr)
+
+    def test_reusing_a_session_with_arguments_says_they_are_ignored(self):
+        d = self.project("reuse")
+        self.cb(d)
+        self.claude_args()
+        r = subprocess.run([CB, "-c"], cwd=d, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("arguments ignored", r.stderr)
 
     def test_missing_claude_is_an_error(self):
         env = dict(self.env, PATH="/usr/bin:/bin")

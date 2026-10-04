@@ -16,21 +16,40 @@ done
 CLAUDE_BIN=$(command -v claude || true)
 [ -n "$CLAUDE_BIN" ] || { echo "cb: claude not found in PATH" >&2; exit 1; }
 
-if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ]; then
-  "$TMUX_BIN" set-option -p -t "$TMUX_PANE" @claude_board 1
-  exec "$CLAUDE_BIN" "$@"
+if [ -n "${TMUX:-}" ]; then
+  [ -n "${TMUX_PANE:-}" ] || { echo "cb: \$TMUX is set but \$TMUX_PANE is not; cannot tell which pane to mark" >&2; exit 1; }
+  if "$TMUX_BIN" set-option -p -t "$TMUX_PANE" @claude_board 1; then
+    # Not exec: the pane's process is the user's shell, so the mark must be removed when claude ends.
+    unmark() { "$TMUX_BIN" set-option -p -u -t "$TMUX_PANE" @claude_board 2>/dev/null || true; }
+    trap unmark EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM HUP
+  else
+    echo "cb: could not mark this pane; voice commands disabled for this pane" >&2
+  fi
+  "$CLAUDE_BIN" "$@" && rc=0 || rc=$?
+  exit "$rc"
 fi
 
-# tmux session names cannot contain "." or ":"
-name=$(printf '%s' "$(basename "$PWD")" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_')
-[ -n "$name" ] || name=claude
+# Session name: sanitised directory name (tmux rejects "." and ":") plus a hash of the full path, so
+# different directories never share a session.
+base=$(printf '%s' "$(basename "$PWD")" | LC_ALL=C tr -c 'A-Za-z0-9_-' '_')
+[ -n "$base" ] || base=claude
+name="$base-$(printf '%06x' "$(printf '%s' "$PWD" | cksum | cut -d' ' -f1)" | tail -c 6)"
 if "$TMUX_BIN" has-session -t "=$name" 2>/dev/null; then
   pane=$("$TMUX_BIN" display-message -p -t "=$name:" '#{pane_id}')
+  mark=$("$TMUX_BIN" display-message -p -t "=$name:" '#{@claude_board}')
+  if [ "$mark" != 1 ]; then
+    echo "cb: tmux session $name exists but isn't a cb session; not attaching" >&2
+    exit 1
+  fi
+  [ $# -eq 0 ] || echo "cb: session already running; arguments ignored" >&2
 else
-  # One argument would go through `sh -c`: exec the quoted path so the pane process is claude itself
-  if [ $# -eq 0 ]; then cmd=("$(printf 'exec %q' "$CLAUDE_BIN")"); else cmd=("$CLAUDE_BIN" "$@"); fi
-  pane=$("$TMUX_BIN" new-session -d -P -F '#{pane_id}' -s "$name" -c "$PWD" -e "PATH=$PATH" -- "${cmd[@]}")
-  "$TMUX_BIN" set-option -p -t "$pane" @claude_board 1
+  # The pane command marks its own pane before it execs claude, so claude never runs unmarked and the
+  # pane process is claude itself.
+  pane=$("$TMUX_BIN" new-session -d -P -F '#{pane_id}' -s "$name" -c "$PWD" -e "PATH=$PATH" -- \
+    sh -c 'tmux=$1; claude=$2; shift 2; "$tmux" set-option -p -t "$TMUX_PANE" @claude_board 1; exec "$claude" "$@"' \
+    cb "$TMUX_BIN" "$CLAUDE_BIN" "$@")
 fi
 if [ "${CB_NO_ATTACH:-0}" = 1 ]; then
   echo "$pane"
