@@ -324,9 +324,10 @@ static void on_send(lv_event_t *e)
     redraw();
 }
 
-/* Dark panel: the box is not clickable, so a tap reaches the screen and wakes it; the text box takes presses
- * (to scroll), so it wakes the panel itself */
-static void on_text_tap(lv_event_t *e)
+/* The box is clickable so no tap ever reaches the controls it covers (Allow / Deny / Always allow / Deny + why on
+ * the Claude screen, rows and Next / Send on a question page). A tap on it, or on the text box (which takes
+ * presses to scroll), only wakes a dark panel; on a lit one it is swallowed. */
+static void on_box_tap(lv_event_t *e)
 {
     ui_wake_from_tap();
 }
@@ -356,7 +357,7 @@ static lv_obj_t *make_button(const char *text, uint32_t color, int width, lv_eve
  * Every corner stays within r 222 of the centre. */
 void voice_ui_init(lv_obj_t *scr)
 {
-    s_box = lv_obj_create(scr);   /* opaque, covers the Claude screen and question pages while shown */
+    s_box = lv_obj_create(scr);   /* opaque and clickable: covers the Claude screen and question pages while shown */
     lv_obj_set_size(s_box, 466, 466);
     lv_obj_center(s_box);
     lv_obj_set_style_bg_color(s_box, lv_color_black(), 0);
@@ -365,7 +366,8 @@ void voice_ui_init(lv_obj_t *scr)
     lv_obj_set_style_radius(s_box, 0, 0);
     lv_obj_set_style_pad_all(s_box, 0, 0);
     lv_obj_set_scrollable(s_box, false);
-    lv_obj_set_clickable(s_box, false);
+    lv_obj_set_clickable(s_box, true);   /* hit-testing must stop here: the live controls underneath stay unreachable */
+    lv_obj_add_event_cb(s_box, on_box_tap, LV_EVENT_CLICKED, NULL);
 
     s_ring = lv_arc_create(s_box);
     lv_obj_set_size(s_ring, 462, 462);
@@ -396,7 +398,7 @@ void voice_ui_init(lv_obj_t *scr)
     lv_obj_set_style_radius(s_text_box, 0, 0);
     lv_obj_set_scroll_dir(s_text_box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_text_box, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_add_event_cb(s_text_box, on_text_tap, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(s_text_box, on_box_tap, LV_EVENT_CLICKED, NULL);
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, 380);
     lv_obj_set_style_text_font(s_text, &font_vi_22, 0);

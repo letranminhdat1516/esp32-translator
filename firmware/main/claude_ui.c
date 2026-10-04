@@ -273,6 +273,12 @@ bool claude_ui_tap_armed(void)
 
 bool claude_ui_tap_allowed(void)
 {
+    /* Defence in depth: while the voice overlay is shown no answer control under it may act, whatever the
+     * hit-testing does (the overlay's own controls use claude_ui_tap_armed) */
+    if (voice_ui_active_locked()) {
+        ESP_LOGW(TAG, "ignoring tap on a control under the voice overlay");
+        return false;
+    }
     return claude_ui_tap_armed() && s_pending_id != 0;
 }
 
@@ -309,7 +315,7 @@ static void on_answer(lv_event_t *e)
 /* Runs in the LVGL task (lock already held) */
 static void on_speak(lv_event_t *e)
 {
-    if (!claude_ui_tap_armed() || s_pending_id != 0 || s_speak_handle == 0) {
+    if (voice_ui_active_locked() || !claude_ui_tap_armed() || s_pending_id != 0 || s_speak_handle == 0) {
         return;
     }
     if (!voice_ui_start_locked(CLAUDE_VOICE_FOR_COMMAND, 0, s_speak_handle)) {

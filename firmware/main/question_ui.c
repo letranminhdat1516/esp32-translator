@@ -8,8 +8,8 @@
  *            Use stores it on the Mac and selects the row (shown as the spoken text); tap again to (un)select,
  *            long-press to say it again. Its mask bit is QUESTION_OTHER_BIT.
  * Selection and the answer bytes: question.c (host-tested). claude_ui.c owns the pending request, the
- * 700 ms arming and the dark-panel rule: every control asks claude_ui_tap_allowed() before acting, and
- * every page change re-arms (a double tap on Next never lands on Send).
+ * 700 ms arming and the dark-panel rule: every control asks claude_ui_tap_allowed() (false while the voice
+ * overlay is shown) before acting, and every page change re-arms (a double tap on Next never lands on Send).
  * Every function runs with the display lock held (LVGL callbacks, or claude_ui.c under the lock).
  * Rows are rebuilt only from the Back / Next buttons, never from a row's own event.
  */
@@ -303,7 +303,8 @@ void question_ui_init(lv_obj_t *scr, question_set_t *set)
     lv_obj_set_style_radius(s_box, 0, 0);
     lv_obj_set_style_pad_all(s_box, 0, 0);
     lv_obj_set_scrollable(s_box, false);
-    lv_obj_set_clickable(s_box, false);   /* a tap between controls reaches the screen (wakes a dark panel) */
+    lv_obj_set_clickable(s_box, true);   /* a tap between controls stops here: it only wakes a dark panel */
+    lv_obj_add_event_cb(s_box, on_text_tap, LV_EVENT_CLICKED, NULL);
 
     s_counter = make_label(COLOR_MUTED, 240, 30);
     s_header = make_label(COLOR_ACCENT, 300, 63);

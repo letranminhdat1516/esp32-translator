@@ -108,7 +108,7 @@ void claude_ui_refresh_session_locked(void);        /* display lock held: status
 /* Every answer control (claude_ui.c, question_ui.c), LVGL task */
 void claude_ui_note_press(void);                    /* call from LV_EVENT_PRESSED */
 bool claude_ui_tap_armed(void);                     /* panel lit, press armed (dark: wakes); voice controls */
-bool claude_ui_tap_allowed(void);                   /* tap_armed and a request pending */
+bool claude_ui_tap_allowed(void);                   /* tap_armed, a request pending, no voice overlay */
 void claude_ui_rearm(void);                         /* new controls under the finger (page change) */
 /* claude_ui.c: a spoken deny reason was applied (voice_ui.c): show "Denied", then restore */
 void claude_ui_voice_denied_locked(void);
