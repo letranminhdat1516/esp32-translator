@@ -203,6 +203,23 @@ static void elapsed_and_labels(void)
     assert(c[0] == 0xe5484d && c[1] == 0xf5c400 && c[2] == 0x30a46c && c[3] == 0x6f6f6f);
 }
 
+static void focus_keeps_the_voice_flag(void)
+{
+    sessions_t s;
+    sessions_clear(&s);
+    claude_session_t a = row(1, CLAUDE_STATE_IDLE, 10, CLAUDE_SESSION_UNSEEN | CLAUDE_SESSION_VOICE, "a");
+    claude_session_t b = row(2, CLAUDE_STATE_IDLE, 20, CLAUDE_SESSION_FOCUSED | CLAUDE_SESSION_VOICE, "b");
+    sessions_upsert(&s, &a);
+    sessions_upsert(&s, &b);
+    sessions_set_focus(&s, 1);
+    const claude_session_t *f = sessions_focused(&s);
+    assert(f != NULL && f->handle == 1 && f->flags == (CLAUDE_SESSION_FOCUSED | CLAUDE_SESSION_VOICE));
+    sessions_set_focus(&s, 2);
+    for (int i = 0; i < s.n; i++) {
+        assert(s.rows[i].flags & CLAUDE_SESSION_VOICE);   /* moving the focus never drops voice */
+    }
+}
+
 int main(void)
 {
     upsert_replaces_the_same_handle();
@@ -217,6 +234,7 @@ int main(void)
     focus_is_exclusive_and_clears_unseen();
     badge_counts_unseen_rows_that_are_not_focused();
     elapsed_and_labels();
+    focus_keeps_the_voice_flag();
     puts("sessions: all tests passed");
     return 0;
 }

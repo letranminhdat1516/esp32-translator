@@ -144,7 +144,7 @@ static void session_rejects_bad_rows(void)
 {
     const char *bad[] = {
         "", "w 1 2 0", "w 1 2 0\np", "x 1 2 0\np\nl", "w 1 2\np\nl", "w a 2 0\np\nl",
-        "w 1 2 0 9\np\nl", "w 1 2 7\np\nl", "w1 2 3 0\np\nl",
+        "w 1 2 0 9\np\nl", "w 1 2 8\np\nl", "w1 2 3 0\np\nl",
     };
     claude_session_t s;
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
@@ -308,6 +308,77 @@ static void split_lines_keeps_the_rest_in_the_last_field(void)
     assert(claude_split_lines(t3, f, 2) == 2 && strcmp(f[1], "b\nc") == 0);
 }
 
+static void session_voice_flag_parses(void)
+{
+    claude_msg_t m = from_wire(CLAUDE_SESSION, 5, "w 1759555200 1759555260 5\ndự-án\nDone.");
+    claude_session_t s;
+    assert(claude_parse_session(&m, &s));
+    assert(s.flags == (CLAUDE_SESSION_FOCUSED | CLAUDE_SESSION_VOICE));
+    claude_msg_t all = msg(CLAUDE_SESSION, 5, "i 1 2 7\np\nl");
+    assert(claude_parse_session(&all, &s) && s.flags == 7);
+}
+
+static void voice_message_parses(void)
+{
+    claude_msg_t m = from_wire(CLAUDE_VOICE, 9, "f\nXin chào");
+    claude_voice_t v;
+    assert(m.kind == CLAUDE_VOICE && claude_parse_voice(&m, &v));
+    assert(v.id == 9 && v.what == CLAUDE_VOICE_FINAL && strcmp(v.text, "Xin chào") == 0);
+    claude_msg_t empty = msg(CLAUDE_VOICE, 9, "f\n");
+    assert(claude_parse_voice(&empty, &v) && v.what == CLAUDE_VOICE_FINAL && v.text[0] == '\0');
+    const char *good[] = { "p\nchạy", "x\nOpen with cb for voice", "k\nSent to esp32" };
+    const char what[] = { CLAUDE_VOICE_PARTIAL, CLAUDE_VOICE_ERROR, CLAUDE_VOICE_DONE };
+    for (int i = 0; i < 3; i++) {
+        claude_msg_t g = msg(CLAUDE_VOICE, 9, good[i]);
+        assert(claude_parse_voice(&g, &v) && v.what == what[i] && strcmp(v.text, strchr(good[i], '\n') + 1) == 0);
+    }
+    const char *bad[] = { "", "f", "fx\nabc", "q\nabc", "f abc" };
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        claude_msg_t b = msg(CLAUDE_VOICE, 9, bad[i]);
+        assert(!claude_parse_voice(&b, &v));
+    }
+    claude_msg_t zero = msg(CLAUDE_VOICE, 0, "f\nx");
+    assert(!claude_parse_voice(&zero, &v));
+    claude_msg_t other = msg(CLAUDE_FINISHED, 9, "f\nx");
+    assert(!claude_parse_voice(&other, &v));
+}
+
+static void voice_encoders_match_the_mac(void)
+{
+    uint8_t out[CLAUDE_INPUT_MAX];
+    assert(claude_encode_voice_start(0x0A0B0C0D, CLAUDE_VOICE_FOR_OTHER, 2, 0x01020304, out) == 10);
+    const uint8_t want_other[10] = { 0x0d, 0x0c, 0x0b, 0x0a, 0x30, 0x21, 0x04, 0x03, 0x02, 0x01 };
+    assert(memcmp(out, want_other, 10) == 0);
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_COMMAND, 0, 5, out) == 10);
+    const uint8_t want_command[10] = { 9, 0, 0, 0, 0x30, 0x00, 5, 0, 0, 0 };
+    assert(memcmp(out, want_command, 10) == 0);
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_DENY, 0, 7, out) == 10 && out[5] == 0x02);
+    assert(claude_encode_voice(9, CLAUDE_INPUT_VOICE_STOP, out) == 5);
+    const uint8_t want_stop[5] = { 9, 0, 0, 0, 0x31 };
+    assert(memcmp(out, want_stop, 5) == 0);
+    assert(claude_encode_voice(9, CLAUDE_INPUT_VOICE_CANCEL, out) == 5 && out[4] == 0x32);
+    assert(claude_encode_voice(9, CLAUDE_INPUT_VOICE_SEND, out) == 5 && out[4] == 0x33);
+    /* Other answers ride on the unchanged answers input: bit 7 */
+    uint8_t masks[2] = { 0x80, 0x05 };
+    assert(claude_encode_answers(0x01020304, masks, 2, out) == 8);
+    const uint8_t want_answers[8] = { 0x04, 0x03, 0x02, 0x01, 0x10, 0x02, 0x80, 0x05 };
+    assert(memcmp(out, want_answers, 8) == 0);
+}
+
+static void voice_encoders_refuse_bad_input(void)
+{
+    uint8_t out[CLAUDE_INPUT_MAX];
+    assert(claude_encode_voice_start(0, CLAUDE_VOICE_FOR_COMMAND, 0, 5, out) == 0);          /* voice 0 */
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_COMMAND, 0, 0, out) == 0);          /* target 0 */
+    assert(claude_encode_voice_start(9, 3, 0, 5, out) == 0);                                 /* purpose */
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_COMMAND, 1, 5, out) == 0);          /* question */
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_DENY, 1, 5, out) == 0);
+    assert(claude_encode_voice_start(9, CLAUDE_VOICE_FOR_OTHER, CLAUDE_Q_MAX, 5, out) == 0);
+    assert(claude_encode_voice(0, CLAUDE_INPUT_VOICE_STOP, out) == 0);
+    assert(claude_encode_voice(9, CLAUDE_INPUT_VOICE_START, out) == 0);                      /* not 5 bytes */
+    assert(claude_encode_voice(9, 0x34, out) == 0);
+}
+
 int main(void)
 {
     single_chunk_permission();
@@ -329,6 +400,10 @@ int main(void)
     session_rejects_overflow_and_oversized_fields();
     parsers_reject_non_terminated_text();
     question_rejects_overflowing_numbers();
+    session_voice_flag_parses();
+    voice_message_parses();
+    voice_encoders_match_the_mac();
+    voice_encoders_refuse_bad_input();
     puts("claude_proto: all tests passed");
     return 0;
 }

@@ -126,7 +126,8 @@ void sessions_set_focus(sessions_t *s, uint32_t handle)
 {
     for (int i = 0; i < s->n; i++) {
         if (s->rows[i].handle == handle) {
-            s->rows[i].flags = CLAUDE_SESSION_FOCUSED;   /* focused: no longer unseen */
+            /* focused: no longer unseen; the voice flag belongs to the session, keep it */
+            s->rows[i].flags = (uint8_t)((s->rows[i].flags & CLAUDE_SESSION_VOICE) | CLAUDE_SESSION_FOCUSED);
         } else {
             s->rows[i].flags &= (uint8_t)~CLAUDE_SESSION_FOCUSED;
         }

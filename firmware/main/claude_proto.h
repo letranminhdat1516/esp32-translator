@@ -11,12 +11,18 @@
  *   5 session remove  id = handle   ""
  *   6 sessions clear  id 0          ""                                 (first message of every full sync)
  *   7 question page   id = request  "<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) x nopt"
+ *   8 voice           id = voice id    "<p|f|x|k>\ntext"   partial / final (what Send types) / error / done
  *
  * Board -> Mac (answer characteristic, notify, at most CLAUDE_INPUT_MAX bytes):
  *   [id u32 LE][1|2|3]                   allow / deny / always allow
  *   [id u32 LE][0x10][n][mask x n]       question answers, bit i of mask q = option i of question q
  *   [0 u32][0x20][mode]                  board mode (CLAUDE_BOARD_*)
  *   [0 u32][0x21][handle u32 LE]         focus this session
+ *   [voice u32][0x30][purpose u8][target u32 LE]   voice capture starts (purpose low nibble CLAUDE_VOICE_FOR_*,
+ *                                        high nibble the question index for Other)
+ *   [voice u32][0x31] / [0x32] / [0x33]  audio complete / cancel / send the final transcript
+ *   Question answers: bit 7 of a mask = the spoken Other answer of that question.
+ * Voice audio goes on its own characteristic (ble_link.c), never through these messages.
  */
 #pragma once
 #include <stdbool.h>
@@ -34,6 +40,7 @@ typedef enum {
     CLAUDE_SESSION_REMOVE = 5,
     CLAUDE_SESSIONS_CLEAR = 6,
     CLAUDE_QUESTION = 7,
+    CLAUDE_VOICE = 8,
 } claude_kind_t;
 
 typedef struct {
@@ -64,11 +71,12 @@ size_t claude_split_lines(char *text, char **fields, size_t max);
 #define CLAUDE_STATE_ENDED     'e'
 #define CLAUDE_SESSION_FOCUSED 0x01
 #define CLAUDE_SESSION_UNSEEN  0x02
+#define CLAUDE_SESSION_VOICE   0x04   /* the session runs in a tmux pane the Mac can type into (Speak usable) */
 
 typedef struct {
     uint32_t handle;   /* never 0 */
     char state;        /* CLAUDE_STATE_* */
-    uint8_t flags;     /* CLAUDE_SESSION_* */
+    uint8_t flags;     /* CLAUDE_SESSION_* (0..7) */
     int64_t since;     /* Unix seconds: current state began */
     int64_t updated;   /* Unix seconds: last event (picker order) */
     char project[CLAUDE_PROJECT_MAX + 1];
@@ -111,3 +119,32 @@ bool claude_parse_question(const claude_msg_t *m, claude_question_t *out);
 size_t claude_encode_answers(uint32_t id, const uint8_t *masks, size_t n, uint8_t out[CLAUDE_INPUT_MAX]);
 size_t claude_encode_mode(uint8_t mode, uint8_t out[CLAUDE_INPUT_MAX]);
 size_t claude_encode_focus(uint32_t handle, uint8_t out[CLAUDE_INPUT_MAX]);
+
+/* Voice (kind 8) */
+#define CLAUDE_VOICE_TEXT_MAX 300   /* final transcript: Mac VoiceText.maxBytes */
+#define CLAUDE_VOICE_PARTIAL  'p'
+#define CLAUDE_VOICE_FINAL    'f'
+#define CLAUDE_VOICE_ERROR    'x'
+#define CLAUDE_VOICE_DONE     'k'
+
+typedef struct {
+    uint32_t id;                      /* voice id, never 0 */
+    char what;                        /* CLAUDE_VOICE_* */
+    char text[CLAUDE_TEXT_MAX + 1];
+} claude_voice_t;
+
+bool claude_parse_voice(const claude_msg_t *m, claude_voice_t *out);
+
+#define CLAUDE_INPUT_VOICE_START  0x30
+#define CLAUDE_INPUT_VOICE_STOP   0x31
+#define CLAUDE_INPUT_VOICE_CANCEL 0x32
+#define CLAUDE_INPUT_VOICE_SEND   0x33
+#define CLAUDE_VOICE_FOR_COMMAND  0   /* typed into the session's tmux pane; target = session handle */
+#define CLAUDE_VOICE_FOR_OTHER    1   /* spoken Other answer; target = question request id, question = page */
+#define CLAUDE_VOICE_FOR_DENY     2   /* deny with the spoken reason; target = permission request id */
+
+/* 10 bytes, or 0 when refused (voice or target 0, unknown purpose, a question index for anything but Other) */
+size_t claude_encode_voice_start(uint32_t voice, uint8_t purpose, uint8_t question, uint32_t target,
+                                 uint8_t out[CLAUDE_INPUT_MAX]);
+/* code CLAUDE_INPUT_VOICE_STOP / CANCEL / SEND: 5 bytes, or 0 when refused */
+size_t claude_encode_voice(uint32_t voice, uint8_t code, uint8_t out[CLAUDE_INPUT_MAX]);

@@ -169,7 +169,7 @@ bool claude_parse_session(const claude_msg_t *m, claude_session_t *out)
     const char *p = meta + 2;
     long long since, updated, flags;
     if (!take_int(&p, &since) || !take_int(&p, &updated) || !take_int(&p, &flags) || *p != '\0' ||
-        flags < 0 || flags > (CLAUDE_SESSION_FOCUSED | CLAUDE_SESSION_UNSEEN)) {
+        flags < 0 || flags > (CLAUDE_SESSION_FOCUSED | CLAUDE_SESSION_UNSEEN | CLAUDE_SESSION_VOICE)) {
         return false;
     }
     out->handle = m->id;
@@ -230,4 +230,45 @@ bool claude_parse_question(const claude_msg_t *m, claude_question_t *q)
         q->desc[i] = (uint16_t)(f[5 + 2 * i] - q->buf);
     }
     return true;
+}
+
+bool claude_parse_voice(const claude_msg_t *m, claude_voice_t *out)
+{
+    if (m->kind != CLAUDE_VOICE || m->id == 0 || !text_terminated(m)) {
+        return false;
+    }
+    char w = m->text[0];
+    if ((w != CLAUDE_VOICE_PARTIAL && w != CLAUDE_VOICE_FINAL && w != CLAUDE_VOICE_ERROR && w != CLAUDE_VOICE_DONE) ||
+        m->text[1] != '\n') {
+        return false;
+    }
+    out->id = m->id;
+    out->what = w;
+    size_t n = strlen(m->text + 2);   /* part of m->text: at most CLAUDE_TEXT_MAX - 2 */
+    memcpy(out->text, m->text + 2, n + 1);
+    return true;
+}
+
+size_t claude_encode_voice_start(uint32_t voice, uint8_t purpose, uint8_t question, uint32_t target,
+                                 uint8_t out[CLAUDE_INPUT_MAX])
+{
+    if (voice == 0 || target == 0 || purpose > CLAUDE_VOICE_FOR_DENY || question >= CLAUDE_Q_MAX ||
+        (purpose != CLAUDE_VOICE_FOR_OTHER && question != 0)) {
+        return 0;
+    }
+    put32(out, voice);
+    out[4] = CLAUDE_INPUT_VOICE_START;
+    out[5] = (uint8_t)(purpose | question << 4);
+    put32(out + 6, target);
+    return 10;
+}
+
+size_t claude_encode_voice(uint32_t voice, uint8_t code, uint8_t out[CLAUDE_INPUT_MAX])
+{
+    if (voice == 0 || code < CLAUDE_INPUT_VOICE_STOP || code > CLAUDE_INPUT_VOICE_SEND) {
+        return 0;
+    }
+    put32(out, voice);
+    out[4] = code;
+    return 5;
 }

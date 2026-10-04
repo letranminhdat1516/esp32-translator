@@ -11,12 +11,16 @@
 
 #include "claude_proto.h"
 
+#define QUESTION_OTHER     7      /* question_tap option: the spoken Other answer */
+#define QUESTION_OTHER_BIT 0x80   /* its mask bit (the Mac maps it to the text it stored for that page) */
+
 typedef struct {
     uint32_t id;                      /* request id; 0 = empty */
     uint8_t count;                    /* pages expected */
     uint8_t have;                     /* bit i = page i received */
     uint8_t page;                     /* page on screen */
     uint8_t mask[CLAUDE_Q_MAX];       /* bit i = option i chosen */
+    char other[CLAUDE_Q_MAX][CLAUDE_VOICE_TEXT_MAX + 1];   /* spoken Other answer per page, "" = none */
     claude_question_t q[CLAUDE_Q_MAX];
 } question_set_t;
 
@@ -26,6 +30,10 @@ void question_reset(question_set_t *s);
 bool question_add(question_set_t *s, uint32_t id, const claude_question_t *page);
 bool question_complete(const question_set_t *s);
 void question_tap(question_set_t *s, uint8_t option);
+/* Stores the spoken Other answer of `page` (after Use on the voice confirm screen) and selects it: single-select
+ * instead of the option, multi-select alongside. "" removes it and its selection. question_tap(QUESTION_OTHER)
+ * selects / toggles it like an option, only while a text is stored. */
+void question_set_other(question_set_t *s, uint8_t page, const char *text);
 bool question_page_answered(const question_set_t *s, uint8_t page);
 bool question_all_answered(const question_set_t *s);
 bool question_last_page(const question_set_t *s);

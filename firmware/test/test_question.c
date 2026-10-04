@@ -127,6 +127,66 @@ static void an_overwritten_page_loses_its_selection(void)
     assert(!question_page_answered(&s, 0) && s.q[0].nopt == 2);
 }
 
+static void other_needs_a_spoken_text(void)
+{
+    question_reset(&s);
+    claude_question_t p0 = page(0, 2, false, 2), p1 = page(1, 2, true, 3);
+    question_add(&s, 7, &p0);
+    question_add(&s, 7, &p1);
+    question_tap(&s, QUESTION_OTHER);                  /* nothing spoken yet: no selection */
+    assert(!question_page_answered(&s, 0));
+    question_set_other(&s, 0, "Tím than");             /* Use on the confirm screen: stored and selected */
+    assert(s.mask[0] == QUESTION_OTHER_BIT && strcmp(s.other[0], "Tím than") == 0);
+    question_tap(&s, 1);                               /* single-select: an option replaces Other */
+    assert(s.mask[0] == 0x02);
+    question_tap(&s, QUESTION_OTHER);                  /* and Other replaces the option; the text stays */
+    assert(s.mask[0] == QUESTION_OTHER_BIT);
+    question_set_other(&s, 0, "");                     /* removed */
+    assert(s.mask[0] == 0 && s.other[0][0] == '\0');
+}
+
+static void other_adds_on_multi_select_and_is_encoded(void)
+{
+    question_reset(&s);
+    claude_question_t p0 = page(0, 2, false, 2), p1 = page(1, 2, true, 3);
+    question_add(&s, 7, &p0);
+    question_add(&s, 7, &p1);
+    question_tap(&s, 1);
+    question_next(&s);
+    question_tap(&s, 0);
+    question_set_other(&s, 1, "Sầu riêng");
+    assert(s.mask[1] == (QUESTION_OTHER_BIT | 0x01));
+    question_tap(&s, QUESTION_OTHER);                  /* multi-select: untick Other, keep the option */
+    assert(s.mask[1] == 0x01);
+    question_tap(&s, QUESTION_OTHER);
+    uint8_t out[CLAUDE_INPUT_MAX];
+    assert(question_encode(&s, out) == 8 && out[6] == 0x02 && out[7] == (QUESTION_OTHER_BIT | 0x01));
+}
+
+static void a_resent_page_loses_its_other(void)
+{
+    question_reset(&s);
+    claude_question_t p0 = page(0, 1, false, 2);
+    question_add(&s, 7, &p0);
+    question_set_other(&s, 0, "Tím");
+    question_add(&s, 7, &p0);                          /* the Mac resent the page */
+    assert(s.mask[0] == 0 && s.other[0][0] == '\0');
+}
+
+static void long_other_is_cut_utf8_safe(void)
+{
+    question_reset(&s);
+    claude_question_t p0 = page(0, 1, false, 2);
+    question_add(&s, 7, &p0);
+    char t[CLAUDE_TEXT_MAX + 1] = "";
+    for (int i = 0; i < 120; i++) {
+        strcat(t, "ữ");                                /* 3 bytes each: 360 bytes */
+    }
+    question_set_other(&s, 0, t);
+    assert(strlen(s.other[0]) == CLAUDE_VOICE_TEXT_MAX);   /* 100 whole characters */
+    question_set_other(&s, 3, "x");                    /* no such page: ignored */
+}
+
 int main(void)
 {
     completes_when_every_page_arrived();
@@ -137,6 +197,10 @@ int main(void)
     multi_select_needs_one();
     send_needs_every_page();
     an_overwritten_page_loses_its_selection();
+    other_needs_a_spoken_text();
+    other_adds_on_multi_select_and_is_encoded();
+    a_resent_page_loses_its_other();
+    long_other_is_cut_utf8_safe();
     puts("question: all tests passed");
     return 0;
 }

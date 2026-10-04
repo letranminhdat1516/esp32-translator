@@ -25,6 +25,7 @@ bool question_add(question_set_t *s, uint32_t id, const claude_question_t *page)
     bool was_complete = question_complete(s);
     s->q[page->index] = *page;
     s->mask[page->index] = 0;   /* a resent page may carry other options: its old selection no longer applies */
+    s->other[page->index][0] = '\0';
     s->have |= (uint8_t)(1u << page->index);
     return !was_complete && question_complete(s);
 }
@@ -35,14 +36,38 @@ void question_tap(question_set_t *s, uint8_t option)
         return;
     }
     const claude_question_t *q = &s->q[s->page];
-    if (option >= q->nopt) {
+    uint8_t bit;
+    if (option == QUESTION_OTHER) {
+        if (s->other[s->page][0] == '\0') {
+            return;   /* nothing spoken yet: the row starts a voice capture instead (question_ui.c) */
+        }
+        bit = QUESTION_OTHER_BIT;
+    } else if (option < q->nopt) {
+        bit = (uint8_t)(1u << option);
+    } else {
         return;
     }
-    uint8_t bit = (uint8_t)(1u << option);
     if (q->multi) {
         s->mask[s->page] ^= bit;
     } else {
         s->mask[s->page] = bit;
+    }
+}
+
+void question_set_other(question_set_t *s, uint8_t page, const char *text)
+{
+    if (!question_complete(s) || page >= s->count) {
+        return;
+    }
+    size_t n = claude_utf8_cut(text, strnlen(text, CLAUDE_VOICE_TEXT_MAX));
+    memcpy(s->other[page], text, n);
+    s->other[page][n] = '\0';
+    if (n == 0) {
+        s->mask[page] &= (uint8_t)~QUESTION_OTHER_BIT;
+    } else if (s->q[page].multi) {
+        s->mask[page] |= QUESTION_OTHER_BIT;
+    } else {
+        s->mask[page] = QUESTION_OTHER_BIT;
     }
 }
 
