@@ -10,7 +10,7 @@ let package = Package(
         .target(
             name: "TranslatorCore",
             path: "Sources",
-            exclude: ["Info.plist", "UI", "BLE", "App/ESPTranslatorApp.swift", "App/ConversationEngine.swift",
+            exclude: ["Info.plist", "UI", "BLE", "Relay", "App/ESPTranslatorApp.swift", "App/ConversationEngine.swift",
                       "Audio/AudioSources.swift", "Audio/ADPCMDecoder.swift", "Speech/Speaker.swift",
                       "Translate/Translator.swift"],
             swiftSettings: [.swiftLanguageMode(.v5)]

@@ -38,8 +38,11 @@ public struct RelayBridge: Sendable {
         case macUp, macDown
         /// The board's Claude characteristics were found (write size for chunks) / the board link went away
         case boardUp(maxWrite: Int), boardDown
-        /// The answer subscription was confirmed (true) or ended
+        /// The answer subscription was confirmed (true) or ended. Confirmed again while linked: the hello is repeated.
         case boardSubscribed(Bool)
+        /// The app wrote to the board's translator service after a silence (or for the first time on this link): the
+        /// board may have just given this link the translator role, the only one it takes the relay hello on
+        case translatorActive
         case boardInput(Data)
         case boardVoice(Data)
         case mac(RelayFrame)
@@ -101,7 +104,11 @@ public struct RelayBridge: Sendable {
             maxWrite = nil
             wantSubscribed = false
             subscribed = false
-        case .boardSubscribed(let on): subscribed = on && wantSubscribed
+        case .boardSubscribed(let on):
+            subscribed = on && wantSubscribed
+            if wasLinked && linked { out += hello() }
+        case .translatorActive:
+            if linked { out += hello() }
         case .boardInput(let d):
             if linked, (5...RelayFrame.maxBoardInput).contains(d.count) { out.append(.toMac(.fromBoard(d))) }
         case .boardVoice(let p): voice(p, &out)
@@ -138,8 +145,8 @@ public struct RelayBridge: Sendable {
             out.append(.subscribeBoard(want))
             if !want { out.append(.subscribeVoice(false)) }
         }
-        if !wasLinked && linked, let m = maxWrite {
-            out += BLEFraming.chunks(BoardHello.relay, maxChunk: m).map(Action.writeBoard)
+        if !wasLinked && linked {
+            out += hello()
             out += [.toMac(.boardLink(true)), .toMac(.voiceStatus(speech.map(Self.reason)))]
             if speech == nil { out.append(.subscribeVoice(true)) }
         } else if wasLinked && !linked {
@@ -149,6 +156,12 @@ public struct RelayBridge: Sendable {
             audio = VoiceAudioBuffer()
         }
         return out
+    }
+
+    /// The relay hello, whole (it is never interleaved with another message's chunks: one handle() call emits it)
+    private func hello() -> [Action] {
+        guard let m = maxWrite else { return [] }
+        return BLEFraming.chunks(BoardHello.relay, maxChunk: m).map(Action.writeBoard)
     }
 
     private mutating func mac(_ f: RelayFrame, _ out: inout [Action]) {

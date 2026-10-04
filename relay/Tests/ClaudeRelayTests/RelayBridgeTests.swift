@@ -191,3 +191,17 @@ private func packet(_ seq: UInt16) -> Data { Data([UInt8(seq & 0xff), UInt8(seq 
     _ = b.handle(.transcript(8, final: true, "ok"))
     #expect(b.handle(.tick(30)).isEmpty)
 }
+
+@Test func helloAgainWhenTheAppMayHaveRetakenThePhoneRole() {
+    // The board takes the relay hello only on the link holding the translator role, which it may give (back) only
+    // after the app's translator write: the hello is repeated then, and after a repeated subscription
+    var b = linkedBridge()
+    let hello: [RelayBridge.Action] = [.writeBoard(Data([0x03]) + BoardHello.relay)]
+    #expect(b.handle(.translatorActive) == hello)
+    #expect(b.handle(.boardSubscribed(true)) == hello)
+    #expect(b.linked)
+    var c = RelayBridge()
+    _ = c.handle(.boardUp(maxWrite: 21))
+    #expect(c.handle(.translatorActive).isEmpty)                        // no relay link: nothing to say
+    #expect(c.handle(.boardSubscribed(true)).isEmpty)                    // not asked for: ignored
+}

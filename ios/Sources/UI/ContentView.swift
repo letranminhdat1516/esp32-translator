@@ -3,6 +3,8 @@ import Translation
 
 struct ContentView: View {
     let engine: ConversationEngine
+    let relay: RelayModel
+    @State private var showRelay = false
 
     var body: some View {
         NavigationStack {
@@ -30,12 +32,16 @@ struct ContentView: View {
             .navigationTitle("Live Translator")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Clear", systemImage: "trash") { engine.clearHistory() }
                         .disabled(engine.phase != .running)
                 }
             }
         }
+        .sheet(isPresented: $showRelay) { RelayView(model: relay) }
     }
 }
 

@@ -22,6 +22,10 @@
 	<string>1</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connects to the ESP32 display to receive audio and show subtitles.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Scans the pairing QR code that claude-board prints on your Mac.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Reaches your Mac over Tailscale to relay Claude Code requests to the board.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Listens to you through your AirPods to translate into English.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

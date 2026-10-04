@@ -13,12 +13,17 @@
 		0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D91563831394399DEB8B628 /* Diagnostics.swift */; };
 		1D5105016B834931A5A0B3F3 /* ConversationActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29F0F18CF126F464BD8D8A2D /* ConversationActivity.swift */; };
 		2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A95279E4169D54A6DBEF7 /* ContentView.swift */; };
+		329375E9E815700DBFC7C047 /* ClaudeRelay in Frameworks */ = {isa = PBXBuildFile; productRef = 54025D36B309B58EC5EDB7D9 /* ClaudeRelay */; };
 		45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8370A481AE6CA850A659C829 /* ConversationEngine.swift */; };
+		56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */; };
 		6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458050A752F26BCC732FE5C8 /* AudioSources.swift */; };
+		938B0BAE72B3BDE145BF127B /* ClaudeRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */; };
+		AD7E43FD2E68E6630F1396B9 /* BoardVoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */; };
 		ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1746279919516ABC5EF3518 /* Translator.swift */; };
 		BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */; };
 		C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */; };
 		CCEEE4771E62F23184CE2A33 /* Speaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDB2EF9FEDBFA4E8197D1E9 /* Speaker.swift */; };
+		DB0E8D30749EB97DF109410F /* RelayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A795C7252F826D75749124A8 /* RelayView.swift */; };
 		DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */; };
 		EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A3BAF0A7DD758B7F0C7AACD /* LiveTranscriber.swift */; };
 		F540FDA55B26986EABBABCF6 /* ESPLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */; };
@@ -37,12 +42,28 @@
 		7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnAssembler.swift; sourceTree = "<group>"; };
 		8370A481AE6CA850A659C829 /* ConversationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationEngine.swift; sourceTree = "<group>"; };
 		88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADPCMDecoder.swift; sourceTree = "<group>"; };
+		8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayKeychain.swift; sourceTree = "<group>"; };
+		9FA9545B10B7FAC6140533DD /* relay */ = {isa = PBXFileReference; lastKnownFileType = folder; name = relay; path = ../relay; sourceTree = SOURCE_ROOT; };
+		A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardVoiceTranscriber.swift; sourceTree = "<group>"; };
 		A1746279919516ABC5EF3518 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A795C7252F826D75749124A8 /* RelayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayView.swift; sourceTree = "<group>"; };
+		B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRelayService.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
 		DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleTranslator.swift; sourceTree = "<group>"; };
 		E86A95279E4169D54A6DBEF7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		6992F01A61E7BAA22AE48A47 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				329375E9E815700DBFC7C047 /* ClaudeRelay in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		09F554D40861340489772A4A /* BLE */ = {
@@ -53,6 +74,16 @@
 			path = BLE;
 			sourceTree = "<group>";
 		};
+		2BB015C65D1FAF8EA6D41C0D /* Relay */ = {
+			isa = PBXGroup;
+			children = (
+				A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */,
+				B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */,
+				8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */,
+			);
+			path = Relay;
+			sourceTree = "<group>";
+		};
 		2DC146458E462EF74CD720E4 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -60,6 +91,7 @@
 				BA145ACAD291CD86901A38B3 /* App */,
 				BD2922FB34A61F6FC832E60A /* Audio */,
 				09F554D40861340489772A4A /* BLE */,
+				2BB015C65D1FAF8EA6D41C0D /* Relay */,
 				F6CCC74EE31AC070CC046207 /* Speech */,
 				B0B96D28065C85B471C0EF6E /* Translate */,
 				86A414C5E026FECA97C56431 /* UI */,
@@ -67,10 +99,19 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		41360630A56A531F43F8751D /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				9FA9545B10B7FAC6140533DD /* relay */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
 		86A414C5E026FECA97C56431 /* UI */ = {
 			isa = PBXGroup;
 			children = (
 				E86A95279E4169D54A6DBEF7 /* ContentView.swift */,
+				A795C7252F826D75749124A8 /* RelayView.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -86,6 +127,7 @@
 		AEE11D9ABE720B39C9F5595A = {
 			isa = PBXGroup;
 			children = (
+				41360630A56A531F43F8751D /* Packages */,
 				2DC146458E462EF74CD720E4 /* Sources */,
 				8CEF243BB827E8AED3997EC4 /* Products */,
 			);
@@ -140,6 +182,7 @@
 			buildConfigurationList = 3A5D37BBB2B69EE0E391B0EA /* Build configuration list for PBXNativeTarget "ESPTranslator" */;
 			buildPhases = (
 				CFA403D512B908841B94DC67 /* Sources */,
+				6992F01A61E7BAA22AE48A47 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -147,6 +190,7 @@
 			);
 			name = ESPTranslator;
 			packageProductDependencies = (
+				54025D36B309B58EC5EDB7D9 /* ClaudeRelay */,
 			);
 			productName = ESPTranslator;
 			productReference = 15691D33531FFAA79141FCBC /* ESPTranslator.app */;
@@ -176,6 +220,9 @@
 			);
 			mainGroup = AEE11D9ABE720B39C9F5595A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				37EA08705C2D4A2ED025E2C9 /* XCLocalSwiftPackageReference "../relay" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8CEF243BB827E8AED3997EC4 /* Products */;
 			projectDirPath = "";
@@ -193,6 +240,8 @@
 			files = (
 				03A084A0E7876AC97885C3AF /* ADPCMDecoder.swift in Sources */,
 				6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */,
+				AD7E43FD2E68E6630F1396B9 /* BoardVoiceTranscriber.swift in Sources */,
+				938B0BAE72B3BDE145BF127B /* ClaudeRelayService.swift in Sources */,
 				2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */,
 				1D5105016B834931A5A0B3F3 /* ConversationActivity.swift in Sources */,
 				45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */,
@@ -200,6 +249,8 @@
 				F540FDA55B26986EABBABCF6 /* ESPLink.swift in Sources */,
 				DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */,
 				EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */,
+				56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */,
+				DB0E8D30749EB97DF109410F /* RelayView.swift in Sources */,
 				CCEEE4771E62F23184CE2A33 /* Speaker.swift in Sources */,
 				0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */,
 				ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */,
@@ -395,6 +446,20 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		37EA08705C2D4A2ED025E2C9 /* XCLocalSwiftPackageReference "../relay" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../relay;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		54025D36B309B58EC5EDB7D9 /* ClaudeRelay */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ClaudeRelay;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3E3DB52DA1B11C078460F36C /* Project object */;
 }

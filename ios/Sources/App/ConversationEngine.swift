@@ -65,7 +65,7 @@ final class ConversationEngine {
 
     // MARK: Components
 
-    private let link = ESPLink()
+    let link = ESPLink()   // shared with the Claude relay (RelayModel)
     private var speaker: Speaker?
     private var englishIn: LiveTranscriber?
     private var vietnameseIn: LiveTranscriber?
