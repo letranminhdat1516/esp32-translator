@@ -13,6 +13,8 @@ final class ClaudeRelayService: @unchecked Sendable {
     }
 
     var onStatus: (@Sendable (Status, String?) -> Void)?   // status, paired host
+    /// The pairing could not be stored in the Keychain (it is used until the app quits)
+    var onSaveFailed: (@Sendable () -> Void)?
 
     private let link: ESPLink
     private let queue = DispatchQueue(label: "relay.service")
@@ -50,14 +52,14 @@ final class ClaudeRelayService: @unchecked Sendable {
         queue.async { [self] in
             pairing = RelayKeychain.load()
             publish()
-            prepareSpeech()
         }
     }
 
     func pair(_ p: RelayPairing) {
         queue.async { [self] in
-            RelayKeychain.save(p)
+            if !RelayKeychain.save(p) { onSaveFailed?() }
             pairing = p
+            prepareSpeech()   // only once a Mac is paired: may ask for Speech Recognition
             dropClient()
             retryDelay = 5
             lastError = nil
@@ -77,9 +79,10 @@ final class ClaudeRelayService: @unchecked Sendable {
     }
 
     /// Checks (again) whether the board's voice can be transcribed here: the Vietnamese model may only be installed
-    /// once the translator has run, so a failed check is repeated each time the board's Claude service comes up
+    /// once the translator has run, so a failed check is repeated each time the board's Claude service comes up.
+    /// Only while paired: it may ask for Speech Recognition, which an unpaired user should never see for the relay.
     private func prepareSpeech() {
-        guard !speechReady, !preparing else { return }
+        guard pairing != nil, !speechReady, !preparing else { return }
         preparing = true
         Task { [weak self, voice] in
             let why = await voice.prepare()

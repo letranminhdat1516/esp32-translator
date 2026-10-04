@@ -27,7 +27,9 @@ enum RelayKeychain {
         var item = base
         item[kSecValueData as String] = Data(pairing.url.utf8)
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        let status = SecItemAdd(item as CFDictionary, nil)
+        if status != errSecSuccess { Diag.log("relay: pairing not saved to the Keychain (OSStatus \(status))") }
+        return status == errSecSuccess
     }
 
     static func forget() { SecItemDelete(base as CFDictionary) }

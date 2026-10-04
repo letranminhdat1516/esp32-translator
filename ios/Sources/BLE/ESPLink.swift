@@ -60,6 +60,8 @@ final class ESPLink: NSObject, @unchecked Sendable {
     private var claudeAnswerChar: CBCharacteristic?
     private var claudeVoiceChar: CBCharacteristic?
     private var answerRetried = false
+    /// The relay's last setClaudeSubscribed (a delayed auth retry must not resubscribe after an unsubscribe)
+    private var claudeAnswerWanted = false
 
     /// The round screen fits about 5 lines of 36 px text, so only the tail is sent
     private let maxTextBytes = 150
@@ -108,6 +110,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
     /// The board's Claude answers (and with them the relay role, after the hello). Encrypted: the board is bonded.
     func setClaudeSubscribed(_ on: Bool) {
         queue.async { [self] in
+            claudeAnswerWanted = on
             guard let peripheral, let c = claudeAnswerChar else { return }
             answerRetried = false
             peripheral.setNotifyValue(on, for: c)
@@ -167,6 +170,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
         claudeRequestChar = nil
         claudeAnswerChar = nil
         claudeVoiceChar = nil
+        claudeAnswerWanted = false
         if hadClaude { onClaudeReady?(nil) }
     }
 
@@ -332,7 +336,11 @@ extension ESPLink: CBPeripheralDelegate {
             if auth && !answerRetried {           // iOS pairs / re-encrypts, then the retry succeeds
                 answerRetried = true
                 queue.asyncAfter(deadline: .now() + 3) { [self] in
-                    guard self.peripheral === peripheral, peripheral.state == .connected else { return }
+                    guard self.peripheral === peripheral, peripheral.state == .connected, claudeAnswerWanted,
+                          claudeAnswerChar === c else {
+                        onClaudeSubscribed?(false)
+                        return
+                    }
                     peripheral.setNotifyValue(true, for: c)
                 }
                 return

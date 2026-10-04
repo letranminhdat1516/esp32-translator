@@ -8,6 +8,8 @@ import SwiftUI
 final class RelayModel {
     private(set) var status: ClaudeRelayService.Status = .notPaired
     private(set) var host: String?
+    /// Set when the last pairing could not be stored (it works until the app quits)
+    private(set) var saveError: String?
     @ObservationIgnored private let service: ClaudeRelayService
 
     init(link: ESPLink) {
@@ -17,6 +19,9 @@ final class RelayModel {
                 self?.status = status
                 self?.host = host
             }
+        }
+        service.onSaveFailed = { [weak self] in
+            Task { @MainActor in self?.saveError = "Couldn't save the pairing. It works until the app quits; pair again later." }
         }
     }
 
@@ -32,8 +37,15 @@ final class RelayModel {
         }
     }
 
-    func pair(_ p: RelayPairing) { service.pair(p) }
-    func forget() { service.forget() }
+    func pair(_ p: RelayPairing) {
+        saveError = nil
+        service.pair(p)
+    }
+
+    func forget() {
+        saveError = nil
+        service.forget()
+    }
 }
 
 struct RelayView: View {
@@ -45,7 +57,10 @@ struct RelayView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Status") { Text(model.statusText) }
+                Section("Status") {
+                    Text(model.statusText)
+                    if let error = model.saveError { Text(error).foregroundStyle(.red) }
+                }
                 Section {
                     Button(model.paired ? "Pair again" : "Pair with Mac", systemImage: "qrcode.viewfinder") { scanning = true }
                     if model.paired {
@@ -96,35 +111,53 @@ struct QRScannerView: UIViewControllerRepresentable {
     final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
         var found: ((String) -> Void)?
         private let session = AVCaptureSession()
+        /// Every session configuration, start and stop runs here, in order (startRunning blocks)
+        private let sessionQueue = DispatchQueue(label: "relay.qr.session")
         private var done = false
 
         override func viewDidLoad() {
             super.viewDidLoad()
             view.backgroundColor = .black
-            AVCaptureDevice.requestAccess(for: .video) { granted in
-                DispatchQueue.main.async { granted ? self.configure() : self.showDenied() }
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if granted {
+                        self.configure()
+                    } else {
+                        self.show("Allow the camera for Live Translator in Settings to scan the pairing code.")
+                    }
+                }
             }
         }
 
         private func configure() {
             guard let device = AVCaptureDevice.default(for: .video),
-                  let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return }
-            session.addInput(input)
+                  let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else {
+                show("No camera is available to scan the pairing code.")
+                return
+            }
             let output = AVCaptureMetadataOutput()
-            guard session.canAddOutput(output) else { return }
+            session.beginConfiguration()
+            session.addInput(input)
+            guard session.canAddOutput(output) else {
+                session.commitConfiguration()
+                show("The camera cannot scan codes right now.")
+                return
+            }
             session.addOutput(output)
+            session.commitConfiguration()
             output.setMetadataObjectsDelegate(self, queue: .main)
             output.metadataObjectTypes = [.qr]
             let preview = AVCaptureVideoPreviewLayer(session: session)
             preview.frame = view.layer.bounds
             preview.videoGravity = .resizeAspectFill
             view.layer.addSublayer(preview)
-            DispatchQueue.global(qos: .userInitiated).async { self.session.startRunning() }
+            sessionQueue.async { [session] in session.startRunning() }
         }
 
-        private func showDenied() {
+        private func show(_ text: String) {
             let label = UILabel()
-            label.text = "Allow the camera for Live Translator in Settings to scan the pairing code."
+            label.text = text
             label.textColor = .white
             label.numberOfLines = 0
             label.textAlignment = .center
@@ -132,17 +165,21 @@ struct QRScannerView: UIViewControllerRepresentable {
             view.addSubview(label)
         }
 
+        private func stop() {
+            sessionQueue.async { [session] in if session.isRunning { session.stopRunning() } }
+        }
+
         func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject],
                             from connection: AVCaptureConnection) {
             guard !done, let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }
             done = true
-            session.stopRunning()
+            stop()
             found?(code)
         }
 
         override func viewWillDisappear(_ animated: Bool) {
             super.viewWillDisappear(animated)
-            if session.isRunning { session.stopRunning() }
+            stop()
         }
     }
 }
