@@ -28,10 +28,24 @@ LV_FONT_DECLARE(font_vi_22);
 #define COLOR_OFF    0x333333
 #define COLOR_BACK   0x3a3a3a
 
+/* Layout on the 466 px circle (centre 233, r 233; chord = 2*sqrt(233^2 - (y-233)^2)):
+ *   counter  y  30.. 63, 240 wide   (chord at y 34 = 242)
+ *   header   y  63.. 96, 300 wide   (chord at y 63 = 318)
+ *   question y  96..195, 360 wide, 3 lines, scrolls beyond (chord at y 96 = 376)
+ *   options  y 202..364, 344 wide   (chord at y 202 = 462, at y 364 = 385)
+ *   buttons  y 372..424 (Back -125..-15, Next/Send +10..+140 from the centre; their rounded corners stay
+ *            within r 227 of the centre) */
+#define LINE_H   33
+#define TEXT_Y   96
+#define TEXT_H   (3 * LINE_H)
+#define LIST_Y   202
+#define LIST_H   162
+
 static question_set_t *s_set;   /* owned by claude_ui.c */
 static lv_obj_t *s_box;
 static lv_obj_t *s_counter;
 static lv_obj_t *s_header;
+static lv_obj_t *s_text_box;   /* scrolls the question when it needs more than 3 lines */
 static lv_obj_t *s_text;
 static lv_obj_t *s_list;
 static lv_obj_t *s_back;
@@ -83,7 +97,9 @@ static void on_row_long(lv_event_t *e)
     int i = (int)(uintptr_t)lv_event_get_user_data(e);
     const char *d = CLAUDE_Q_STR(q, desc[i]);
     lv_label_set_text(s_desc_label, d[0] ? d : "No description.");
+    lv_obj_scroll_to_y(s_desc, 0, LV_ANIM_OFF);
     lv_obj_set_hidden(s_desc, false);
+    claude_ui_rearm();   /* the finger is still down: its release must not close the overlay */
 }
 
 /* Gated like the answers: a tap on the dark panel only wakes it */
@@ -93,6 +109,13 @@ static void on_desc_tap(lv_event_t *e)
         return;
     }
     lv_obj_set_hidden(s_desc, true);
+    claude_ui_rearm();   /* a fast second tap must not land on the row the overlay covered */
+}
+
+/* The question box takes presses (to scroll): a tap on it on the dark panel still wakes it */
+static void on_text_tap(lv_event_t *e)
+{
+    ui_wake_from_tap();
 }
 
 static void on_back(lv_event_t *e)
@@ -125,10 +148,11 @@ static void on_next(lv_event_t *e)
     }
 }
 
+/* One line (33 px for font_vi_22), "…" when longer */
 static lv_obj_t *make_label(uint32_t color, int width, int y)
 {
     lv_obj_t *l = lv_label_create(s_box);
-    lv_obj_set_width(l, width);
+    lv_obj_set_size(l, width, LINE_H);
     lv_obj_set_style_text_font(l, &font_vi_22, 0);
     lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
     lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
@@ -207,6 +231,7 @@ static void build_page(void)
     lv_label_set_text(s_counter, counter);
     lv_label_set_text(s_header, CLAUDE_Q_STR(q, header));
     lv_label_set_text(s_text, CLAUDE_Q_STR(q, question));
+    lv_obj_scroll_to_y(s_text_box, 0, LV_ANIM_OFF);
     lv_obj_clean(s_list);
     for (int i = 0; i < CLAUDE_OPT_MAX; i++) {
         s_rows[i] = NULL;
@@ -237,14 +262,30 @@ void question_ui_init(lv_obj_t *scr, question_set_t *set)
     lv_obj_set_scrollable(s_box, false);
     lv_obj_set_clickable(s_box, false);   /* a tap between controls reaches the screen (wakes a dark panel) */
 
-    s_counter = make_label(COLOR_MUTED, 300, 36);
-    s_header = make_label(COLOR_ACCENT, 300, 64);
-    s_text = make_label(0xffffff, 360, 92);
-    lv_obj_set_height(s_text, 80);   /* three lines, then "…" */
+    s_counter = make_label(COLOR_MUTED, 240, 30);
+    s_header = make_label(COLOR_ACCENT, 300, 63);
+
+    s_text_box = lv_obj_create(s_box);
+    lv_obj_set_size(s_text_box, 360, TEXT_H);
+    lv_obj_align(s_text_box, LV_ALIGN_TOP_MID, 0, TEXT_Y);
+    lv_obj_set_style_bg_opa(s_text_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_text_box, 0, 0);
+    lv_obj_set_style_pad_all(s_text_box, 0, 0);
+    lv_obj_set_style_radius(s_text_box, 0, 0);
+    lv_obj_set_scroll_dir(s_text_box, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_text_box, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_event_cb(s_text_box, on_text_tap, LV_EVENT_CLICKED, NULL);
+    s_text = lv_label_create(s_text_box);
+    lv_obj_set_width(s_text, 360);
+    lv_obj_set_style_text_font(s_text, &font_vi_22, 0);
+    lv_obj_set_style_text_color(s_text, lv_color_white(), 0);
+    lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(s_text, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_align(s_text, LV_ALIGN_TOP_MID, 0, 0);
 
     s_list = lv_obj_create(s_box);
-    lv_obj_set_size(s_list, 344, 186);
-    lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, 178);
+    lv_obj_set_size(s_list, 344, LIST_H);
+    lv_obj_align(s_list, LV_ALIGN_TOP_MID, 0, LIST_Y);
     lv_obj_set_style_bg_opa(s_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_list, 0, 0);
     lv_obj_set_style_pad_all(s_list, 0, 0);
@@ -261,15 +302,19 @@ void question_ui_init(lv_obj_t *scr, question_set_t *set)
     s_next = make_button("Next", 130, on_next, &s_next_label);
     lv_obj_align(s_next, LV_ALIGN_BOTTOM_MID, 75, -42);
 
-    s_desc = lv_obj_create(s_box);   /* created last: on top of the list and the buttons */
-    lv_obj_set_size(s_desc, 380, 260);
+    /* Created last: on top of the list and the buttons. Sized to the text up to 380 x 260 (rounded corners
+     * within r 223 of the centre), scrolls beyond: a drag scrolls it, a tap closes it. */
+    s_desc = lv_obj_create(s_box);
+    lv_obj_set_size(s_desc, 380, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(s_desc, 260, 0);
     lv_obj_center(s_desc);
     lv_obj_set_style_bg_color(s_desc, lv_color_hex(0x202020), 0);
     lv_obj_set_style_bg_opa(s_desc, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s_desc, 20, 0);
     lv_obj_set_style_border_width(s_desc, 0, 0);
     lv_obj_set_style_pad_all(s_desc, 20, 0);
-    lv_obj_set_scrollable(s_desc, false);
+    lv_obj_set_scroll_dir(s_desc, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_desc, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_add_event_cb(s_desc, on_pressed, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(s_desc, on_desc_tap, LV_EVENT_CLICKED, NULL);
     s_desc_label = lv_label_create(s_desc);
@@ -278,7 +323,7 @@ void question_ui_init(lv_obj_t *scr, question_set_t *set)
     lv_obj_set_style_text_color(s_desc_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(s_desc_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_desc_label, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_center(s_desc_label);
+    lv_obj_align(s_desc_label, LV_ALIGN_TOP_MID, 0, 0);
 
     lv_obj_set_hidden(s_desc, true);
     lv_obj_set_hidden(s_box, true);
@@ -292,6 +337,17 @@ void question_ui_show(void)
     s_set->page = 0;
     build_page();
     lv_obj_set_hidden(s_box, false);
+}
+
+void question_ui_refresh(void)
+{
+    if (s_box == NULL || lv_obj_is_hidden(s_box) || !question_complete(s_set)) {
+        return;
+    }
+    if (s_set->page >= s_set->count) {
+        s_set->page = 0;
+    }
+    build_page();
 }
 
 void question_ui_hide(void)

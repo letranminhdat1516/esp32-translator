@@ -124,6 +124,7 @@ static void cap_cb(lv_timer_t *t)
     }
     ESP_LOGW(TAG, "request %lu: no answer or cancel after %d s, dropping it", (unsigned long)s_pending_id,
              REQUEST_CAP_MS / 1000);
+    question_reset(&s_qset);
     show_idle("Timed out", "Answer in the terminal.");
     schedule_restore();
 }
@@ -409,6 +410,9 @@ bool claude_ui_on_message(const claude_msg_t *m)
             arm_buttons();
             start_cap();
             show = true;
+        } else if (m->id == s_pending_id && question_complete(&s_qset)) {
+            question_ui_refresh();   /* a shown page was resent: row i must match the label under it */
+            arm_buttons();
         }
         break;
     default:

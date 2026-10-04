@@ -99,6 +99,7 @@ void claude_ui_question_send_locked(const uint8_t *answer, size_t len);
 /* question_ui.c: AskUserQuestion pages on the Claude screen (display lock held for every call) */
 void question_ui_init(lv_obj_t *scr, question_set_t *set);
 void question_ui_show(void);                        /* page 1 of a complete set */
+void question_ui_refresh(void);                     /* a shown page was resent: rebuild it (caller re-arms) */
 void question_ui_hide(void);                        /* safe before init */
 
 /* lock_ui.c: lock screen (pixel cat, clock, battery) */
