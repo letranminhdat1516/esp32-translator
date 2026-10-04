@@ -54,34 +54,46 @@ public enum AnswerMapping {
             case .unsupported:
                 return BridgeReply(decision: "allow")
             }
+        case .denyWithReason(let spoken):
+            return BridgeReply(decision: "deny", message: denyReasonText(spoken))
         case .answers:
             return BridgeReply(decision: nil)
         }
     }
 
-    /// Labels chosen per question, in option order (labels from the original tool_input, never the cut ones).
-    public static func chosenLabels(_ masks: [UInt8], _ questions: [AskQuestion]) -> [[String]] {
-        zip(masks, questions).map { mask, q in
-            q.options.indices.filter { mask & (1 << $0) != 0 }.map { q.options[$0].label }
+    /// What Claude reads when the user denies with a spoken reason
+    public static func denyReasonText(_ spoken: String) -> String {
+        "The user denied this on the board and said: \(spoken)"
+    }
+
+    /// Labels chosen per question, in option order (labels from the original tool_input, never the cut ones),
+    /// then the spoken Other text when bit 7 is set and a text exists.
+    public static func chosenLabels(_ masks: [UInt8], _ questions: [AskQuestion], others: [Int: String] = [:]) -> [[String]] {
+        zip(masks, questions).enumerated().map { i, pair in
+            let (mask, q) = pair
+            var labels = q.options.indices.filter { mask & (1 << $0) != 0 }.map { q.options[$0].label }
+            if mask & RequestShape.otherBit != 0, let spoken = others[i] { labels.append(spoken) }
+            return labels
         }
     }
 
     /// The spec's fallback text: "The user answered on the board: <question> → <choice>[; …]"
-    public static func boardAnswerText(_ masks: [UInt8], questions: [AskQuestion]) -> String {
-        let parts = zip(questions, chosenLabels(masks, questions)).map { q, labels in
+    public static func boardAnswerText(_ masks: [UInt8], questions: [AskQuestion], others: [Int: String] = [:]) -> String {
+        let parts = zip(questions, chosenLabels(masks, questions, others: others)).map { q, labels in
             "\(q.question) → \(labels.joined(separator: ", "))"
         }
         return "The user answered on the board: " + parts.joined(separator: "; ")
     }
 
-    public static func questionReply(_ masks: [UInt8], questions: [AskQuestion], toolInput: [String: JSONValue],
+    public static func questionReply(_ masks: [UInt8], others: [Int: String] = [:], questions: [AskQuestion],
+                                     toolInput: [String: JSONValue],
                                      style: QuestionAnswerStyle = HookSchema.questionAnswers) -> BridgeReply {
         switch style {
         case .denyWithReason:
-            return BridgeReply(decision: "deny", message: boardAnswerText(masks, questions: questions))
+            return BridgeReply(decision: "deny", message: boardAnswerText(masks, questions: questions, others: others))
         case .updatedInputJoined, .updatedInputArrays:
             var answers: [String: JSONValue] = [:]
-            for (q, labels) in zip(questions, chosenLabels(masks, questions)) {
+            for (q, labels) in zip(questions, chosenLabels(masks, questions, others: others)) {
                 answers[q.question] = style == .updatedInputJoined
                     ? .string(labels.joined(separator: ", "))
                     : .array(labels.map { .string($0) })

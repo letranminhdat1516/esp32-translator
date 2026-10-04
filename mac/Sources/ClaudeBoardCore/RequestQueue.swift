@@ -3,8 +3,10 @@ import Foundation
 /// What the board answered for the request it showed.
 public enum BoardResponse: Equatable, Sendable {
     case allow, deny, alwaysAllow
-    /// One bitmask per question: bit i = option i chosen
-    case answers([UInt8])
+    /// One bitmask per question: bit i = option i chosen, bit 7 = the spoken Other answer (its text in `others`)
+    case answers([UInt8], others: [Int: String] = [:])
+    /// Deny with the reason the user spoke on the board
+    case denyWithReason(String)
 }
 
 /// The answers a request accepts.
@@ -13,8 +15,12 @@ public enum RequestShape: Equatable, Sendable {
     /// options[q] = option count of question q; multi[q] = several options may be chosen
     case question(options: [Int], multi: [Bool])
 
-    /// The response a board input stands for, or nil when it does not fit this request.
-    public func accept(_ input: BoardInput) -> BoardResponse? {
+    /// Mask bit of a question's spoken Other answer
+    public static let otherBit: UInt8 = 0x80
+
+    /// The response a board input stands for, or nil when it does not fit this request. `others`: questions
+    /// that have a spoken Other text (bit 7 is only valid for those).
+    public func accept(_ input: BoardInput, others: Set<Int> = []) -> BoardResponse? {
         switch (self, input) {
         case (.permission(let always), .choice(_, let c)):
             switch c {
@@ -25,8 +31,9 @@ public enum RequestShape: Equatable, Sendable {
         case (.question(let options, let multi), .answers(_, let masks)):
             guard masks.count == options.count, multi.count == options.count else { return nil }
             for (i, m) in masks.enumerated() {
-                guard (1...8).contains(options[i]) else { return nil }
-                let valid = UInt8(truncatingIfNeeded: (1 << options[i]) - 1)
+                guard (1...7).contains(options[i]) else { return nil }
+                var valid = UInt8(truncatingIfNeeded: (1 << options[i]) - 1)
+                if others.contains(i) { valid |= Self.otherBit }
                 guard m != 0, m & ~valid == 0, multi[i] || m.nonzeroBitCount == 1 else { return nil }
             }
             return .answers(masks)
@@ -42,6 +49,8 @@ public actor RequestQueue {
         let messages: [BoardMessage]
         let shape: RequestShape
         var continuation: CheckedContinuation<BoardResponse?, Never>?
+        /// Spoken Other answers stored by the board's voice Send (question index → text)
+        var others: [Int: String] = [:]
     }
 
     private let outbox: AsyncStream<BoardMessage>.Continuation   // single FIFO so board traffic never reorders
@@ -104,8 +113,37 @@ public actor RequestQueue {
         case .choice(let i, _), .answers(let i, _): id = i
         case .mode, .focus, .voiceStart, .voiceStop, .voiceCancel, .voiceSend: return
         }
-        guard let head = queue.first, head.id == id, let response = head.shape.accept(input) else { return }
-        finish(id, with: response, cancelOnBoard: false)
+        guard let head = queue.first, head.id == id,
+              let response = head.shape.accept(input, others: Set(head.others.keys)) else { return }
+        if case .answers(let masks, _) = response {
+            let spoken = head.others.filter { q, _ in masks.indices.contains(q) && masks[q] & RequestShape.otherBit != 0 }
+            finish(id, with: .answers(masks, others: spoken), cancelOnBoard: false)
+        } else {
+            finish(id, with: response, cancelOnBoard: false)
+        }
+    }
+
+    /// The shape of the request on the board, if `id` is that request.
+    public func shownShape(id: UInt32) -> RequestShape? {
+        guard let head = queue.first, head.id == id else { return nil }
+        return head.shape
+    }
+
+    /// Stores the spoken Other answer for question `question` of the question request on the board. It becomes
+    /// part of the answer only if the board's answers tick it (bit 7). A later call replaces the text.
+    public func setOther(id: UInt32, question: Int, text: String) -> Bool {
+        guard !text.isEmpty, let head = queue.first, head.id == id,
+              case .question(let options, _) = head.shape, options.indices.contains(question) else { return false }
+        queue[0].others[question] = text
+        return true
+    }
+
+    /// Denies the permission request on the board with the spoken reason. `notice` goes to the board right after
+    /// the decision, before the next request is shown.
+    public func denyWithReason(id: UInt32, message: String, notice: BoardMessage? = nil) -> Bool {
+        guard !message.isEmpty, let head = queue.first, head.id == id, case .permission = head.shape else { return false }
+        finish(id, with: .denyWithReason(message), cancelOnBoard: false, notice: notice)
+        return true
     }
 
     /// Non-request traffic (session rows): same FIFO, so it never overtakes a request or a cancel.
@@ -127,11 +165,12 @@ public actor RequestQueue {
         for m in messages { outbox.yield(m) }
     }
 
-    private func finish(_ id: UInt32, with response: BoardResponse?, cancelOnBoard: Bool) {
+    private func finish(_ id: UInt32, with response: BoardResponse?, cancelOnBoard: Bool, notice: BoardMessage? = nil) {
         guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
         let wasShown = index == 0
         let p = queue.remove(at: index)
         p.continuation?.resume(returning: response)
+        if let notice { outbox.yield(notice) }
         if wasShown {
             if cancelOnBoard { outbox.yield(.cancel(id: id)) }
             if let next = queue.first { show(next.messages) }

@@ -183,3 +183,97 @@ private func tag(_ m: BoardMessage) -> String {
     let ids = await sent.messages.map(tag)
     #expect(ids == ["fin\(UInt32.max)", "fin1"])
 }
+
+@Test func otherAnswerNeedsTheSpokenText() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    async let r = askQuestions(q)
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = await sent.questionIds()[0]
+    await q.handle(.answers(id: id, masks: [0x80, 0b001]))          // Other on page 1, but nothing spoken yet
+    #expect(await q.shownShape(id: id) != nil)                     // still waiting
+    #expect(await q.setOther(id: id, question: 0, text: "Tím"))
+    #expect(await q.setOther(id: id, question: 0, text: "Tím than"))   // Say again replaces it
+    await q.handle(.answers(id: id, masks: [0x80, 0b101]))
+    #expect(await r == .answers([0x80, 0b101], others: [0: "Tím than"]))
+}
+
+@Test func otherTextIsOnlySentForTicked() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    async let r = askQuestions(q)
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = await sent.questionIds()[0]
+    #expect(await q.setOther(id: id, question: 1, text: "Durian"))
+    await q.handle(.answers(id: id, masks: [0b10, 0b001]))          // spoken, then not ticked: not part of the answer
+    #expect(await r == .answers([0b10, 0b001]))
+}
+
+@Test func otherCombinesOnlyOnMultiSelect() {
+    let shape = RequestShape.question(options: [2, 3], multi: [false, true])
+    #expect(shape.accept(.answers(id: 1, masks: [0x81, 0b1]), others: [0]) == nil)       // single: one choice only
+    #expect(shape.accept(.answers(id: 1, masks: [0b1, 0x81]), others: [1]) == .answers([0b1, 0x81]))
+    #expect(shape.accept(.answers(id: 1, masks: [0b1, 0x80]), others: []) == nil)        // no text for page 2
+}
+
+@Test func setOtherOnlyForTheShownQuestion() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    async let p = q.ask(project: "p", tool: "Bash", summary: "one")
+    try? await Task.sleep(for: .milliseconds(30))
+    async let r = askQuestions(q)                                    // queued behind the permission
+    try? await Task.sleep(for: .milliseconds(30))
+    let permission = await sent.permissionIds()[0]
+    #expect(await !q.setOther(id: permission, question: 0, text: "x"))   // not a question
+    #expect(await !q.setOther(id: permission &+ 1, question: 0, text: "x"))   // not shown (queued or unknown)
+    await q.handle(.choice(id: permission, .deny))
+    try? await Task.sleep(for: .milliseconds(30))
+    let question = await sent.questionIds()[0]
+    #expect(await !q.setOther(id: question, question: 2, text: "x"))     // only 2 questions
+    #expect(await !q.setOther(id: question, question: 0, text: ""))      // nothing spoken
+    #expect(await q.setOther(id: question, question: 1, text: "Durian"))
+    await q.handle(.answers(id: question, masks: [0b1, 0x80]))
+    #expect(await p == .deny)
+    #expect(await r == .answers([0b1, 0x80], others: [1: "Durian"]))
+}
+
+@Test func denyWithReasonOnlyForTheShownPermission() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    async let a = q.ask(project: "p", tool: "Bash", summary: "one")
+    try? await Task.sleep(for: .milliseconds(30))
+    async let b = askQuestions(q)
+    try? await Task.sleep(for: .milliseconds(30))
+    let first = await sent.permissionIds()[0]
+    #expect(await !q.denyWithReason(id: first &+ 999, message: "no"))
+    #expect(await !q.denyWithReason(id: first, message: ""))
+    let notice = BoardMessage.voice(id: 9, .done("Denied with your reason"))
+    #expect(await q.denyWithReason(id: first, message: "dùng pnpm thay vì npm", notice: notice))
+    #expect(await a == .denyWithReason("dùng pnpm thay vì npm"))
+    try? await Task.sleep(for: .milliseconds(30))
+    let question = await sent.questionIds()[0]
+    #expect(await !q.denyWithReason(id: question, message: "no"))        // a question is not denied this way
+    // The notice reaches the board before the next request, and no cancel is sent for an answered request
+    let order = await sent.messages
+    let noticeAt = order.firstIndex(of: notice)
+    let nextAt = order.firstIndex { if case .question = $0 { true } else { false } }
+    #expect(noticeAt != nil && nextAt != nil && noticeAt! < nextAt!)
+    #expect(!order.contains(.cancel(id: first)))
+    await q.handle(.answers(id: question, masks: [0b1, 0b1]))
+    _ = await b
+}
+
+@Test func shownShapeIsOnlyTheHead() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    async let a = q.ask(shape: .permission(alwaysOffered: true)) { id in
+        [.permission(id: id, project: "p", tool: "Bash", summary: "x", alwaysRule: "Bash(x)")]
+    }
+    try? await Task.sleep(for: .milliseconds(30))
+    let id = await sent.permissionIds()[0]
+    #expect(await q.shownShape(id: id) == .permission(alwaysOffered: true))
+    #expect(await q.shownShape(id: id &+ 1) == nil)
+    await q.handle(.choice(id: id, .allow))
+    #expect(await a == .allow)
+    #expect(await q.shownShape(id: id) == nil)
+}

@@ -84,8 +84,8 @@ public struct HookProcessor: Sendable {
                 }
             }
         }
-        guard case .answers(let masks) = response else { return BridgeReply(decision: nil) }
-        return AnswerMapping.questionReply(masks, questions: questions, toolInput: e.toolInput)
+        guard case .answers(let masks, let others) = response else { return BridgeReply(decision: nil) }
+        return AnswerMapping.questionReply(masks, others: others, questions: questions, toolInput: e.toolInput)
     }
 
     /// Runs `body`, cancelling it when the hook goes away (the user answered in the terminal): the queue then

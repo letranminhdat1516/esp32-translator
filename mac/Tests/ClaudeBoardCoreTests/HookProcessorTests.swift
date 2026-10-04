@@ -248,3 +248,31 @@ private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)]
         #expect(conn.replies[0].updatedPermissions == suggestions.map { .array([$0.array![0]]) })
     }
 }
+
+@Test func denyWithReasonReachesTheHook() async {
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(permissionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = board.permissionIds[0]
+    #expect(await p.requests.denyWithReason(id: id, message: "chạy pnpm test thay vì npm test"))
+    await done.value
+    #expect(conn.replies == [BridgeReply(decision: "deny",
+                                         message: "The user denied this on the board and said: chạy pnpm test thay vì npm test")])
+}
+
+@Test func questionWithOtherRepliesWithTheSpokenText() async throws {
+    if HookSchema.questionAnswers == .terminalOnly { return }
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(questionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = pages(board)[0].id
+    #expect(await p.requests.setOther(id: id, question: 0, text: "Tím"))
+    await p.requests.handle(.answers(id: id, masks: [0x80, 0b101]))
+    await done.value
+    let e = try HookEvent.parse(questionLine)
+    let expected = AnswerMapping.questionReply([0x80, 0b101], others: [0: "Tím"],
+                                               questions: try #require(AskQuestion.parse(e.toolInput)), toolInput: e.toolInput)
+    #expect(conn.replies == [expected])
+}

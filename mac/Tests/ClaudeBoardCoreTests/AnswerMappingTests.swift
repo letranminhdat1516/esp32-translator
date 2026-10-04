@@ -105,3 +105,22 @@ private func addRules(behavior: JSONValue?) -> JSONValue {
                 == BridgeReply(decision: "allow"))
     }
 }
+
+@Test func otherTextBecomesTheAnswer() throws {
+    let input: [String: JSONValue] = ["questions": .array([])]
+    let r = AnswerMapping.questionReply([0x80, 0x80 | 0b001], others: [0: "Tím than", 1: "Sầu riêng"], questions: qs,
+                                        toolInput: input, style: .updatedInputJoined)
+    let answers = r.updatedInput?.object?["answers"]?.object
+    #expect(r.decision == "allow")
+    #expect(answers?[qs[0].question] == .string("Tím than"))
+    #expect(answers?[qs[1].question] == .string("Apple, Sầu riêng"))
+    #expect(AnswerMapping.chosenLabels([0x80, 0b1], qs, others: [:]) == [[], ["Apple"]])     // no text: nothing
+    #expect(AnswerMapping.boardAnswerText([0x80, 0b1], questions: qs, others: [0: "Tím"])
+            == "The user answered on the board: \(qs[0].question) → Tím; \(qs[1].question) → Apple")
+}
+
+@Test func denyWithReasonCarriesTheSpokenText() {
+    let r = AnswerMapping.permissionReply(.denyWithReason("dùng pnpm"), suggestions: nil)
+    #expect(r == BridgeReply(decision: "deny", message: "The user denied this on the board and said: dùng pnpm"))
+    #expect(HookOutput.output(for: r)?.contains("\"message\":\"The user denied this on the board and said: dùng pnpm\"") == true)
+}
