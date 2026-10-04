@@ -11,7 +11,10 @@
  * kept; a newer notice that arrived after the close was asked is kept for the MODES_EV_NOTICE that follows.
  * An action is written to the iPhone only from an explicit tap on its button, armed ARM_DELAY_US after the
  * notice appears, changes or the panel lights, never from a dark panel, only while the link is up, and only for
- * the notice on screen (ancs_flow_action checks the uid). The result shows for RESULT_MS, then the screen closes.
+ * the notice on screen (ancs_flow_action checks the uid). The positive action is refused while the board is locked
+ * (ancs_action_allowed: "Unlock to confirm"); the negative action and Close still work. The result shows for
+ * RESULT_MS, then the screen closes. A close that cannot be posted (shell queue full) is retried every
+ * CLOSE_RETRY_MS while this screen is up, so the panel never stays lit on it.
  */
 #include <string.h>
 
@@ -31,6 +34,8 @@ static const char *TAG = "phone_ui";
 #define NOTICE_ACTIONS_MS 60000       /* with action buttons: time to decide */
 #define RESULT_MS         1500
 #define ARM_DELAY_US      (700 * 1000)
+#define CLOSE_RETRY_MS    1000
+#define HEADER_TEXT       "iPhone · Claude"
 
 /* All under the display lock */
 static lv_obj_t *s_scr;
@@ -81,17 +86,22 @@ static uint32_t show_ms(void)
 
 /* Asks the shell to close the notice on screen; remembers which one, so a newer notice that arrives before the
  * shell gets to it is not forgotten with it (on_unloaded) */
-static void request_close(void)
+static bool request_close(void)
 {
     s_close_req = true;
     s_close_uid = s_uid;
-    shell_post(MODES_EV_NOTICE_DONE);
+    return shell_post(MODES_EV_NOTICE_DONE);
 }
 
 static void close_cb(lv_timer_t *t)
 {
     s_close_timer = NULL;   /* one-shot: LVGL deletes it after this call */
-    request_close();
+    if (!request_close() && lv_screen_active() == s_scr) {
+        /* The shell queue was full: try again, or the panel could stay lit on this screen forever */
+        ESP_LOGW(TAG, "close not posted (queue full): retrying");
+        s_close_timer = lv_timer_create(close_cb, CLOSE_RETRY_MS, NULL);
+        lv_timer_set_repeat_count(s_close_timer, 1);
+    }
 }
 
 static void stop_close_timer(void)
@@ -153,6 +163,7 @@ static void forget(void)
         s_on = false;
     }
     s_has_pos = s_has_neg = s_busy = s_result = s_close_req = false;
+    lv_label_set_text(s_header, HEADER_TEXT);
     lv_label_set_text(s_title, "");
     lv_label_set_text(s_subtitle, "");
     lv_label_set_text(s_message, "");
@@ -216,6 +227,14 @@ static void on_action(lv_event_t *e)
     if (action == ANCS_ACTION_POSITIVE ? !s_has_pos : !s_has_neg) {
         return;
     }
+    modes_t m;
+    shell_snapshot(&m);
+    if (!ancs_action_allowed(action, m.locked)) {
+        lv_label_set_text(s_header, "Unlock to confirm");   /* until the next notice or the close */
+        ESP_LOGI(TAG, "positive action for %lu refused: the board is locked", (unsigned long)s_uid);
+        return;
+    }
+    lv_label_set_text(s_header, HEADER_TEXT);
     if (!ancs_client_perform(s_uid, action)) {
         show_result("Not sent", "The iPhone is not connected.");
         return;
@@ -274,7 +293,7 @@ void phone_ui_init(void)
     lv_obj_add_event_cb(s_scr, on_screen_tap, LV_EVENT_CLICKED, NULL);
 
     s_header = make_label(&font_vi_22, 0xc8c8c8, 300, 48, 0);
-    lv_label_set_text(s_header, "iPhone · Claude");
+    lv_label_set_text(s_header, HEADER_TEXT);
     s_title = make_label(&font_vi_36, 0xffffff, 380, 86, 46);
     s_subtitle = make_label(&font_vi_22, 0x9a9a9a, 360, 134, 28);
     s_message = make_label(&font_vi_22, 0xffffff, 380, 166, 150);
@@ -300,6 +319,7 @@ void phone_ui_show(const ancs_notice_t *n, bool fresh)
     s_result = false;
     s_has_pos = n->positive[0] != '\0';
     s_has_neg = n->negative[0] != '\0';
+    lv_label_set_text(s_header, HEADER_TEXT);
     lv_label_set_text(s_title, n->title[0] ? n->title : "Claude");
     lv_label_set_text(s_subtitle, n->subtitle);
     lv_obj_set_hidden(s_subtitle, n->subtitle[0] == '\0');

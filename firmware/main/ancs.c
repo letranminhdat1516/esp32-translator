@@ -468,3 +468,42 @@ void ancs_flow_close(ancs_flow_t *f, uint32_t uid)
         memset(&f->notice, 0, sizeof f->notice);
     }
 }
+
+bool ancs_action_allowed(uint8_t action, bool locked)
+{
+    if (action == ANCS_ACTION_NEGATIVE) {
+        return true;
+    }
+    return action == ANCS_ACTION_POSITIVE && !locked;
+}
+
+void ancs_guard_init(ancs_guard_t *g)
+{
+    memset(g, 0, sizeof *g);
+}
+
+bool ancs_guard_skips(const ancs_guard_t *g, const uint8_t id[ANCS_PEER_ID_LEN])
+{
+    if (g->all) {
+        return true;
+    }
+    for (int i = 0; i < g->n; i++) {
+        if (memcmp(g->peers[i], id, ANCS_PEER_ID_LEN) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ancs_guard_on_drop(ancs_guard_t *g, const uint8_t id[ANCS_PEER_ID_LEN], bool risky)
+{
+    if (!risky || ancs_guard_skips(g, id)) {
+        return false;
+    }
+    if (g->n < ANCS_GUARD_MAX) {
+        memcpy(g->peers[g->n++], id, ANCS_PEER_ID_LEN);
+    } else {
+        g->all = true;
+    }
+    return true;
+}

@@ -534,6 +534,46 @@ static void text_is_cleaned(void)
     assert(strlen(f.notice.positive) <= ANCS_LABEL_MAX && strncmp(f.notice.positive, "A very long", 11) == 0);
 }
 
+static void positive_action_needs_unlock(void)
+{
+    assert(ancs_action_allowed(ANCS_ACTION_POSITIVE, false));
+    assert(!ancs_action_allowed(ANCS_ACTION_POSITIVE, true));
+    assert(ancs_action_allowed(ANCS_ACTION_NEGATIVE, false));
+    assert(ancs_action_allowed(ANCS_ACTION_NEGATIVE, true));
+    assert(!ancs_action_allowed(7, false));
+}
+
+static void guard_skips_a_peer_after_one_risky_drop(void)
+{
+    ancs_guard_t g;
+    ancs_guard_init(&g);
+    const uint8_t phone[ANCS_PEER_ID_LEN] = { 0, 1, 2, 3, 4, 5, 6 };
+    const uint8_t phone_random[ANCS_PEER_ID_LEN] = { 1, 1, 2, 3, 4, 5, 6 };   /* same bytes, other type */
+    const uint8_t mac[ANCS_PEER_ID_LEN] = { 0, 9, 9, 9, 9, 9, 9 };
+    assert(!ancs_guard_skips(&g, phone));
+    /* A plain drop (nothing outstanding) is not remembered */
+    assert(!ancs_guard_on_drop(&g, phone, false));
+    assert(!ancs_guard_skips(&g, phone));
+    /* A drop with an ANCS procedure outstanding (or a timeout): skipped for the rest of the boot */
+    assert(ancs_guard_on_drop(&g, phone, true));
+    assert(ancs_guard_skips(&g, phone));
+    assert(!ancs_guard_on_drop(&g, phone, true));   /* already remembered */
+    assert(g.n == 1);
+    assert(!ancs_guard_skips(&g, phone_random));
+    assert(!ancs_guard_skips(&g, mac));
+    /* Overflow: past ANCS_GUARD_MAX peers, everyone is skipped */
+    for (int i = 0; i < ANCS_GUARD_MAX - 1; i++) {
+        uint8_t id[ANCS_PEER_ID_LEN] = { 0, 0x40, 0, 0, 0, 0, (uint8_t)i };
+        assert(ancs_guard_on_drop(&g, id, true));
+    }
+    assert(g.n == ANCS_GUARD_MAX && !g.all && !ancs_guard_skips(&g, mac));
+    uint8_t extra[ANCS_PEER_ID_LEN] = { 0, 0x50, 0, 0, 0, 0, 0 };
+    assert(ancs_guard_on_drop(&g, extra, true));
+    assert(g.all && ancs_guard_skips(&g, mac));
+    ancs_guard_init(&g);
+    assert(!ancs_guard_skips(&g, phone) && !ancs_guard_skips(&g, mac));
+}
+
 int main(void)
 {
     uuids_match_apple();
@@ -556,6 +596,8 @@ int main(void)
     silent_keeps_its_flag();
     uid_zero_is_a_notification();
     text_is_cleaned();
+    positive_action_needs_unlock();
+    guard_skips_a_peer_after_one_risky_drop();
     puts("ancs: all tests passed");
     return 0;
 }

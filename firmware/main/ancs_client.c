@@ -47,6 +47,37 @@ static uint16_t s_waiting_conn = BLE_HS_CONN_HANDLE_NONE;
 /* A link already found without ANCS (the Mac): not discovered again until it disconnects */
 static uint16_t s_no_ancs_conn = BLE_HS_CONN_HANDLE_NONE;
 
+/* GATT timeout guard (ancs.h): peers that lost their link to an ANCS procedure this boot */
+static ancs_guard_t s_guard;
+/* The link whose ANCS procedure just timed out or was cut by the drop: its disconnect event follows */
+static uint16_t s_risk_conn = BLE_HS_CONN_HANDLE_NONE;
+
+static void peer_id(uint8_t type, const uint8_t val[6], uint8_t id[ANCS_PEER_ID_LEN])
+{
+    id[0] = type;
+    memcpy(id + 1, val, 6);
+}
+
+/* Host task, first thing in every ANCS GATT callback. NimBLE calls it with BLE_HS_ETIMEOUT when a procedure timed
+ * out (it terminates the link right after) and with BLE_HS_ENOTCONN for every procedure still outstanding when a
+ * link drops (before the disconnect event). Either way the peer is remembered at the disconnect; a timeout is
+ * remembered at once too (the link is still known here). */
+static void note_failure(uint16_t conn, int status)
+{
+    if (status != BLE_HS_ETIMEOUT && status != BLE_HS_ENOTCONN) {
+        return;
+    }
+    s_risk_conn = conn;
+    struct ble_gap_conn_desc desc;
+    if (status == BLE_HS_ETIMEOUT && ble_gap_conn_find(conn, &desc) == 0) {
+        uint8_t id[ANCS_PEER_ID_LEN];
+        peer_id(desc.peer_id_addr.type, desc.peer_id_addr.val, id);
+        if (ancs_guard_on_drop(&s_guard, id, true)) {
+            ESP_LOGW(TAG, "link %d: ANCS request timed out: no ANCS for this peer until reboot", conn);
+        }
+    }
+}
+
 #define DATA_SOURCE ((void *)1)   /* GATT callback arg: the Data Source step (NULL: Notification Source) */
 
 static void notifications_ready(uint16_t conn);   /* "notifications" section below */
@@ -89,6 +120,7 @@ static void subscribe(uint16_t cccd, void *arg)
 
 static int on_cccd_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
 {
+    note_failure(conn, error->status);
     if (conn != s_link.conn || s_link.state != LINK_DISCOVERING) {
         return 0;
     }
@@ -126,6 +158,7 @@ static void find_cccd(uint16_t val, uint16_t end, void *arg)
 static int on_dsc(uint16_t conn, const struct ble_gatt_error *error, uint16_t chr_val_handle,
                   const struct ble_gatt_dsc *dsc, void *arg)
 {
+    note_failure(conn, error->status);
     if (conn != s_link.conn || s_link.state != LINK_DISCOVERING) {
         return 0;
     }
@@ -154,6 +187,7 @@ static int on_dsc(uint16_t conn, const struct ble_gatt_error *error, uint16_t ch
 
 static int on_chr(uint16_t conn, const struct ble_gatt_error *error, const struct ble_gatt_chr *chr, void *arg)
 {
+    note_failure(conn, error->status);
     if (conn != s_link.conn || s_link.state != LINK_DISCOVERING) {
         return 0;
     }
@@ -187,6 +221,7 @@ static int on_chr(uint16_t conn, const struct ble_gatt_error *error, const struc
 
 static int on_svc(uint16_t conn, const struct ble_gatt_error *error, const struct ble_gatt_svc *svc, void *arg)
 {
+    note_failure(conn, error->status);
     if (conn != s_link.conn || s_link.state != LINK_DISCOVERING) {
         return 0;
     }
@@ -220,6 +255,15 @@ void ancs_client_on_encrypted(uint16_t conn)
 {
     if (conn == s_link.conn || conn == s_no_ancs_conn) {
         return;   /* re-encryption of a link already handled */
+    }
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) == 0) {
+        uint8_t id[ANCS_PEER_ID_LEN];
+        peer_id(desc.peer_id_addr.type, desc.peer_id_addr.val, id);
+        if (ancs_guard_skips(&s_guard, id)) {
+            ESP_LOGW(TAG, "skipped for this boot after a timeout (link %d)", conn);
+            return;
+        }
     }
     if (s_link.state == LINK_READY) {
         return;   /* one ANCS link */
@@ -263,6 +307,7 @@ static uint16_t s_flow_control;
 
 void ancs_client_init(void)
 {
+    ancs_guard_init(&s_guard);
     s_flow_lock = xSemaphoreCreateMutexStatic(&s_flow_lock_buf);
     ancs_flow_init(&s_flow);
 }
@@ -309,6 +354,7 @@ static void pump(void)
 static int on_command_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr,
                               void *arg)
 {
+    note_failure(conn, error->status);
     if (error->status == 0 || conn != s_link.conn) {
         return 0;
     }
@@ -392,8 +438,19 @@ static void notifications_ready(uint16_t conn)
     ESP_LOGI(TAG, "link %d: Claude notifications from the iPhone on", conn);
 }
 
-void ancs_client_on_disconnect(uint16_t conn)
+void ancs_client_on_disconnect(uint16_t conn, uint8_t peer_type, const uint8_t peer_val[6])
 {
+    /* Timeout guard: an ANCS procedure outstanding at the drop (its callback saw BLE_HS_ENOTCONN, or discovery
+     * was still running) marks the peer for the rest of the boot */
+    bool risky = conn == s_risk_conn || (conn == s_link.conn && s_link.state == LINK_DISCOVERING);
+    if (conn == s_risk_conn) {
+        s_risk_conn = BLE_HS_CONN_HANDLE_NONE;
+    }
+    uint8_t id[ANCS_PEER_ID_LEN];
+    peer_id(peer_type, peer_val, id);
+    if (ancs_guard_on_drop(&s_guard, id, risky)) {
+        ESP_LOGW(TAG, "link %d dropped with an ANCS request outstanding: no ANCS for this peer until reboot", conn);
+    }
     if (!link_forget(conn)) {
         return;
     }
@@ -423,6 +480,7 @@ static int on_action_written(uint16_t conn, const struct ble_gatt_error *error, 
                              void *arg)
 {
     uint32_t uid = (uint32_t)(uintptr_t)arg;
+    note_failure(conn, error->status);
     if (error->status != 0) {
         ESP_LOGW(TAG, "the iPhone refused the action for %lu: status 0x%x", (unsigned long)uid, error->status);
     } else {
@@ -437,6 +495,12 @@ bool ancs_client_perform(uint32_t uid, uint8_t action)
 {
     uint8_t cmd[6];
     if (s_flow_lock == NULL) {
+        return false;
+    }
+    modes_t m;
+    shell_snapshot(&m);
+    if (!ancs_action_allowed(action, m.locked)) {
+        ESP_LOGW(TAG, "action for %lu not sent: the board is locked", (unsigned long)uid);
         return false;
     }
     flow_lock();

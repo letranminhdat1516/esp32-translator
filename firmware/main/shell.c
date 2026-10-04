@@ -43,11 +43,9 @@ static int s_reported = MODES_REPORT_UNSENT;
 static SemaphoreHandle_t s_report_lock;
 static StaticSemaphore_t s_report_lock_buf;
 
-void shell_post(modes_event_t ev)
+bool shell_post(modes_event_t ev)
 {
-    if (s_queue) {
-        xQueueSend(s_queue, &ev, 0);
-    }
+    return s_queue != NULL && xQueueSend(s_queue, &ev, 0) == pdTRUE;
 }
 
 void shell_snapshot(modes_t *out)

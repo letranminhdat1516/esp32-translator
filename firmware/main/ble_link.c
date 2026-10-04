@@ -539,7 +539,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             s_claude_rx.len = 0;
             app_on_claude_link(false);   /* also ends voice (main.c) */
         }
-        ancs_client_on_disconnect(event->disconnect.conn.conn_handle);
+        ancs_client_on_disconnect(event->disconnect.conn.conn_handle, event->disconnect.conn.peer_id_addr.type,
+                                  event->disconnect.conn.peer_id_addr.val);
         start_advertising();
         break;
 

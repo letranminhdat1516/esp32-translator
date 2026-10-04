@@ -160,3 +160,31 @@ void ancs_flow_on_error(ancs_flow_t *f);                /* the outstanding comma
 /* Perform Notification Action bytes for the notice on screen only (uid matches, that action offered); else 0 */
 size_t ancs_flow_action(const ancs_flow_t *f, uint32_t uid, uint8_t action, uint8_t out[6]);
 void ancs_flow_close(ancs_flow_t *f, uint32_t uid);     /* the board closed that notice: forget it */
+
+/* ---- action gate ----
+ * The positive action (Allow-like) needs an unlocked board: a notice may show over the lock, and the lock must
+ * not be a way to approve something. The negative action and Close always work. */
+bool ancs_action_allowed(uint8_t action, bool locked);
+
+/* ---- GATT timeout guard ----
+ * NimBLE drops the whole link when a GATT client procedure times out (30 s). iOS may hold the answer to the
+ * ANCS CCCD write while its "share notifications" prompt is unanswered, so ANCS could cost the translator its
+ * link, again on every reconnect. ancs_client.c remembers (RAM, this boot only) every peer, by identity address,
+ * whose link dropped while an ANCS GATT procedure (discovery, CCCD write, Control Point write) was outstanding,
+ * or whose ANCS procedure timed out, and never tries ANCS on it again this boot: one drop per peer per boot at
+ * most. Past ANCS_GUARD_MAX peers, ANCS is skipped for every peer. */
+#define ANCS_GUARD_MAX  4
+#define ANCS_PEER_ID_LEN 7   /* address type + 6 address bytes */
+
+typedef struct {
+    uint8_t peers[ANCS_GUARD_MAX][ANCS_PEER_ID_LEN];
+    int n;
+    bool all;   /* the list overflowed: skip everyone */
+} ancs_guard_t;
+
+void ancs_guard_init(ancs_guard_t *g);
+/* ANCS must not be tried on this peer this boot */
+bool ancs_guard_skips(const ancs_guard_t *g, const uint8_t id[ANCS_PEER_ID_LEN]);
+/* The peer's link dropped (or an ANCS procedure on it timed out). risky: an ANCS GATT procedure was outstanding
+ * or timed out. Returns true when the peer is newly remembered. */
+bool ancs_guard_on_drop(ancs_guard_t *g, const uint8_t id[ANCS_PEER_ID_LEN], bool risky);

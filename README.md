@@ -40,7 +40,7 @@ Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 
 | Tap the top of the Claude screen (status / project / title) | Session picker | — |
 
 A swipe only counts when it starts on the lock face while it is shown (at least 60 px up, more up than
-sideways); on the dark panel it at most does what a tap does (shows the face), so a pocket cannot unlock the board.
+sideways); on the dark panel it at most does what a tap does (shows the face), so a swipe on the dark panel alone cannot unlock it.
 
 A notification from the Claude iPhone app takes the screen over any mode, even when locked (see iPhone notifications). PWR ×1 then only closes it (the lock stays as it was); BOOT and PWR ×2/×3 close it and switch as usual. A Claude request from the Mac always wins over it.
 
@@ -177,7 +177,7 @@ Requires Xcode 26 and an iPhone on iOS 26.
 
 The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board (plus Always allow when offered, see below). When the focused session finishes a turn, the board plays a done chime and a "<project> · <last line>" toast; other sessions finish silently and show up as "Claude · N new" on the Claude screen and "· new" in the picker. After you answer (or the request is cancelled, times out or the Mac disconnects), the board returns to the screen you were on (or goes dark again if it was locked).
 
-Open the Claude screen with a **PWR double press**; **BOOT** goes back to the translator. A permission request takes over the screen in any mode, even when the board is locked. If you lock the board or switch away while a request is shown, it stays pending and comes back when you unlock (PWR ×1 or a double tap on the lock screen) or open the Claude screen (PWR ×2). The Mac gives up on a request after 90 s and cancels it on the board; if that cancel is lost, the board drops the request itself after 100 s ("Timed out").
+Open the Claude screen with **PWR ×3** (a triple press); **BOOT** or PWR ×2 goes back to the translator. A permission request takes over the screen in any mode, even when the board is locked. If you lock the board or switch away while a request is shown, it stays pending and comes back when you unlock or open the Claude screen (PWR ×3). While locked, PWR ×1 only shows the lock face and never unlocks; a swipe up on the visible face or a double tap unlocks, and PWR ×2 / ×3 unlock straight to the Translator / Claude screen. The Mac gives up on a request after 90 s and cancels it on the board; if that cancel is lost, the board drops the request itself after 100 s ("Timed out").
 
 ```sh
 bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a launchd agent, adds Claude Code hooks
@@ -300,12 +300,16 @@ forgets the notification's text.
 **Actions.** When iOS offers the notification's own actions, the board shows them as buttons (negative left,
 positive right, with the iPhone's labels) and performs the action on the iPhone only when you tap one: the button
 must be armed (700 ms after the notice appears or changes, or the panel lights), the panel lit, the link up and the
-notification still on screen. The board then says "Done" or "Not done". **Close** only closes the board's screen;
+notification still on screen. The positive action needs an unlocked board: while locked, tapping it only shows
+"Unlock to confirm" (the negative action and Close still work). The board then says "Done" or "Not done". **Close** only closes the board's screen;
 the notification stays on the iPhone. Whether the Claude app's notifications carry actions has not been observed on
 the iPhone yet; without them only Close is shown.
 
 **Setup (once).** Open the translator app with the board on: iOS asks to pair with "ESP-Translator" (tap
-**Pair**), and may ask to share notifications with it (allow). In Settings → Bluetooth → (i) next to ESP-Translator,
+**Pair**), and may ask to share notifications with it (allow). Answer both prompts right away: while the "share
+notifications" prompt waits, the board's notification request waits too, and if it is left for about 30 s the link
+drops once; the board then skips iPhone notifications for that iPhone until it restarts (log: `ancs: skipped for this
+boot after a timeout`). Update the iOS app and the firmware together. In Settings → Bluetooth → (i) next to ESP-Translator,
 **Share System Notifications** must stay on. If you decline pairing the translator still works; there are just no
 notifications. For the message text while the iPhone is locked, set Settings → Notifications → Claude → Show
 Previews to **Always** (otherwise the notice has no text).

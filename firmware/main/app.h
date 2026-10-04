@@ -75,10 +75,11 @@ void ble_link_ancs_link(uint16_t conn, bool up);
 void ancs_client_init(void);
 void ancs_client_on_encrypted(uint16_t conn);
 bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len);
-void ancs_client_on_disconnect(uint16_t conn);
+void ancs_client_on_disconnect(uint16_t conn, uint8_t peer_type, const uint8_t peer_val[6]);   /* peer identity address */
 void ancs_client_close(uint32_t uid);
 /* LVGL task, from an armed tap on the notice's action button: writes Perform Notification Action for the notice
- * on screen only. True when the write went out; the iPhone's answer arrives as phone_ui_action_result(). */
+ * on screen only, never the positive action while the board is locked (ancs_action_allowed). True when the write
+ * went out; the iPhone's answer arrives as phone_ui_action_result(). */
 bool ancs_client_perform(uint32_t uid, uint8_t action);
 
 /* audio_in.c */
@@ -183,7 +184,7 @@ void phone_ui_set_link(bool up);                          /* NimBLE host task: t
 
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);
-void shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks */
+bool shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks; false: queue full */
 void shell_snapshot(modes_t *out);                  /* current state, for the panel policy */
 void shell_resend_mode(void);                       /* tell the Mac the board mode again (Mac link up) */
 
