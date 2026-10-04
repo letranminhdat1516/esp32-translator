@@ -37,6 +37,8 @@ Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 
 | Tap ×1 | normal UI | Lock face for 5 s: logo, clock, battery (`NN%`, `NN% · charging`, or `USB power` without a battery) |
 | Tap ×2 | Translator: screen off / on | Unlock |
 
+A notification from the Claude iPhone app takes the screen over any mode, even when locked (see iPhone notifications). PWR ×1 then only closes it (the lock stays as it was); BOOT and PWR ×2/×3 close it and switch as usual. A Claude request from the Mac always wins over it.
+
 Presses count as one series while each follows the previous release within about 0.5 s.
 Locked means the panel is off and touch only answers the two lock gestures (except while a request is
 shown: then neither tap does anything); translation and Claude notifications keep running. A Claude
@@ -61,7 +63,8 @@ The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` 
 | Board | Screen off after 30 s without speech, subtitles or touch; a tap only wakes it | AMOLED power scales with lit pixels and brightness |
 | Board | Lock (PWR ×1): panel off, the 5 s lock face is a static logo | No lit pixels, clock timer paused while locked |
 | Board | The microphone and the voice characteristic are used only while a voice capture records (at most 30 s); the translator stream to the iPhone pauses during a capture | No extra radio or codec work when you are not speaking to Claude |
-| Board | Deep sleep after 3 min without an iPhone; touch screen or BOOT wakes it | Near-zero drain when you walk away |
+| Board | Deep sleep after 3 min without an iPhone link (the translator app or iPhone notifications); touch screen or BOOT wakes it. On battery, an iPhone link that only carries notifications (translator app closed, no Mac) keeps the board awake for at most 30 min after the later of the link coming up and the last Claude notice; then it sleeps anyway and notices that arrive meanwhile are missed (the iPhone keeps them). On USB it never sleeps | Near-zero drain when you walk away |
+| Board | iPhone notifications: no polling, work only when the iPhone reports a notification; only the Claude app's are fetched; with the translator app closed the iPhone link relaxes to 180–210 ms (latency 4), but only 10 s after connecting and never on the Mac link | A notification costs a few radio packets; the link costs little while only notifications use it |
 | Board | CPU 160 MHz with DFS down to 80 MHz, BLE modem sleep, 30–45 ms connection interval | Fewer radio and CPU wake-ups |
 | iPhone | Own-voice gate on the AirPods mic (`VoiceGate`): opens only on voiced frames well above the background and near your learned voice level | The Vietnamese recognizer runs only while *you* talk, not while the café does (gate: about 0.05 % of one core) |
 | iPhone | Runs with the screen locked (`audio` + `bluetooth-central` background modes) | Keep the phone in your pocket, just wear the AirPods |
@@ -98,7 +101,7 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 
 | Path | Contents |
 |---|---|
-| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
+| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `phone_ui.c` + `ancs_client.c` + `ancs.c` (iPhone notifications, ANCS), `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
 | `tools/` | `gen_logo.py`: generates the lock-face logo (`firmware/main/logo_img.c`) from `assets/cicca-dark.png` |
 | `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
@@ -115,6 +118,14 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 | `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options), 8 voice (id = the board's voice id; `<p\|f\|x\|k>\ntext`: `p` live transcript, `f` final transcript (exactly what Send types, at most 300 bytes, empty = nothing heard), `x` error, `k` done; the Mac only sends them for the current capture). Session flags (kind 4) also have bit2 = voice (the session runs in a `cb` tmux pane the Mac can type into). See `firmware/main/claude_proto.h` |
 | `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session; `[voice u32][0x30][purpose u8][target u32 LE]` voice capture start (voice id never 0, chosen by the board; purpose low nibble 0 = command, target = session handle; 1 = Other answer, target = request id, question index in the high nibble; 2 = deny with reason, target = request id); `[voice u32][0x31]` audio complete, `[voice u32][0x32]` cancel, `[voice u32][0x33]` send the final transcript. Bit 7 of a question mask = the spoken Other answer |
 | `…0013` Claude voice | notify, encrypted | Board → Mac, only during a voice capture: the board mic as `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono, like `…0002`. The board offers voice only once the Mac has subscribed and the ATT MTU is at least 168, so a full frame fits in one notification |
+
+On the iPhone's link the board is also a GATT client of Apple's Notification Center Service (ANCS,
+`7905F431-B5CE-4E99-A40F-4B1E122D00D0`): it subscribes to Notification Source and Data Source and writes Get
+Notification Attributes / Perform Notification Action to the Control Point (`firmware/main/ancs.h`). The scan response
+solicits ANCS (name shortened to "ESP-Transla" there; the GAP name stays "ESP-Translator"). The board's own GATT table
+is unchanged, except that the iPhone app now also writes `0xFF` to the control characteristic every 20 s as a
+heartbeat (0..2 are the mic states): the board leaves the iPhone audio role after 60 s without any write from the
+app, because a bonded iPhone keeps the link up for notifications after the app is gone.
 
 ## Getting started
 
@@ -254,6 +265,50 @@ Voice commands were verified on hardware on 2026-10-05 with Claude Code 2.1.289:
 
 Daemon log: `~/.claude-board/daemon.log`.
 
+## iPhone notifications (Claude app)
+
+The board shows notifications from the Claude iPhone app (App Identifier `com.anthropic.claude`, confirmed on the
+iPhone's app list): a short rising chime (none for silent notifications), then "iPhone · Claude" with the title,
+subtitle and message, over any mode and even when the board is locked (the panel lights while it is shown). It
+closes after 20 s (60 s when it has action buttons), when you tap **Close**, when you remove it on the iPhone, with
+any board button (PWR ×1 only closes it; the lock stays as it was), or when a Claude request from the Mac arrives:
+Mac requests always win, and while one is up an iPhone notification is not shown at all (the iPhone keeps it). One
+notification at a time: a newer one replaces the one shown.
+
+**Privacy.** Only `com.anthropic.claude` notifications are fetched and shown. For every other app the board reads
+only the app identifier, to discard it: nothing from them is displayed, stored or logged. Leaving the screen
+forgets the notification's text.
+
+**Actions.** When iOS offers the notification's own actions, the board shows them as buttons (negative left,
+positive right, with the iPhone's labels) and performs the action on the iPhone only when you tap one: the button
+must be armed (700 ms after the notice appears or changes, or the panel lights), the panel lit, the link up and the
+notification still on screen. The board then says "Done" or "Not done". **Close** only closes the board's screen;
+the notification stays on the iPhone. Whether the Claude app's notifications carry actions has not been observed on
+the iPhone yet; without them only Close is shown.
+
+**Setup (once).** Open the translator app with the board on: iOS asks to pair with "ESP-Translator" (tap
+**Pair**), and may ask to share notifications with it (allow). In Settings → Bluetooth → (i) next to ESP-Translator,
+**Share System Notifications** must stay on. If you decline pairing the translator still works; there are just no
+notifications. For the message text while the iPhone is locked, set Settings → Notifications → Claude → Show
+Previews to **Always** (otherwise the notice has no text).
+
+**Without the translator app.** A bonded iPhone is asked to encrypt right at connect (once per connection), so
+notifications can resume after the app is closed or the board restarts. The board counts the notification link as
+connected only when both ANCS subscriptions are on; with the app closed it relaxes the link pace after 10 s (never
+on the Mac link) and, on battery, stays awake at most 30 min without the app or a Claude notice (see Power). A
+restored link waits silently for the app: the translator screen does not claim the iPhone is connected. Whether iOS
+reconnects the board by itself with the app closed has not been verified on hardware yet; if it does not, open the
+translator app once or tap ESP-Translator in Settings → Bluetooth.
+
+**Re-pairing.** If the board is reflashed with erased NVS, or iOS shows a pairing error: Settings → Bluetooth →
+ESP-Translator → Forget This Device, then open the translator app and pair again.
+
+Update the iOS app and the firmware together: the app's 20 s heartbeat is what keeps the board's iPhone audio role
+alive (an older app is dropped after 60 s of silence).
+
+Details and the on-device test plan: `docs/superpowers/notes/2026-10-05-ancs-discovery.md` (the hardware rows are
+still pending).
+
 ## Tuning
 
 | Setting | File | Default | Effect |
@@ -269,6 +324,7 @@ Daemon log: `~/.claude-board/daemon.log`.
 
 ## Known limitations
 
+- iPhone notifications: one at a time (a newer one replaces the one shown); text only in the fonts' character set (other characters are dropped); notifications already on the iPhone when the board connects are not shown; notices that arrive while the board is in deep sleep are missed.
 - Using the AirPods microphone switches the AirPods to the call (HFP) profile. Speech output stays clear, but it is not music quality.
 - The ESP32-S3 has BLE only (no Bluetooth Classic), so it cannot stream audio to the AirPods directly. The iPhone handles that leg.
 - Only one language pair (EN ↔ VI) is wired up. Other pairs are a matter of changing the locales in `ConversationEngine`.
