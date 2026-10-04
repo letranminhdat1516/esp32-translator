@@ -1,11 +1,13 @@
 import ClaudeBoardCore
+import ClaudeRelay
 @preconcurrency import CoreBluetooth
 import Foundation
 
 /// Connects to the translator board (it advertises the translator service) and talks to its Claude service.
 /// The Claude characteristics need an encrypted, bonded link (Just Works); the request characteristic only
 /// accepts write-with-response from the connection that subscribed to the answer characteristic. So the link
-/// is "ready" only once the answer subscription is confirmed.
+/// is "ready" only once the answer subscription is confirmed and the hello written: the board ignores a
+/// subscriber that has not said hello.
 /// All mutable state is touched only on `queue`.
 final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, @unchecked Sendable {
     static let translatorService = CBUUID(string: "A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
@@ -169,6 +171,13 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
             subscribed = false
             if was { onConnectionChange?(false) }
             return
+        }
+        // Phase 5: the board gives this connection the Mac role only after the hello (kind 9 "mac"), written
+        // before anything else so it is first in the request characteristic's write queue
+        if let request {
+            for chunk in BLEFraming.chunks(BoardHello.mac, maxChunk: p.maximumWriteValueLength(for: .withoutResponse)) {
+                p.writeValue(chunk, for: request, type: .withResponse)
+            }
         }
         subscribed = true
         UserDefaults.standard.set(p.identifier.uuidString, forKey: knownKey)
