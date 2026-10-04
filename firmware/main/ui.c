@@ -29,6 +29,8 @@ static bool s_connected;
 
 static volatile int64_t s_last_activity_us;
 static bool s_screen_on = true;
+/* Double-tap off: stays dark (ignores taps and subtitles) until the next double-tap */
+static bool s_manual_off;
 
 static void lock(void)
 {
@@ -64,12 +66,26 @@ static void set_screen(bool on)
 /* Runs inside the LVGL task every 250 ms */
 static void screen_timer_cb(lv_timer_t *t)
 {
+    if (s_manual_off) {
+        set_screen(false);
+        return;
+    }
     int64_t idle_ms = (esp_timer_get_time() - s_last_activity_us) / 1000;
     uint32_t touch_idle_ms = lv_display_get_inactive_time(NULL);
     if (touch_idle_ms < idle_ms) {
         idle_ms = touch_idle_ms;
     }
     set_screen(idle_ms < SCREEN_OFF_AFTER_MS);
+}
+
+/* Double-tap anywhere outside the mic button toggles the screen */
+static void on_double_tap(lv_event_t *e)
+{
+    s_manual_off = s_screen_on;
+    if (!s_manual_off) {
+        s_last_activity_us = esp_timer_get_time();
+    }
+    set_screen(!s_manual_off);
 }
 
 void ui_mark_activity(void)
@@ -113,6 +129,7 @@ void ui_init(void)
     lv_obj_set_style_pad_all(s_text_box, 0, 0);
     lv_obj_set_scroll_dir(s_text_box, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_text_box, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_flag(s_text_box, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, lv_pct(100));
@@ -139,6 +156,7 @@ void ui_init(void)
     lv_obj_center(s_btn_label);
 
     lv_label_set_text(s_status, "Waiting for iPhone…");
+    lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
 }
