@@ -347,6 +347,87 @@ static void report_due_covers_link_up_and_mode_changes(void)
     assert(modes_report_due(&last, &m) && last == 0);
 }
 
+static void notice_shows_over_the_mode_and_wakes(void)
+{
+    modes_t m = fresh();
+    assert(modes_handle(&m, MODES_EV_NOTICE, 0));                    /* wakes */
+    assert(m.notice && modes_screen(&m) == SCREEN_PHONE);
+    assert(modes_panel(&m, 0) == MODES_PANEL_AUTO);                   /* unlocked: ui.c keeps it lit */
+    assert(!modes_handle(&m, MODES_EV_NOTICE_DONE, 1 * SEC));
+    assert(!m.notice && modes_screen(&m) == SCREEN_TRANSLATOR);
+    modes_handle(&m, MODES_EV_PWR_3, 2 * SEC);
+    modes_handle(&m, MODES_EV_NOTICE, 2 * SEC);
+    assert(modes_report(&m) == 2);                                    /* the Mac still hears "picker" */
+    modes_handle(&m, MODES_EV_NOTICE_DONE, 3 * SEC);
+    assert(modes_screen(&m) == SCREEN_PICKER);
+}
+
+static void notice_over_the_lock_lights_the_panel(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_TAP_1, 0);                              /* face up */
+    assert(modes_handle(&m, MODES_EV_NOTICE, 1 * SEC));
+    assert(m.locked && modes_screen(&m) == SCREEN_PHONE);
+    assert(modes_panel(&m, 1 * SEC) == MODES_PANEL_ON && !modes_face_visible(&m, 1 * SEC));
+    assert(modes_panel(&m, 30 * SEC) == MODES_PANEL_ON);              /* as long as the notice is up */
+    modes_handle(&m, MODES_EV_NOTICE_DONE, 31 * SEC);
+    assert(m.locked && modes_screen(&m) == SCREEN_LOCK && modes_panel(&m, 31 * SEC) == MODES_PANEL_OFF);
+}
+
+static void pwr1_only_closes_the_notice(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_NOTICE, 0);
+    assert(!modes_handle(&m, MODES_EV_PWR_1, 1 * SEC));
+    assert(!m.notice && m.locked && modes_screen(&m) == SCREEN_LOCK);   /* still locked */
+    m = fresh();
+    modes_handle(&m, MODES_EV_PWR_2, 0);
+    modes_handle(&m, MODES_EV_NOTICE, 0);
+    assert(!modes_handle(&m, MODES_EV_PWR_1, 1 * SEC));
+    assert(!m.notice && !m.locked && modes_screen(&m) == SCREEN_CLAUDE);   /* still unlocked */
+}
+
+static void mode_buttons_close_the_notice(void)
+{
+    const modes_event_t evs[] = { MODES_EV_PWR_2, MODES_EV_PWR_3, MODES_EV_BOOT_1 };
+    const board_screen_t want[] = { SCREEN_CLAUDE, SCREEN_PICKER, SCREEN_TRANSLATOR };
+    for (int i = 0; i < 3; i++) {
+        modes_t m = fresh();
+        modes_handle(&m, MODES_EV_PWR_1, 0);
+        modes_handle(&m, MODES_EV_NOTICE, 0);
+        assert(modes_handle(&m, evs[i], 0));
+        assert(!m.notice && !m.locked && modes_screen(&m) == want[i]);
+    }
+}
+
+static void mac_request_wins_over_a_notice(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_NOTICE, 0);
+    assert(modes_handle(&m, MODES_EV_URGENT, 0));
+    assert(!m.notice && modes_screen(&m) == SCREEN_CLAUDE);           /* the request replaces the notice */
+    assert(!modes_handle(&m, MODES_EV_NOTICE, 1 * SEC));              /* not shown over a request */
+    assert(!m.notice && modes_screen(&m) == SCREEN_CLAUDE);
+    modes_handle(&m, MODES_EV_URGENT_DONE, 2 * SEC);
+    assert(modes_screen(&m) == SCREEN_TRANSLATOR);                    /* and not shown afterwards either */
+}
+
+static void lock_gestures_and_picks_wait_for_the_notice(void)
+{
+    modes_t m = fresh();
+    modes_handle(&m, MODES_EV_PWR_1, 0);
+    modes_handle(&m, MODES_EV_NOTICE, 0);
+    assert(!modes_handle(&m, MODES_EV_TAP_1, 1 * SEC) && m.face_until_us == 0);
+    assert(!modes_handle(&m, MODES_EV_TAP_2, 1 * SEC) && m.locked && m.notice);
+    m = fresh();
+    modes_handle(&m, MODES_EV_PWR_3, 0);
+    modes_handle(&m, MODES_EV_NOTICE, 0);
+    assert(!modes_handle(&m, MODES_EV_PICK, 0));
+    assert(m.mode == BOARD_PICKER && modes_screen(&m) == SCREEN_PHONE);
+}
+
 int main(void)
 {
     starts_unlocked_in_translator();
@@ -372,6 +453,12 @@ int main(void)
     pick_is_ignored_when_locked_or_over_a_request();
     report_follows_mode_and_lock();
     report_due_covers_link_up_and_mode_changes();
+    notice_shows_over_the_mode_and_wakes();
+    notice_over_the_lock_lights_the_panel();
+    pwr1_only_closes_the_notice();
+    mode_buttons_close_the_notice();
+    mac_request_wins_over_a_notice();
+    lock_gestures_and_picks_wait_for_the_notice();
     puts("modes: all tests passed");
     return 0;
 }

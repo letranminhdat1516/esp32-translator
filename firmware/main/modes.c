@@ -13,6 +13,7 @@ static bool unlock_to(modes_t *m, board_mode_t mode)
     m->mode = mode;
     m->locked = false;
     m->urgent = false;
+    m->notice = false;
     m->face_until_us = 0;
     return true;
 }
@@ -32,6 +33,10 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
 {
     switch (ev) {
     case MODES_EV_PWR_1:
+        if (m->notice) {
+            m->notice = false;   /* closes the notice only: locked stays locked, unlocked stays unlocked */
+            return false;
+        }
         if (m->locked) {
             /* Back to the mode in use; a request shown over the lock (or left pending) is shown until it is done */
             return unlock_in_place(m);
@@ -47,18 +52,19 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
     case MODES_EV_BOOT_1:
         return unlock_to(m, BOARD_TRANSLATOR);
     case MODES_EV_TAP_1:
-        if (m->locked && !m->urgent) {
+        if (m->locked && !m->urgent && !m->notice) {
             m->face_until_us = now_us + MODES_FACE_US;
         }
         return false;
     case MODES_EV_TAP_2:
-        if (m->locked && !m->urgent) {
+        if (m->locked && !m->urgent && !m->notice) {
             return unlock_in_place(m);
         }
         return false;
     case MODES_EV_URGENT:
         m->urgent = true;
         m->pending = true;
+        m->notice = false;   /* a Mac request replaces an iPhone notice */
         m->face_until_us = 0;
         return true;
     case MODES_EV_URGENT_DONE:
@@ -66,11 +72,21 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
         m->pending = false;
         return false;
     case MODES_EV_PICK:
-        if (m->locked || m->urgent) {
+        if (m->locked || m->urgent || m->notice) {
             return false;   /* the picker is not on screen then */
         }
         m->mode = BOARD_CLAUDE;
         return true;
+    case MODES_EV_NOTICE:
+        if (m->urgent) {
+            return false;   /* a Mac request has the screen; the iPhone keeps the notification */
+        }
+        m->notice = true;
+        m->face_until_us = 0;
+        return true;
+    case MODES_EV_NOTICE_DONE:
+        m->notice = false;
+        return false;
     }
     return false;
 }
@@ -79,6 +95,9 @@ board_screen_t modes_screen(const modes_t *m)
 {
     if (m->urgent) {
         return SCREEN_CLAUDE;
+    }
+    if (m->notice) {
+        return SCREEN_PHONE;
     }
     if (m->locked) {
         return SCREEN_LOCK;
@@ -95,7 +114,7 @@ board_screen_t modes_screen(const modes_t *m)
 
 bool modes_face_visible(const modes_t *m, int64_t now_us)
 {
-    return m->locked && !m->urgent && now_us < m->face_until_us;
+    return m->locked && !m->urgent && !m->notice && now_us < m->face_until_us;
 }
 
 modes_panel_t modes_panel(const modes_t *m, int64_t now_us)
@@ -103,7 +122,7 @@ modes_panel_t modes_panel(const modes_t *m, int64_t now_us)
     if (!m->locked) {
         return MODES_PANEL_AUTO;
     }
-    if (m->urgent || modes_face_visible(m, now_us)) {
+    if (m->urgent || m->notice || modes_face_visible(m, now_us)) {
         return MODES_PANEL_ON;
     }
     return MODES_PANEL_OFF;

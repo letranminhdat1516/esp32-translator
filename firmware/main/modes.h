@@ -8,7 +8,7 @@
 #include <stdint.h>
 
 typedef enum { BOARD_TRANSLATOR = 0, BOARD_CLAUDE, BOARD_PICKER } board_mode_t;
-typedef enum { SCREEN_TRANSLATOR = 0, SCREEN_CLAUDE, SCREEN_PICKER, SCREEN_LOCK } board_screen_t;
+typedef enum { SCREEN_TRANSLATOR = 0, SCREEN_CLAUDE, SCREEN_PICKER, SCREEN_LOCK, SCREEN_PHONE } board_screen_t;
 
 typedef enum {
     MODES_EV_PWR_1 = 0,
@@ -20,6 +20,8 @@ typedef enum {
     MODES_EV_URGENT,       /* a Claude request needs the user: show it, wake the panel */
     MODES_EV_URGENT_DONE,  /* that request was answered, cancelled or dropped */
     MODES_EV_PICK,         /* a session was tapped in the picker: Claude mode */
+    MODES_EV_NOTICE,       /* an iPhone notice (Claude app, ANCS) wants the screen: show it, wake the panel */
+    MODES_EV_NOTICE_DONE,  /* the notice was closed, timed out or removed on the iPhone */
 } modes_event_t;
 
 /* Panel power policy: AUTO = the usual idle timer / manual screen-off decide */
@@ -32,6 +34,7 @@ typedef struct {
     bool locked;
     bool urgent;             /* a Claude request is shown over the mode (or over the lock) */
     bool pending;            /* a Claude request awaits an answer (shown or left behind); unlocking shows it again */
+    bool notice;             /* an iPhone notice is shown over the mode (or over the lock); a Mac request wins */
     int64_t face_until_us;   /* lock face visible until this time; 0 = hidden */
 } modes_t;
 
