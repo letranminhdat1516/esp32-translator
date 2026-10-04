@@ -60,12 +60,25 @@ void app_on_claude_link(bool connected)
         s_disconnected_since = esp_timer_get_time();
     }
     ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
+    if (!connected) {
+        voice_ui_set_link(false);   /* first: the Claude screen then drops a request a capture belongs to */
+    }
     claude_ui_set_link(connected);
     picker_ui_set_link(connected);
     if (connected) {
         shell_resend_mode();   /* the Mac pushes session rows only while the board shows Claude or the picker */
     }
     ui_mark_activity();
+}
+
+/* NimBLE host task: the Mac subscribed to (or left) the voice characteristic */
+void app_on_claude_voice_link(bool on)
+{
+    ESP_LOGI(TAG, "Claude voice %s", on ? "up" : "down");
+    voice_ui_set_link(on);
+    bsp_display_lock((uint32_t)-1);
+    claude_ui_refresh_session_locked();   /* Speak appears or goes */
+    bsp_display_unlock();
 }
 
 /* msg points to a static buffer overwritten by the next BLE write: consume it synchronously */
@@ -100,6 +113,9 @@ void app_on_claude_message(const claude_msg_t *msg)
     case CLAUDE_SESSION_REMOVE:
     case CLAUDE_SESSIONS_CLEAR:
         picker_ui_on_message(msg);
+        break;
+    case CLAUDE_VOICE:
+        voice_ui_on_message(msg);
         break;
     default:
         ESP_LOGW(TAG, "ignoring unknown claude kind %d", msg->kind);

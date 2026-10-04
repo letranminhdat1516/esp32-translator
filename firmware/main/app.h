@@ -23,6 +23,8 @@ void app_on_connection_changed(bool connected);
 /* Mac Claude link (answer characteristic subscribed) up/down, and an incoming Claude message */
 void app_on_claude_link(bool connected);
 void app_on_claude_message(const claude_msg_t *msg);
+/* Mac voice characteristic subscribed / left (NimBLE host task) */
+void app_on_claude_voice_link(bool on);
 /* audio_in.c: the board VAD detected the start of speech */
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */
@@ -48,9 +50,19 @@ bool ble_link_claude_connected(void);
 bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* CLAUDE_DECISION_* */
 /* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX; false if no Mac */
 bool ble_link_send_claude_input(const uint8_t *data, size_t len);
+/* Claude voice characteristic: the board mic to the Mac during a voice capture. Send from the audio task only. */
+bool ble_link_voice_ready(void);
+uint16_t ble_link_voice_payload_max(void);
+bool ble_link_send_voice(const uint8_t *data, uint16_t len);
 
 /* audio_in.c */
 void audio_in_start(void);
+/* One voice capture at a time (voice_ui.c). start: false without the Mac voice link. stop: the audio task sends
+ * its last packet, then the stop input, then calls voice_ui_capture_ended(). abort: stop streaming at once, no
+ * stop input (the caller sent a cancel). */
+bool audio_in_voice_start(uint32_t voice_id);
+void audio_in_voice_stop(void);
+void audio_in_voice_abort(void);
 
 /* ui.c (takes the LVGL lock itself; do not call from LVGL callbacks) */
 void ui_init(void);
@@ -91,8 +103,11 @@ bool claude_ui_pending(void);                       /* a request awaits an answe
 void claude_ui_refresh_session_locked(void);        /* display lock held: status badge + focused session view */
 /* Every answer control (claude_ui.c, question_ui.c), LVGL task */
 void claude_ui_note_press(void);                    /* call from LV_EVENT_PRESSED */
-bool claude_ui_tap_allowed(void);                   /* request pending, panel lit, press armed (dark: wakes) */
+bool claude_ui_tap_armed(void);                     /* panel lit, press armed (dark: wakes); voice controls */
+bool claude_ui_tap_allowed(void);                   /* tap_armed and a request pending */
 void claude_ui_rearm(void);                         /* new controls under the finger (page change) */
+/* claude_ui.c: a spoken deny reason was applied (voice_ui.c): show "Denied", then restore */
+void claude_ui_voice_denied_locked(void);
 /* claude_ui.c: Send on the last question page (LVGL task): sends the answers and shows the result */
 void claude_ui_question_send_locked(const uint8_t *answer, size_t len);
 
@@ -101,6 +116,21 @@ void question_ui_init(lv_obj_t *scr, question_set_t *set);
 void question_ui_show(void);                        /* page 1 of a complete set */
 void question_ui_refresh(void);                     /* a shown page was resent: rebuild it (caller re-arms) */
 void question_ui_hide(void);                        /* safe before init */
+/* Use on the voice confirm screen: store the spoken Other answer of `page`, select it, redraw that page */
+void question_ui_set_other(uint8_t page, const char *text);
+
+/* voice_ui.c: voice capture overlay on the Claude screen (see the file header for the flow) */
+void voice_ui_init(lv_obj_t *scr);                  /* after question_ui_init: on top of the question pages */
+/* Display lock held (LVGL task): start a capture; purpose CLAUDE_VOICE_FOR_*, question = page (Other), target =
+ * session handle or request id. True when the overlay is up (it may show an error). */
+bool voice_ui_start_locked(uint8_t purpose, uint8_t question, uint32_t target);
+void voice_ui_cancel_locked(void);                  /* drop any capture (sends cancel), hide the overlay */
+void voice_ui_request_gone_locked(uint32_t id);     /* an Other / deny capture's request went away */
+bool voice_ui_active_locked(void);                  /* the overlay is shown */
+void voice_ui_on_message(const claude_msg_t *m);    /* kind 8, NimBLE host task; takes the lock */
+void voice_ui_set_link(bool on);                    /* takes the lock */
+void voice_ui_capture_ended(uint32_t id);           /* audio task, after its stop input; takes the lock */
+void voice_ui_level(int percent);                   /* audio task: level ring, 0 = hidden; takes the lock */
 
 /* lock_ui.c: lock screen (logo, clock, battery) */
 void lock_ui_init(void);

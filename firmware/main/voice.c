@@ -1,7 +1,14 @@
 #include "voice.h"
 
-#include <stdio.h>
 #include <string.h>
+
+/* Bounded copy into a CLAUDE_TEXT_MAX + 1 buffer (no snprintf: this runs on the NimBLE host task's stack) */
+static void copy_text(char dst[CLAUDE_TEXT_MAX + 1], const char *src)
+{
+    size_t n = strnlen(src, CLAUDE_TEXT_MAX);
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
 
 void voice_vad_init(voice_vad_t *v)
 {
@@ -14,7 +21,7 @@ voice_vad_result_t voice_vad_step(voice_vad_t *v, float db)
     v->frames++;
     /* Noise floor: drops at once to quieter frames, rises slowly so speech does not lift it */
     if (db < v->floor_db) {
-        v->floor_db = db;
+        v->floor_db = db < VOICE_FLOOR_MIN_DB ? VOICE_FLOOR_MIN_DB : db;
     } else {
         v->floor_db += VOICE_FLOOR_RISE_DB;
     }
@@ -114,13 +121,13 @@ bool voice_on_update(voice_flow_t *f, const claude_voice_t *u)
         if (!listening) {
             return false;
         }
-        snprintf(f->text, sizeof(f->text), "%s", u->text);
+        copy_text(f->text, u->text);
         return true;
     case CLAUDE_VOICE_FINAL:
         if (!listening) {
             return false;
         }
-        snprintf(f->text, sizeof(f->text), "%s", u->text);
+        copy_text(f->text, u->text);
         f->empty = blank(f->text);
         f->state = VOICE_CONFIRM;
         return true;
@@ -131,7 +138,7 @@ bool voice_on_update(voice_flow_t *f, const claude_voice_t *u)
         if (f->state != VOICE_SENDING) {
             return false;
         }
-        snprintf(f->note, sizeof(f->note), "%s", u->text);
+        copy_text(f->note, u->text);
         f->ok = true;
         f->state = VOICE_RESULT;
         return true;
@@ -142,7 +149,7 @@ bool voice_on_update(voice_flow_t *f, const claude_voice_t *u)
 
 void voice_fail(voice_flow_t *f, const char *note)
 {
-    snprintf(f->note, sizeof(f->note), "%s", note);
+    copy_text(f->note, note);
     f->ok = false;
     f->state = VOICE_RESULT;
 }

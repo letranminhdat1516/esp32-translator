@@ -49,10 +49,12 @@ static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 
 /* Claude companion service (the Mac). Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr.
- * Answers (notify): answers, board mode and focus, at most CLAUDE_INPUT_MAX bytes (see claude_proto.h) */
+ * Answers (notify): answers, board mode, focus and voice inputs, at most CLAUDE_INPUT_MAX bytes (claude_proto.h).
+ * Voice (notify): the board mic as IMA ADPCM, same packets as the iPhone audio, only during a voice capture. */
 static const ble_uuid128_t s_claude_svc_uuid = SVC_UUID(0x10);
 static const ble_uuid128_t s_claude_req_uuid = SVC_UUID(0x11);
 static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
+static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 
 #define TEXT_FLAG_FIRST 0x01
 #define TEXT_FLAG_LAST  0x02
@@ -69,6 +71,8 @@ static uint16_t s_ctrl_handle;
 
 static uint16_t s_claude_req_handle;
 static uint16_t s_claude_ans_handle;
+static uint16_t s_claude_voice_handle;
+static volatile bool s_voice_on;   /* the Mac (s_mac_conn) subscribed to the voice characteristic */
 static claude_rx_t s_claude_rx;
 
 /* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
@@ -196,6 +200,12 @@ static const struct ble_gatt_svc_def s_services[] = {
                 .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,   /* CCCD write needs encryption */
                 .val_handle = &s_claude_ans_handle,
             },
+            {
+                .uuid = &s_claude_voice_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,   /* only while recording */
+                .val_handle = &s_claude_voice_handle,
+            },
             { 0 },
         },
     },
@@ -239,6 +249,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         if (event->disconnect.conn.conn_handle == s_mac_conn) {
             s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
             s_claude_rx.len = 0;
+            s_voice_on = false;
             app_on_claude_link(false);
         }
         start_advertising();
@@ -262,9 +273,20 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 s_mac_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
                 if (!on) {
                     s_claude_rx.len = 0;
+                    s_voice_on = false;   /* voice belongs to the Claude role */
                 }
                 ESP_LOGI(TAG, "Mac Claude link %s", on ? "on" : "off");
                 app_on_claude_link(on);
+            }
+        } else if (event->subscribe.attr_handle == s_claude_voice_handle) {
+            /* Only the Mac that holds the Claude role streams voice */
+            if (event->subscribe.conn_handle == s_mac_conn) {
+                bool on = event->subscribe.cur_notify;
+                if (on != s_voice_on) {
+                    s_voice_on = on;
+                    ESP_LOGI(TAG, "Mac voice %s", on ? "on" : "off");
+                    app_on_claude_voice_link(on);
+                }
             }
         }
         break;
@@ -444,4 +466,41 @@ bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
     uint8_t payload[5];
     claude_encode_answer(id, decision, payload);
     return ble_link_send_claude_input(payload, sizeof(payload));
+}
+
+bool ble_link_voice_ready(void)
+{
+    return s_mac_conn != BLE_HS_CONN_HANDLE_NONE && s_voice_on;
+}
+
+uint16_t ble_link_voice_payload_max(void)
+{
+    uint16_t conn = s_mac_conn;
+    uint16_t mtu = conn == BLE_HS_CONN_HANDLE_NONE ? 0 : ble_att_mtu(conn);
+    return mtu > 23 ? mtu - 3 : 20;
+}
+
+/* Audio task only: never from the NimBLE host task (its 6 KB stack has no room for the encoder path) */
+bool ble_link_send_voice(const uint8_t *data, uint16_t len)
+{
+    for (int attempt = 0; attempt < 5; attempt++) {
+        uint16_t conn = s_mac_conn;
+        if (conn == BLE_HS_CONN_HANDLE_NONE || !s_voice_on) {
+            return false;
+        }
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
+        if (om == NULL) {
+            vTaskDelay(pdMS_TO_TICKS(2));
+            continue;
+        }
+        int rc = ble_gatts_notify_custom(conn, s_claude_voice_handle, om);
+        if (rc == 0) {
+            return true;
+        }
+        if (rc != BLE_HS_ENOMEM) {
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    return false;
 }

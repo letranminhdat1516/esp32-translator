@@ -3,7 +3,9 @@
  *   top    : "Claude · Mac connected", "Claude · N new" (done events of other sessions not seen yet),
  *            or "Claude · Mac not connected"
  *   middle : the focused session (project, "State · elapsed", last assistant line), or the request asked
- *   bottom : Deny / Allow, and Always allow when the Mac offers a rule, while a permission request is pending
+ *   bottom : Deny / Allow, and Always allow when the Mac offers a rule, while a permission request is pending;
+ *            on the session view, Speak (voice command, voice_ui.c) when the Mac voice link is up: disabled with
+ *            "Open with cb for voice" when the focused session has no tmux pane the Mac can type into
  * Requests arrive one at a time from the Mac (the daemon queues the rest).
  * Which screen is shown belongs to shell.c: a request takes over the screen there (MODES_EV_URGENT, posted
  * by main.c); once it is answered, cancelled, timed out or the Mac link drops, this file posts
@@ -42,6 +44,9 @@ static lv_obj_t *s_detail;
 static lv_obj_t *s_allow;
 static lv_obj_t *s_deny;
 static lv_obj_t *s_always;
+static lv_obj_t *s_speak;
+static lv_obj_t *s_speak_hint;
+static uint32_t s_speak_handle;          /* focused session Speak would target; 0 = Speak not usable */
 static volatile uint32_t s_pending_id;   /* 0 = none */
 static bool s_always_offered;            /* the pending permission carries a rule */
 static bool s_touch_on = true;           /* false while the panel is dark */
@@ -101,6 +106,18 @@ static void set_buttons(bool visible)
     lv_obj_set_hidden(s_always, !(visible && s_always_offered));
 }
 
+/* Session view only: Speak for the focused session. Hidden without the Mac voice link or a live session;
+ * disabled with a hint when the session has no tmux pane the Mac can type into. */
+static void set_speak(const claude_session_t *f)
+{
+    bool show = f != NULL && s_link && ble_link_voice_ready() && f->state != CLAUDE_STATE_ENDED;
+    bool usable = show && (f->flags & CLAUDE_SESSION_VOICE);
+    lv_obj_set_hidden(s_speak, !show);
+    lv_obj_set_state(s_speak, LV_STATE_DISABLED, !usable);
+    lv_obj_set_hidden(s_speak_hint, !(show && !usable));
+    s_speak_handle = usable ? f->handle : 0;
+}
+
 /* Info or result view: no request pending */
 static void show_idle(const char *title, const char *detail)
 {
@@ -111,6 +128,7 @@ static void show_idle(const char *title, const char *detail)
         s_cap_timer = NULL;
     }
     set_buttons(false);
+    set_speak(NULL);
     question_ui_hide();
     lv_label_set_text(s_project, "");
     lv_label_set_text(s_title, title);
@@ -126,6 +144,7 @@ static void cap_cb(lv_timer_t *t)
     }
     ESP_LOGW(TAG, "request %lu: no answer or cancel after %d s, dropping it", (unsigned long)s_pending_id,
              REQUEST_CAP_MS / 1000);
+    voice_ui_request_gone_locked(s_pending_id);
     question_reset(&s_qset);
     show_idle("Timed out", "Answer in the terminal.");
     schedule_restore();
@@ -184,6 +203,7 @@ void claude_ui_refresh_session_locked(void)
     }
     show_idle(title, f->line);
     lv_label_set_text(s_project, f->project);
+    set_speak(f);
 }
 
 static void elapsed_cb(lv_timer_t *t)
@@ -206,6 +226,7 @@ static void on_screen_loaded(lv_event_t *e)
 
 static void on_screen_unloaded(lv_event_t *e)
 {
+    voice_ui_cancel_locked();   /* leaving the Claude screen (BOOT, PWR, lock) drops a capture */
     if (s_elapsed_timer) {
         lv_timer_delete(s_elapsed_timer);
         s_elapsed_timer = NULL;
@@ -224,22 +245,24 @@ void claude_ui_note_press(void)
     s_press_started_us = esp_timer_get_time();
 }
 
-bool claude_ui_tap_allowed(void)
+bool claude_ui_tap_armed(void)
 {
-    /* A tap on a dark panel only wakes it; it must never answer blind */
+    /* A tap on a dark panel only wakes it; it must never act blind */
     if (!s_touch_on) {
         ui_wake_from_tap();
         return false;
     }
-    if (s_pending_id == 0) {
-        return false;
-    }
-    /* Pressed before the controls were armed (request just appeared, page changed, panel just woke) */
+    /* Pressed before the controls were armed (something just appeared, page changed, panel just woke) */
     if (s_press_started_us < s_armed_at_us) {
-        ESP_LOGI(TAG, "ignoring tap that began before the answer controls were armed");
+        ESP_LOGI(TAG, "ignoring tap that began before the controls were armed");
         return false;
     }
     return true;
+}
+
+bool claude_ui_tap_allowed(void)
+{
+    return claude_ui_tap_armed() && s_pending_id != 0;
 }
 
 void claude_ui_rearm(void)
@@ -272,7 +295,19 @@ static void on_answer(lv_event_t *e)
     schedule_restore();
 }
 
-static lv_obj_t *make_button(const char *text, uint32_t color, int width, int x, int y_from_bottom, uint8_t decision)
+/* Runs in the LVGL task (lock already held) */
+static void on_speak(lv_event_t *e)
+{
+    if (!claude_ui_tap_armed() || s_pending_id != 0 || s_speak_handle == 0) {
+        return;
+    }
+    if (!voice_ui_start_locked(CLAUDE_VOICE_FOR_COMMAND, 0, s_speak_handle)) {
+        ESP_LOGW(TAG, "voice capture not started");
+    }
+}
+
+static lv_obj_t *make_button(const char *text, uint32_t color, int width, int x, int y_from_bottom, lv_event_cb_t cb,
+                             uint8_t decision)
 {
     lv_obj_t *b = lv_button_create(s_scr);
     lv_obj_set_size(b, width, 56);
@@ -281,7 +316,7 @@ static lv_obj_t *make_button(const char *text, uint32_t color, int width, int x,
     lv_obj_set_style_bg_color(b, lv_color_hex(color), 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_add_event_cb(b, on_press, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(b, on_answer, LV_EVENT_CLICKED, (void *)(uintptr_t)decision);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, (void *)(uintptr_t)decision);
     lv_obj_t *l = lv_label_create(b);
     lv_obj_set_style_text_font(l, &font_vi_22, 0);
     lv_obj_set_style_text_color(l, lv_color_white(), 0);
@@ -321,10 +356,18 @@ void claude_ui_init(void)
 
     /* Deny / Allow at y 270..326; Always allow below at y 336..392. Any tap that began before the request
      * was shown (e.g. aimed at the translator's Mic button) is ignored by the arming. */
-    s_deny = make_button("Deny", 0x8a1c1c, 150, -80, -140, CLAUDE_DECISION_DENY);
-    s_allow = make_button("Allow", 0x1f9d55, 150, 80, -140, CLAUDE_DECISION_ALLOW);
-    s_always = make_button("Always allow", 0x1f5f8b, 220, 0, -74, CLAUDE_DECISION_ALWAYS);
+    s_deny = make_button("Deny", 0x8a1c1c, 150, -80, -140, on_answer, CLAUDE_DECISION_DENY);
+    s_allow = make_button("Allow", 0x1f9d55, 150, 80, -140, on_answer, CLAUDE_DECISION_ALLOW);
+    s_always = make_button("Always allow", 0x1f5f8b, 220, 0, -74, on_answer, CLAUDE_DECISION_ALWAYS);
+    /* Session view: Speak at y 340..396 (where voice_ui.c puts Stop), the hint above it */
+    s_speak = make_button("Speak", 0x1e6fd9, 150, 0, -70, on_speak, 0);
+    lv_obj_set_style_bg_color(s_speak, lv_color_hex(0x333333), LV_STATE_DISABLED);
+    s_speak_hint = make_label(&font_vi_22, 0x9a9a9a, 340, 290);
+    lv_label_set_text(s_speak_hint, "Open with cb for voice");
+    lv_obj_set_hidden(s_speak, true);
+    lv_obj_set_hidden(s_speak_hint, true);
     question_ui_init(s_scr, &s_qset);   /* after the buttons: the page box covers them while shown */
+    voice_ui_init(s_scr);               /* last: the voice overlay covers question pages too */
 
     show_idle("No requests", "Mac not connected.");
     refresh_status();
@@ -367,6 +410,8 @@ bool claude_ui_on_message(const claude_msg_t *m)
     switch (m->kind) {
     case CLAUDE_PERMISSION:
         built_page = true;
+        voice_ui_cancel_locked();   /* a request takes over: any capture ends */
+        set_speak(NULL);            /* the answer buttons take the bottom */
         if (s_restore_timer) {   /* the previous result was still on screen: this request replaces it */
             lv_timer_delete(s_restore_timer);
             s_restore_timer = NULL;
@@ -389,6 +434,7 @@ bool claude_ui_on_message(const claude_msg_t *m)
         show = true;
         break;
     case CLAUDE_CANCEL:
+        voice_ui_request_gone_locked(m->id);
         if (m->id == s_qset.id) {
             question_reset(&s_qset);   /* also drops a set that was still arriving */
         }
@@ -404,6 +450,8 @@ bool claude_ui_on_message(const claude_msg_t *m)
             break;
         }
         if (question_add(&s_qset, m->id, &s_page)) {   /* the last missing page: show page 1 */
+            voice_ui_cancel_locked();
+            set_speak(NULL);
             if (s_restore_timer) {
                 lv_timer_delete(s_restore_timer);
                 s_restore_timer = NULL;
@@ -450,6 +498,7 @@ void claude_ui_set_touch_enabled(bool on)
     lv_obj_set_clickable(s_allow, on);
     lv_obj_set_clickable(s_deny, on);
     lv_obj_set_clickable(s_always, on);
+    lv_obj_set_clickable(s_speak, on);
 }
 
 bool claude_ui_pending(void)
@@ -468,5 +517,14 @@ void claude_ui_question_send_locked(const uint8_t *answer, size_t len)
     ESP_LOGI(TAG, "answers for %lu (%s)", (unsigned long)s_pending_id, sent ? "sent" : "NOT sent");
     question_reset(&s_qset);
     show_idle(sent ? "Answer sent" : "Not sent", sent ? "Claude continues." : "Answer in the terminal.");
+    schedule_restore();
+}
+
+/* Display lock held (voice_ui.c): the Mac denied the pending request with the spoken reason */
+void claude_ui_voice_denied_locked(void)
+{
+    ESP_LOGI(TAG, "Denied with a spoken reason for %lu", (unsigned long)s_pending_id);
+    question_reset(&s_qset);
+    show_idle("Denied", "Claude gets your reason.");
     schedule_restore();
 }

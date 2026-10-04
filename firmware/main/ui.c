@@ -89,6 +89,10 @@ static void screen_timer_cb(lv_timer_t *t)
         set_screen(false);
         return;
     }
+    if (voice_ui_active_locked()) {
+        set_screen(true);   /* a voice capture, its confirmation or its result is on screen */
+        return;
+    }
     if (claude_ui_pending() && modes_screen(&m) == SCREEN_CLAUDE) {
         set_screen(true);   /* keep Allow/Deny visible while a request is pending (on the Claude screen only) */
         return;

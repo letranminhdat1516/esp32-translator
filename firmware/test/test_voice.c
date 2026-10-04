@@ -59,6 +59,20 @@ static void vad_caps_a_long_capture(void)
     assert(voice_vad_step(&v, -30.0f) == VOICE_VAD_MAX);
 }
 
+static void vad_floor_is_clamped_after_a_near_silent_frame(void)
+{
+    voice_vad_t v;
+    voice_vad_init(&v);
+    assert(voice_vad_step(&v, -110.0f) == VOICE_VAD_GO);               /* one near-silent frame (codec start) */
+    assert(v.floor_db == VOICE_FLOOR_MIN_DB);                          /* not pinned near -100 dB */
+    /* A steady hum just above VOICE_MIN_DB: the floor must catch up (and end the capture) before the 30 s cap */
+    voice_vad_result_t r = VOICE_VAD_GO;
+    while (r == VOICE_VAD_GO) {
+        r = voice_vad_step(&v, -56.0f);
+    }
+    assert(r == VOICE_VAD_SILENCE);
+}
+
 static voice_flow_t f;   /* about 0.8 KB: static, as on the board */
 
 static claude_voice_t update(uint32_t id, char what, const char *text)
@@ -187,6 +201,10 @@ static void board_side_failure_shows_a_result(void)
     voice_reset(&f);
     voice_fail(&f, "Mac not connected.");                              /* a start that never went out */
     assert(f.state == VOICE_RESULT && !f.ok);
+    static char longer[2 * CLAUDE_TEXT_MAX];
+    memset(longer, 'a', sizeof longer - 1);
+    voice_fail(&f, longer);                                            /* bounded copy */
+    assert(strlen(f.note) == CLAUDE_TEXT_MAX);
 }
 
 int main(void)
@@ -196,6 +214,7 @@ int main(void)
     vad_ends_when_nothing_is_said();
     vad_click_is_not_speech();
     vad_caps_a_long_capture();
+    vad_floor_is_clamped_after_a_near_silent_frame();
     begin_encodes_the_start();
     command_round_trip();
     final_may_arrive_before_the_capture_callback();

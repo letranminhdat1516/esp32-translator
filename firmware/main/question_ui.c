@@ -358,3 +358,11 @@ void question_ui_hide(void)
     lv_obj_set_hidden(s_desc, true);
     lv_obj_set_hidden(s_box, true);
 }
+
+void question_ui_set_other(uint8_t page, const char *text)
+{
+    question_set_other(s_set, page, text);
+    if (s_box != NULL && !lv_obj_is_hidden(s_box) && page == s_set->page) {
+        build_page();   /* from the voice result (NimBLE host task, lock held), never from a row's own event */
+    }
+}

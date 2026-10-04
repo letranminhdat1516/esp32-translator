@@ -20,6 +20,7 @@
 #define VOICE_MARGIN_DB      10.0f   /* speech must be this far above the noise floor */
 #define VOICE_MIN_DB         -58.0f  /* and above this absolute level */
 #define VOICE_FLOOR_RISE_DB  0.01f   /* per frame: the floor follows slowly rising noise */
+#define VOICE_FLOOR_MIN_DB   -75.0f  /* floor never below this: one near-silent frame must not pin it */
 
 typedef enum { VOICE_VAD_GO = 0, VOICE_VAD_SILENCE, VOICE_VAD_NOTHING, VOICE_VAD_MAX } voice_vad_result_t;
 
