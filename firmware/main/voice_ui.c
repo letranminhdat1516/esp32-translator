@@ -223,6 +223,7 @@ bool voice_ui_start_locked(uint8_t purpose, uint8_t question, uint32_t target)
     lv_obj_set_hidden(s_box, false);
     /* The start goes out before the first packet: the audio task only streams after audio_in_voice_start */
     if (!ble_link_voice_ready() || !ble_link_send_claude_input(out, n) || !audio_in_voice_start(id)) {
+        ESP_LOGW(TAG, "voice %lu: start not sent (voice link %d)", (unsigned long)id, ble_link_voice_ready());
         voice_fail(&s_flow, "Mac not connected.");
         on_result();
     } else {

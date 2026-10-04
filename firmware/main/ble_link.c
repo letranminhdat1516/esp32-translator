@@ -17,6 +17,7 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "nvs.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "store/config/ble_store_config.h"
@@ -360,8 +361,45 @@ static void start_advertising(void)
     }
 }
 
+static void hash_bytes(uint32_t *h, const void *data, size_t len)
+{
+    const uint8_t *p = data;
+    for (size_t i = 0; i < len; i++) {
+        *h = (*h ^ p[i]) * 16777619u;   /* FNV-1a */
+    }
+}
+
+/* Bonded peers (the Mac, the iPhone) cache this GATT table. When a firmware update changes it (Phase 3 added the
+ * voice characteristic), mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects,
+ * and the peer rediscovers. Without it macOS keeps the old table and never sees the new characteristic. */
+static void announce_gatt_changes(void)
+{
+    uint32_t hash = 2166136261u;
+    for (const struct ble_gatt_svc_def *svc = s_services; svc->type != 0; svc++) {
+        hash_bytes(&hash, svc->uuid, sizeof(ble_uuid128_t));
+        for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr->uuid != NULL; chr++) {
+            hash_bytes(&hash, chr->uuid, sizeof(ble_uuid128_t));
+            hash_bytes(&hash, &chr->flags, sizeof(chr->flags));
+        }
+    }
+    nvs_handle_t nvs;
+    if (nvs_open("ble_link", NVS_READWRITE, &nvs) != ESP_OK) {
+        return;
+    }
+    uint32_t stored = 0;
+    if (nvs_get_u32(nvs, "gatt_hash", &stored) != ESP_OK || stored != hash) {
+        ESP_LOGI(TAG, "GATT table changed (%08lx -> %08lx): Service Changed for bonded peers", (unsigned long)stored,
+                 (unsigned long)hash);
+        ble_svc_gatt_changed(0x0001, 0xffff);
+        nvs_set_u32(nvs, "gatt_hash", hash);
+        nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+}
+
 static void on_sync(void)
 {
+    announce_gatt_changes();
     ble_hs_util_ensure_addr(0);
     ble_hs_id_infer_auto(0, &s_own_addr_type);
     start_advertising();
