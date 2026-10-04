@@ -95,7 +95,7 @@ void claude_ui_init(void)
     bsp_display_lock((uint32_t)-1);
     s_scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_scr, lv_color_black(), 0);
-    lv_obj_remove_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollable(s_scr, false);
     ui_attach_screen_gestures(s_scr);
 
     s_status = make_label(&font_vi_22, 0xc8c8c8, 300, 48);
