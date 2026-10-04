@@ -91,7 +91,8 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
         guard let s = p.services?.first(where: { $0.uuid == Self.claudeService }) else {
-            log("board has no Claude service (old firmware?)")
+            log("board has no Claude service (old firmware?); dropping connection")
+            central.cancelPeripheralConnection(p)
             return
         }
         p.discoverCharacteristics([Self.requestChar, Self.answerChar], for: s)
@@ -104,7 +105,8 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
             if c.uuid == Self.answerChar { answer = c }
         }
         guard request != nil, let answer else {
-            log("Claude characteristics missing")
+            log("Claude characteristics missing; dropping connection")
+            central.cancelPeripheralConnection(p)
             return
         }
         // Ready is declared only when the subscription is confirmed (see didUpdateNotificationStateFor).
@@ -126,6 +128,9 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
                     guard peripheral === p, p.state == .connected else { return }
                     p.setNotifyValue(true, for: c)
                 }
+            } else {
+                log("subscribe failed and not retryable; dropping connection to reconnect")
+                central.cancelPeripheralConnection(p)
             }
             return
         }

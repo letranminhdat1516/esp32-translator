@@ -21,6 +21,8 @@ params.requiredLocalEndpoint = NWEndpoint.unix(path: path)
 let listener = try NWListener(using: params)
 
 /// Accumulates bytes until the first newline. Only touched from the connection's receive callbacks.
+let maxLineBytes = 4 * 1024 * 1024
+
 final class LineBuffer: @unchecked Sendable { var data = Data() }
 
 func handle(_ conn: NWConnection) {
@@ -29,6 +31,7 @@ func handle(_ conn: NWConnection) {
     @Sendable func receive() {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, done, error in
             if let data { buffer.data.append(data) }
+            if buffer.data.count > maxLineBytes { conn.cancel(); return }   // oversized: drop, no reply
             if let nl = buffer.data.firstIndex(of: 0x0a) {
                 let line = buffer.data[buffer.data.startIndex..<nl]
                 Task { await process(Data(line), conn) }
@@ -50,6 +53,11 @@ func process(_ line: Data, _ conn: NWConnection) async {
         guard board.isReady else { reply(nil, conn); return }
         // If the hook goes away (user answered in the terminal), cancel the board request
         let ask = Task { await requests.ask(project: project, tool: e.toolName ?? "Tool", summary: Summary.permission(e)) }
+        // A peer close only surfaces through a pending receive; the hook sends nothing after its line,
+        // so any completion (EOF, error, or stray byte) means it is gone: cancel the ask. Harmless after the reply.
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in
+            ask.cancel()
+        }
         conn.stateUpdateHandler = { state in
             if case .cancelled = state { ask.cancel() }
             if case .failed = state { ask.cancel() }
