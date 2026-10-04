@@ -7,6 +7,18 @@ usage: claude_settings.py install   SETTINGS HOOK_PATH
 """
 import json, os, plistlib, sys, tempfile, time
 
+# Hook spike (docs/superpowers/notes/2026-10-04-hook-spike.md, Decisions table, SESSION_HOOKS):
+# SessionStart / SessionEnd fire from settings hooks. If False the daemon ends silent sessions after 2 h.
+SESSION_HOOKS = True
+
+# (event, extra keys of the matcher entry, extra keys of our hook object)
+HOOKS = [
+    ("PermissionRequest", {"matcher": "*"}, {"timeout": 100}),
+    ("Stop", {}, {"async": True}),
+    ("Notification", {}, {"async": True}),          # every type: idle_prompt, permission_prompt, ...
+    ("UserPromptSubmit", {}, {"async": True}),
+] + ([("SessionStart", {}, {"async": True}), ("SessionEnd", {}, {"async": True})] if SESSION_HOOKS else [])
+
 
 def is_ours(h):
     cmd = h.get("command", "") if isinstance(h, dict) else ""
@@ -94,15 +106,13 @@ def main(argv):
     if mode == "install":
         cmd = '"%s"' % argv[3]
         s["hooks"] = hooks
-        for event, extra in (("PermissionRequest", {"matcher": "*"}),
-                             ("Stop", {}),
-                             ("Notification", {"matcher": "idle_prompt"})):
+        for event, extra, hook_extra in HOOKS:
             lst = hooks.get(event, [])
             if not isinstance(lst, list):
                 die("hooks.%s is not an array; left untouched" % event)
             lst, _ = strip_ours(lst)
             hook = {"type": "command", "command": cmd}
-            hook.update({"timeout": 100} if event == "PermissionRequest" else {"async": True})
+            hook.update(hook_extra)
             lst.append(dict(extra, hooks=[hook]))
             hooks[event] = lst
         done = "installed in"

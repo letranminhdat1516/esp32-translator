@@ -36,12 +36,21 @@ private func event(_ name: String, extra: String = "") -> Data {
     Data(#"{"hook_event_name":"\#(name)","session_id":"s","cwd":"/Users/me/dự-án"\#(extra)}"#.utf8)
 }
 
+private extension Data {
+    /// The same event line for another session id
+    func replacingSession(_ id: String) -> Data {
+        Data(String(decoding: self, as: UTF8.self).replacingOccurrences(of: #""session_id":"s""#, with: #""session_id":"\#(id)""#).utf8)
+    }
+}
+
 private let permissionLine = event("PermissionRequest", extra: #","tool_name":"Bash","tool_input":{"command":"npm test"}"#)
 
 private func makeProcessor(ready: Bool, timeout: Duration = .seconds(90)) -> (HookProcessor, FakeBoard) {
     let board = FakeBoard(ready: ready)
     let requests = RequestQueue(send: { board.send($0) }, timeout: timeout)
-    return (HookProcessor(board: board, requests: requests), board)
+    let hub = SessionHub(sessionHooks: true, post: { await requests.post($0) },
+                         finished: { await requests.notifyFinished(project: $0, line: $1) })
+    return (HookProcessor(board: board, requests: requests, hub: hub), board)
 }
 
 @Test func boardNotReadyRepliesNullImmediately() async {
@@ -84,31 +93,68 @@ func permissionRoundTrip(_ choice: BoardChoice) async {
     #expect(conn.replies.count == 1)
 }
 
-@Test func stopAndNotificationSendFinishedOnlyWhenReady() async {
-    for name in ["Stop", "Notification"] {
-        let line = name == "Stop"
-            ? Data(#"{"hook_event_name":"Stop","session_id":"s","cwd":"/x/proj","last_assistant_message":"Xong rồi 🎉"}"#.utf8)
-            : event(name, extra: #","notification_type":"idle_prompt""#)
-        let (ready, readyBoard) = makeProcessor(ready: true)
-        let c1 = FakeConn()
-        await ready.process(line, c1)
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(readyBoard.sent.count == 1)
-        if case .finished(_, let project, let text) = readyBoard.sent.first {
-            #expect(project == (name == "Stop" ? "proj" : "dự-án"))
-            #expect(text == (name == "Stop" ? "Xong rồi 🎉" : "Claude is waiting for you"))
-        } else {
-            Issue.record("expected a finished message for \(name)")
-        }
-        #expect(c1.replies.isEmpty && c1.closed)
-
-        let (notReady, idleBoard) = makeProcessor(ready: false)
-        let c2 = FakeConn()
-        await notReady.process(line, c2)
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(idleBoard.sent.isEmpty)
-        #expect(c2.replies.isEmpty && c2.closed)
+@Test func stopOfTheFocusedSessionSendsFinishedAndIdleNotificationDoesNot() async {
+    let (p, board) = makeProcessor(ready: true)
+    let stop = Data(#"{"hook_event_name":"Stop","session_id":"s","cwd":"/x/proj","last_assistant_message":"Xong rồi 🎉"}"#.utf8)
+    let c1 = FakeConn()
+    await p.process(stop, c1)
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent.count == 1)
+    if case .finished(_, let project, let text) = board.sent.first {
+        #expect(project == "proj" && text == "Xong rồi 🎉")
+    } else {
+        Issue.record("expected a finished message")
     }
+    #expect(c1.replies.isEmpty && c1.closed)
+
+    let c2 = FakeConn()
+    await p.process(event("Notification", extra: #","notification_type":"idle_prompt""#), c2)
+    await p.process(event("Stop", extra: #","last_assistant_message":"other session""#).replacingSession("t"), FakeConn())
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent.count == 1)                 // idle_prompt and a non-focused Stop are silent
+    #expect(c2.replies.isEmpty && c2.closed)
+}
+
+@Test func answeredRequestSetsTheSessionWorking() async {
+    let (p, board) = makeProcessor(ready: true)
+    await p.process(event("UserPromptSubmit"), FakeConn())
+    await p.hub?.boardInput(.mode(.claude))
+    let conn = FakeConn()
+    let done = Task { await p.process(permissionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent.contains { if case .session(let r) = $0 { r.state == .needsYou } else { false } })
+    await p.requests.handle(.choice(id: board.permissionIds[0], .allow))
+    await done.value
+    try? await Task.sleep(for: .milliseconds(50))
+    if case .session(let r) = board.sent.last { #expect(r.state == .working) } else { Issue.record("expected a row") }
+}
+
+@Test func requestAnsweredInTheTerminalSetsTheSessionWorking() async {
+    let (p, board) = makeProcessor(ready: true)
+    await p.process(event("UserPromptSubmit"), FakeConn())
+    await p.hub?.boardInput(.mode(.claude))
+    let conn = FakeConn()
+    let done = Task { await p.process(permissionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = board.permissionIds[0]
+    conn.hookGoesAway()                         // answered in the terminal: the hook went away
+    await done.value
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent.contains(.cancel(id: id)))
+    #expect(conn.replies == [BridgeReply(decision: nil)])
+    if case .session(let r) = board.sent.last { #expect(r.state == .working) } else { Issue.record("expected a row") }
+}
+
+@Test func requestTimeoutLeavesTheSessionNeedingYou() async {
+    let (p, board) = makeProcessor(ready: true, timeout: .milliseconds(50))
+    await p.process(event("UserPromptSubmit"), FakeConn())
+    await p.hub?.boardInput(.mode(.claude))
+    let conn = FakeConn()
+    await p.process(permissionLine, conn)       // nobody taps: falls through to the terminal prompt
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(conn.replies == [BridgeReply(decision: nil)])
+    let lastRow = board.sent.last { if case .session = $0 { true } else { false } }
+    if case .session(let r) = lastRow { #expect(r.state == .needsYou) } else { Issue.record("expected a row") }
 }
 
 @Test func garbageLineClosesWithoutReply() async {

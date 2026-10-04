@@ -23,41 +23,45 @@ public protocol HookConnection: Sendable {
 public struct HookProcessor: Sendable {
     public let board: any BoardLinking
     public let requests: RequestQueue
+    public let hub: SessionHub?
     private let log: @Sendable (String) -> Void
 
-    public init(board: any BoardLinking, requests: RequestQueue, log: @escaping @Sendable (String) -> Void = { _ in }) {
+    public init(board: any BoardLinking, requests: RequestQueue, hub: SessionHub? = nil,
+                log: @escaping @Sendable (String) -> Void = { _ in }) {
         self.board = board
         self.requests = requests
+        self.hub = hub
         self.log = log
     }
 
     public func process(_ line: Data, _ conn: any HookConnection) async {
         guard let e = try? HookEvent.parse(line) else { conn.close(); return }
+        await hub?.record(e)       // every event: session state (PermissionRequest → needs you)
         let project = Summary.project(cwd: e.cwd)
         switch e.name {
         case "PermissionRequest":
             guard board.isReady else { conn.reply(BridgeReply(decision: nil)); return }
+            let gone = PeerGone()
             let reply = e.toolName == "AskUserQuestion"
-                ? await askQuestion(e, project: project, conn: conn)
-                : await askPermission(e, project: project, conn: conn)
-            log("\(project) \(e.toolName ?? "") → \(reply.decision ?? "fall through")")
+                ? await askQuestion(e, project: project, conn: conn, gone: gone)
+                : await askPermission(e, project: project, conn: conn, gone: gone)
+            // Answered on the board, or in the terminal (the hook went away): either way Claude continues.
+            // A timeout or a lost board leaves the session "needs you": the terminal prompt is waiting.
+            if reply.decision != nil || gone.happened { await hub?.requestAnswered(sessionId: e.sessionId) }
+            log("\(project) \(e.toolName ?? "") → \(reply.decision ?? (gone.happened ? "answered in the terminal" : "fall through"))")
             conn.reply(reply)
-        case "Stop", "Notification":
-            if board.isReady {
-                let text = e.name == "Stop" ? Summary.lastLine(e) : "Claude is waiting for you"
-                await requests.notifyFinished(project: project, line: text)
-            }
-            conn.close()
         default:
+            // Stop / Notification / session events: the hub sends the focused session's "done" and the rows
             conn.close()
         }
     }
 
-    private func askPermission(_ e: HookEvent, project: String, conn: any HookConnection) async -> BridgeReply {
+    private func askPermission(_ e: HookEvent, project: String, conn: any HookConnection,
+                               gone: PeerGone) async -> BridgeReply {
         let rule = AnswerMapping.alwaysRule(suggestions: e.permissionSuggestions)
         let tool = e.toolName ?? "Tool"
         let summary = Summary.permission(e)
-        let response = await cancellable(conn) { [requests] in
+        let response = await cancellable(conn, gone) { [requests] in
             await requests.ask(shape: .permission(alwaysOffered: rule != nil)) { id in
                 [.permission(id: id, project: project, tool: tool, summary: summary, alwaysRule: rule)]
             }
@@ -66,13 +70,14 @@ public struct HookProcessor: Sendable {
             ?? BridgeReply(decision: nil)
     }
 
-    private func askQuestion(_ e: HookEvent, project: String, conn: any HookConnection) async -> BridgeReply {
+    private func askQuestion(_ e: HookEvent, project: String, conn: any HookConnection,
+                             gone: PeerGone) async -> BridgeReply {
         guard HookSchema.questionAnswers != .terminalOnly, let questions = AskQuestion.parse(e.toolInput) else {
             log("\(project) AskUserQuestion not shown on the board (unsupported); Claude asks in the terminal")
             return BridgeReply(decision: nil)
         }
         let shape = RequestShape.question(options: questions.map { $0.options.count }, multi: questions.map(\.multiSelect))
-        let response = await cancellable(conn) { [requests] in
+        let response = await cancellable(conn, gone) { [requests] in
             await requests.ask(shape: shape) { id in
                 questions.enumerated().map { i, q in
                     BoardMessage.question(id: id, index: i, count: questions.count, project: project, question: q)
@@ -85,10 +90,19 @@ public struct HookProcessor: Sendable {
 
     /// Runs `body`, cancelling it when the hook goes away (the user answered in the terminal): the queue then
     /// cancels the request on the board.
-    private func cancellable(_ conn: any HookConnection,
+    private func cancellable(_ conn: any HookConnection, _ gone: PeerGone,
                              _ body: @escaping @Sendable () async -> BoardResponse?) async -> BoardResponse? {
         let task = Task { await body() }
-        conn.onPeerGone { task.cancel() }
+        conn.onPeerGone { gone.mark(); task.cancel() }
         return await task.value
     }
+}
+
+/// Set when the hook went away while its request waited for the board (the user answered in the terminal).
+private final class PeerGone: @unchecked Sendable {
+    private let lock = NSLock()
+    private var gone = false
+
+    func mark() { lock.withLock { gone = true } }
+    var happened: Bool { lock.withLock { gone } }
 }

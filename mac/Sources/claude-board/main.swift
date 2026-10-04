@@ -7,13 +7,28 @@ func log(_ s: String) { FileHandle.standardError.write(Data("[claude-board] \(s)
 
 let board = BoardLink()
 let requests = RequestQueue(send: { board.send($0) })
-board.onInput = { input in Task { await requests.handle(input) } }
+let hub = SessionHub(sessionHooks: HookSchema.sessionHooks,
+                     post: { await requests.post($0) },
+                     finished: { await requests.notifyFinished(project: $0, line: $1) })
+// Board events reach the hub in arrival order (a mode flip must never overtake a disconnect)
+let (hubEvents, hubFeed) = AsyncStream<@Sendable () async -> Void>.makeStream()
+Task { for await event in hubEvents { await event() } }
+board.onInput = { input in
+    switch input {
+    case .choice, .answers:          // answers to the request on the board
+        Task { await requests.handle(input) }
+    case .mode, .focus:              // board events: which screen it shows, which session to focus
+        if case .mode(let m) = input { log("board mode \(m)") }
+        hubFeed.yield { await hub.boardInput(input) }
+    }
+}
 board.onConnectionChange = { up in
     if up {
         board.send(.timeSync())   // the board has no clock of its own: set it on every connect
     } else {
         Task { await requests.boardDisconnected() }
     }
+    hubFeed.yield { await hub.boardConnected(up) }
 }
 // Keep the board clock right when the Mac's clock or time zone changes (manual set, network time, travel).
 // board.send drops the message unless the link is ready; the next connect sends the time anyway.
@@ -24,7 +39,13 @@ for name in [Notification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChang
         board.send(.timeSync())
     }
 }
-let processor = HookProcessor(board: board, requests: requests, log: log)
+let processor = HookProcessor(board: board, requests: requests, hub: hub, log: log)
+
+// Session expiry (ended → dropped after 10 min; 2 h fallback without session hooks)
+let expiryTimer = DispatchSource.makeTimerSource(queue: .main)
+expiryTimer.schedule(deadline: .now() + 60, repeating: 60)
+expiryTimer.setEventHandler { Task { await hub.tick() } }
+expiryTimer.resume()
 
 // Socket: ~/.claude-board/sock, owner-only
 let path = BridgeSocket.path
