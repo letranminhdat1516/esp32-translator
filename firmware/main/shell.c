@@ -29,6 +29,7 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 static const char *const EV_NAMES[] = {
     "PWR x1", "PWR x2", "PWR x3", "BOOT x1", "tap x1", "tap x2", "Claude request", "Claude request done",
 };
+_Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_URGENT_DONE + 1, "EV_NAMES out of sync");
 
 void shell_post(modes_event_t ev)
 {
@@ -76,8 +77,9 @@ static lv_obj_t *screen_obj(board_screen_t s)
 
 static void shell_task(void *arg)
 {
+    QueueHandle_t queue = arg;   /* s_queue may not be published yet when this task first runs */
     modes_event_t ev;
-    while (xQueueReceive(s_queue, &ev, portMAX_DELAY) == pdTRUE) {
+    while (xQueueReceive(queue, &ev, portMAX_DELAY) == pdTRUE) {
         int64_t now = esp_timer_get_time();
         modes_t next;
         taskENTER_CRITICAL(&s_mux);
@@ -102,8 +104,19 @@ static void shell_task(void *arg)
 void shell_start(void)
 {
     modes_init(&s_state);
-    s_queue = xQueueCreate(16, sizeof(modes_event_t));
-    xTaskCreate(shell_task, "shell", 3072, NULL, 5, NULL);
+    /* Fail safe without a queue or task: shell_post drops inputs, the board stays unlocked on the translator
+     * and the panel keeps its usual idle policy (MODES_PANEL_AUTO) */
+    QueueHandle_t q = xQueueCreate(16, sizeof(modes_event_t));
+    if (q == NULL) {
+        ESP_LOGE(TAG, "no memory for the input queue: buttons and lock disabled");
+        return;
+    }
+    if (xTaskCreate(shell_task, "shell", 3072, q, 5, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "no memory for the shell task: buttons and lock disabled");
+        vQueueDelete(q);
+        return;
+    }
+    s_queue = q;
 
     gpio_config_t io = {
         .pin_bit_mask = 1ULL << BOOT_GPIO,

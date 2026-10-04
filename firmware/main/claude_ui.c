@@ -4,8 +4,11 @@
  *   middle : project (grey), tool (bold), one-line summary
  *   bottom : Deny / Allow while a permission request is pending (above the translator's Mic button footprint)
  * Requests arrive one at a time from the Mac (the daemon queues the rest).
- * A request takes over the screen; once it is answered, cancelled, timed out or the Mac link drops, the
- * previous screen comes back (unless the user switched screens in between).
+ * Which screen is shown belongs to shell.c: a request takes over the screen there (MODES_EV_URGENT, posted
+ * by main.c); once it is answered, cancelled, timed out or the Mac link drops, this file posts
+ * MODES_EV_URGENT_DONE after a short look at the result, and the shell restores the mode (or the lock).
+ * If the user leaves a shown request (BOOT x1, PWR x1/x2/x3), it stays pending here and on the Mac; the
+ * Claude screen shows it again (Allow/Deny re-armed) until it is answered, cancelled or the Mac drops.
  */
 #include <string.h>
 
@@ -37,9 +40,8 @@ static bool s_touch_on = true;           /* false while the panel is dark */
 static int64_t s_armed_at_us;
 static int64_t s_press_started_us;
 
-/* Screen a permission request replaced, restored once the request is over; NULL = stay on this screen */
+/* How long the result ("Allowed", "Denied", ...) stays up before the shell restores the previous screen */
 #define RESTORE_DELAY_MS 1200
-static lv_obj_t *s_return_scr;
 static lv_timer_t *s_restore_timer;
 
 static void arm_buttons(void)
@@ -54,18 +56,12 @@ static void restore_cb(lv_timer_t *t)
     if (s_pending_id != 0) {
         return;
     }
-    if (s_return_scr && lv_screen_active() == s_scr) {
-        lv_screen_load(s_return_scr);
-    }
-    s_return_scr = NULL;
+    shell_post(MODES_EV_URGENT_DONE);
 }
 
-/* LVGL lock held. Goes back to the screen a request replaced, after a short look at the result. */
+/* LVGL lock held. Hands the screen back to the shell after a short look at the result. */
 static void schedule_restore(void)
 {
-    if (!s_return_scr) {
-        return;
-    }
     if (s_restore_timer) {
         lv_timer_delete(s_restore_timer);
     }
@@ -91,6 +87,13 @@ static void show_idle(const char *title, const char *detail)
     lv_label_set_text(s_project, "");
     lv_label_set_text(s_title, title);
     lv_label_set_text(s_detail, detail);
+}
+
+/* Runs in the LVGL task (lock already held): the Claude screen came back (PWR x2, a takeover, an unlock).
+ * A request left pending meanwhile must be read again before Allow/Deny take a tap. */
+static void on_screen_loaded(lv_event_t *e)
+{
+    arm_buttons();
 }
 
 /* Runs in the LVGL task (lock already held) */
@@ -156,7 +159,7 @@ void claude_ui_init(void)
     s_scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_scr, lv_color_black(), 0);
     lv_obj_set_scrollable(s_scr, false);
-    ui_attach_screen_gestures(s_scr);
+    lv_obj_add_event_cb(s_scr, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
     s_status = make_label(&font_vi_22, 0xc8c8c8, 300, 48);
     s_project = make_label(&font_vi_22, 0x9a9a9a, 360, 86);
@@ -176,21 +179,6 @@ void claude_ui_init(void)
 lv_obj_t *claude_ui_screen(void)
 {
     return s_scr;
-}
-
-void claude_ui_present_request(void)
-{
-    bsp_display_lock((uint32_t)-1);
-    lv_obj_t *active = lv_screen_active();
-    if (active != s_scr) {
-        s_return_scr = active;
-        lv_screen_load(s_scr);
-    }
-    if (s_restore_timer) {
-        lv_timer_delete(s_restore_timer);
-        s_restore_timer = NULL;
-    }
-    bsp_display_unlock();
 }
 
 bool claude_ui_visible(void)
@@ -231,6 +219,10 @@ void claude_ui_on_message(const claude_msg_t *m)
     bsp_display_lock((uint32_t)-1);
     switch (m->kind) {
     case CLAUDE_PERMISSION:
+        if (s_restore_timer) {   /* the previous result was still on screen: this request replaces it */
+            lv_timer_delete(s_restore_timer);
+            s_restore_timer = NULL;
+        }
         s_pending_id = m->id;
         lv_label_set_text(s_project, project);
         lv_label_set_text(s_title, second ? second : "Permission");
@@ -275,17 +267,4 @@ void claude_ui_set_touch_enabled(bool on)
 bool claude_ui_pending(void)
 {
     return s_pending_id != 0;
-}
-
-void claude_ui_toggle(void)
-{
-    bsp_display_lock((uint32_t)-1);
-    /* The user chose a screen: never auto-return over that choice */
-    s_return_scr = NULL;
-    if (s_restore_timer) {
-        lv_timer_delete(s_restore_timer);
-        s_restore_timer = NULL;
-    }
-    lv_screen_load(lv_screen_active() == s_scr ? ui_translator_screen() : s_scr);
-    bsp_display_unlock();
 }

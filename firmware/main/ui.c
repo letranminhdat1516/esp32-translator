@@ -36,6 +36,8 @@ static bool s_screen_on = true;
 /* Double-tap off: stays dark (ignores taps and subtitles) until the next double-tap */
 static volatile bool s_manual_off;
 static lv_obj_t *s_translator_scr;
+/* Power-off / sleep message on screen: the screen timer leaves the panel alone from then on */
+static volatile bool s_shutting_down;
 
 static void lock(void)
 {
@@ -74,15 +76,28 @@ static void set_screen(bool on)
 /* Runs inside the LVGL task every 250 ms */
 static void screen_timer_cb(lv_timer_t *t)
 {
+    if (s_shutting_down) {
+        return;
+    }
+    /* Locked: the lock policy alone decides (activity, subtitles and toasts never light a locked panel) */
+    int64_t now = esp_timer_get_time();
+    modes_t m;
+    shell_snapshot(&m);
+    lock_ui_set_face(modes_face_visible(&m, now));
+    modes_panel_t panel = modes_panel(&m, now);
+    if (panel != MODES_PANEL_AUTO) {
+        set_screen(panel == MODES_PANEL_ON);
+        return;
+    }
     if (s_manual_off) {
         set_screen(false);
         return;
     }
-    if (claude_ui_pending()) {
-        set_screen(true);   /* keep Allow/Deny visible while a request is pending */
+    if (claude_ui_pending() && modes_screen(&m) == SCREEN_CLAUDE) {
+        set_screen(true);   /* keep Allow/Deny visible while a request is pending (on the Claude screen only) */
         return;
     }
-    int64_t idle_ms = (esp_timer_get_time() - s_last_activity_us) / 1000;
+    int64_t idle_ms = (now - s_last_activity_us) / 1000;
     uint32_t touch_idle_ms = lv_display_get_inactive_time(NULL);
     if (touch_idle_ms < idle_ms) {
         idle_ms = touch_idle_ms;
@@ -90,7 +105,7 @@ static void screen_timer_cb(lv_timer_t *t)
     set_screen(idle_ms < SCREEN_OFF_AFTER_MS);
 }
 
-/* Double-tap anywhere outside the mic button toggles the screen */
+/* Translator only: double-tap anywhere outside the mic button toggles the screen */
 static void on_double_tap(lv_event_t *e)
 {
     s_manual_off = s_screen_on;
@@ -98,11 +113,6 @@ static void on_double_tap(lv_event_t *e)
         s_last_activity_us = esp_timer_get_time();
     }
     set_screen(!s_manual_off);
-}
-
-void ui_attach_screen_gestures(lv_obj_t *screen)
-{
-    lv_obj_add_event_cb(screen, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
 }
 
 lv_obj_t *ui_translator_screen(void)
@@ -173,6 +183,8 @@ void ui_toast(const char *utf8, uint32_t ms)
 void ui_prepare_power_off(void)
 {
     lock();
+    s_shutting_down = true;
+    lv_screen_load(s_translator_scr);   /* the message lives there, whatever mode or lock was shown */
     s_manual_off = false;
     set_screen(true);
     lv_label_set_text(s_status, "Powering off");
@@ -187,6 +199,8 @@ void ui_prepare_power_off(void)
 void ui_prepare_sleep(void)
 {
     lock();
+    s_shutting_down = true;
+    lv_screen_load(s_translator_scr);
     lv_label_set_text(s_status, "Sleeping");
     lv_label_set_text(s_text, "Touch the screen\nto wake up");
     unlock();
@@ -261,7 +275,7 @@ void ui_init(void)
     lv_obj_center(s_btn_label);
 
     lv_label_set_text(s_status, "Waiting for iPhone…");
-    ui_attach_screen_gestures(scr);
+    lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
 }

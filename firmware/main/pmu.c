@@ -1,9 +1,8 @@
 /*
  * AXP2101 power-management chip (I2C 0x34): battery gauge and the big PWR button.
  *
- * PWR button (polled from the PMU interrupt status, 10 Hz):
- *   single press  → show battery level
- *   double press  → switch app mode
+ * PWR button (polled from the PMU interrupt status, 10 Hz; counting in modes.c):
+ *   x1 / x2 / x3  → shell.c: lock-unlock / Claude mode / session picker
  *   hold 3 s      → power off (on USB power, where the PMU would turn straight back on: screen off)
  */
 #include "bsp/esp-bsp.h"
@@ -29,8 +28,6 @@ static const char *TAG = "pmu";
 #define PKEY_RELEASED  0x01       /* measured: set on release (with SHORT 0x08 for a short press) */
 
 #define POLL_MS          100
-#define HOLD_OFF_MS      3000
-#define DOUBLE_PRESS_MS  450
 
 static i2c_master_dev_handle_t s_pmu;
 
@@ -74,20 +71,6 @@ bool pmu_usb_powered(void)
     return pmu_battery(&b) && b.usb_power;
 }
 
-static void show_battery(void)
-{
-    pmu_battery_t b;
-    char text[48];
-    if (!pmu_battery(&b)) {
-        ui_toast("Battery: unavailable", 3000);
-    } else if (!b.present) {
-        ui_toast("No battery (USB power)", 3000);
-    } else {
-        snprintf(text, sizeof(text), "Battery %d%%%s", b.percent, b.charging ? " · charging" : "");
-        ui_toast(text, 3000);
-    }
-}
-
 static void power_off(void)
 {
     if (pmu_usb_powered()) {
@@ -108,49 +91,24 @@ static void power_off(void)
 
 static void pmu_task(void *arg)
 {
-    bool down = false;
-    bool hold_fired = false;
-    TickType_t down_at = 0;
-    int pending_clicks = 0;
-    TickType_t last_release = 0;
+    static const modes_event_t PRESSES[] = { MODES_EV_PWR_1, MODES_EV_PWR_2, MODES_EV_PWR_3 };
+    modes_clicks_t clicks = { 0 };
 
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
-        TickType_t now = xTaskGetTickCount();
-
+        bool pressed = false, released = false;
         uint8_t irq = 0;
         if (reg_read(REG_IRQ_STATUS2, &irq) == ESP_OK && irq) {
             reg_write(REG_IRQ_STATUS2, irq);
-            if (irq & PKEY_PRESSED) {
-                down = true;
-                hold_fired = false;
-                down_at = now;
-            }
-            if (irq & PKEY_RELEASED) {
-                if (down && !hold_fired) {
-                    pending_clicks++;
-                    last_release = now;
-                }
-                down = false;
-            }
+            pressed = irq & PKEY_PRESSED;
+            released = irq & PKEY_RELEASED;
         }
-
-        if (down && !hold_fired && now - down_at >= pdMS_TO_TICKS(HOLD_OFF_MS)) {
-            hold_fired = true;
-            pending_clicks = 0;
+        int r = modes_clicks_step(&clicks, pressed, released, (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount()));
+        if (r == MODES_CLICKS_HOLD) {
             power_off();
-        }
-
-        if (pending_clicks > 0 && !down && now - last_release >= pdMS_TO_TICKS(DOUBLE_PRESS_MS)) {
-            ui_mark_activity();
-            if (pending_clicks >= 2) {
-                ESP_LOGI(TAG, "PWR double press");
-                app_switch_mode();
-            } else {
-                ESP_LOGI(TAG, "PWR single press");
-                show_battery();
-            }
-            pending_clicks = 0;
+        } else if (r > 0) {
+            ESP_LOGI(TAG, "PWR x%d", r);
+            shell_post(PRESSES[r - 1]);
         }
     }
 }

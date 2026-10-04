@@ -71,8 +71,7 @@ void app_on_claude_message(const claude_msg_t *msg)
     switch (msg->kind) {
     case CLAUDE_PERMISSION:
         claude_ui_on_message(msg);
-        claude_ui_present_request();   /* takes over the screen; the previous one comes back afterwards */
-        ui_force_screen_on();
+        shell_post(MODES_EV_URGENT);   /* takes over the screen (even when locked) and wakes the panel */
         chime_play(CHIME_REQUEST);
         break;
     case CLAUDE_FINISHED:
@@ -112,12 +111,6 @@ static void enable_power_management(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "power management unavailable: %s", esp_err_to_name(err));
     }
-}
-
-void app_switch_mode(void)
-{
-    claude_ui_toggle();
-    ui_mark_activity();
 }
 
 void app_enter_deep_sleep(void)

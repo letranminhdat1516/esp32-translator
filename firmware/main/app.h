@@ -26,8 +26,6 @@ void app_on_claude_message(const claude_msg_t *msg);
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */
 void app_enter_deep_sleep(void);
-/* PWR double press: switch between apps (translator, Claude companion) */
-void app_switch_mode(void);
 
 /* pmu.c: AXP2101 battery gauge and PWR button */
 typedef struct {
@@ -66,11 +64,10 @@ void ui_prepare_sleep(void);
 void ui_prepare_power_off(void);
 /* Temporarily replaces the status line (and wakes the screen) */
 void ui_toast(const char *utf8, uint32_t ms);
-/* Translator screen handle, wake override and double-tap gesture for other screens (ui.c) */
+/* Translator screen handle and wake override (ui.c) */
 lv_obj_t *ui_translator_screen(void);
 /* Wakes the panel and clears a double-tap screen-off (within ~250 ms) */
 void ui_force_screen_on(void);
-void ui_attach_screen_gestures(lv_obj_t *screen);
 /* Blanks (true) or wakes (false) the panel like a double-tap. Safe from any task except LVGL callbacks. */
 void ui_set_manual_screen_off(bool off);
 /* pmu.c: true when external USB power (VBUS) is present; false if the PMU is unavailable */
@@ -79,11 +76,9 @@ bool pmu_usb_powered(void);
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);
 lv_obj_t *claude_ui_screen(void);
-void claude_ui_present_request(void);               /* request takes over the screen; restored when done */
 bool claude_ui_visible(void);
 void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
 void claude_ui_set_link(bool connected);
-void claude_ui_toggle(void);                        /* atomic Translator <-> Claude switch */
 void claude_ui_set_touch_enabled(bool on);          /* LVGL task: Allow/Deny ignore taps while the panel is dark */
 bool claude_ui_pending(void);                       /* a permission request awaits an answer */
 
