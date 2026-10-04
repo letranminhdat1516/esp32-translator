@@ -17,12 +17,20 @@ bool clock_sync_text(const char *text)
 {
     clock_sync_t s;
     if (!clock_parse(text, &s)) {
-        ESP_LOGW(TAG, "ignoring bad time \"%.24s\"", text ? text : "");
+        /* The text comes over BLE: log at most 24 bytes, non-printable ones as '?' */
+        char shown[25];
+        size_t n = 0;
+        for (; text && text[n] && n < sizeof(shown) - 1; n++) {
+            shown[n] = (text[n] >= 0x20 && text[n] < 0x7f) ? text[n] : '?';
+        }
+        shown[n] = '\0';
+        ESP_LOGW(TAG, "ignoring bad time \"%s\"", shown);
         return false;
     }
+    /* Zone before time, known last: the first reader after a first sync sees both */
+    s_offset_min = (int16_t)s.offset_min;
     struct timeval tv = { .tv_sec = (time_t)s.unix_s, .tv_usec = 0 };
     settimeofday(&tv, NULL);
-    s_offset_min = (int16_t)s.offset_min;
     s_known = true;
     ESP_LOGI(TAG, "time set: %lld, UTC offset %+d min", (long long)s.unix_s, s.offset_min);
     return true;
@@ -36,6 +44,10 @@ bool clock_now_hhmm(char out[6])
     }
     struct timeval tv;
     gettimeofday(&tv, NULL);
+    if (!clock_plausible((int64_t)tv.tv_sec)) {
+        memcpy(out, "--:--", 6);
+        return false;
+    }
     clock_format_hhmm((int64_t)tv.tv_sec, s_offset_min, out);
     return true;
 }

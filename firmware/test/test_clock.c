@@ -46,11 +46,22 @@ static void formats_local_time(void)
     assert(strcmp(t, "23:59") == 0);
 }
 
+static void plausible_range(void)
+{
+    assert(!clock_plausible(0));
+    assert(!clock_plausible(1699999999));
+    assert(clock_plausible(1700000000));
+    assert(clock_plausible(1759555200));
+    assert(clock_plausible(4102444799LL));
+    assert(!clock_plausible(4102444800LL));
+}
+
 int main(void)
 {
     parses_positive_and_negative_offsets();
     rejects_garbage();
     formats_local_time();
+    plausible_range();
     puts("clock: all tests passed");
     return 0;
 }

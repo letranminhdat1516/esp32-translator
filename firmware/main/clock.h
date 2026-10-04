@@ -12,6 +12,11 @@ typedef struct {
     int offset_min;
 } clock_sync_t;
 
+#define CLOCK_MIN_UNIX 1700000000LL   /* 2023-11-14 */
+#define CLOCK_MAX_UNIX 4102444800LL   /* 2100-01-01 */
+
+/* Pure (host-tested): CLOCK_MIN_UNIX <= unix_s < CLOCK_MAX_UNIX */
+bool clock_plausible(int64_t unix_s);
 /* Pure (host-tested): strict parse; rejects garbage, times before 2023-11-14 or after 2099, offsets beyond -12h..+14h */
 bool clock_parse(const char *text, clock_sync_t *out);
 /* Pure (host-tested): "HH:MM" local time; out must hold 6 bytes */
@@ -19,5 +24,6 @@ void clock_format_hhmm(int64_t unix_s, int offset_min, char out[6]);
 
 /* Device (clock_rtc.c): sets the system time; safe from any task. Returns false (and changes nothing) on bad text. */
 bool clock_sync_text(const char *text);
-/* Device: "HH:MM", or "--:--" until a time has been received. Returns whether the time is known. */
+/* Device: "HH:MM", or "--:--" until a time has been received (or if the system time is implausible).
+ * Returns whether the time is known. */
 bool clock_now_hhmm(char out[6]);

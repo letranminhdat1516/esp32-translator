@@ -1,9 +1,5 @@
 #include "clock.h"
 
-#include <stdlib.h>
-
-#define CLOCK_MIN_UNIX 1700000000LL   /* 2023-11-14 */
-#define CLOCK_MAX_UNIX 4102444800LL   /* 2100-01-01 */
 #define CLOCK_MIN_OFFSET (-12 * 60)
 #define CLOCK_MAX_OFFSET (14 * 60)
 
@@ -32,6 +28,11 @@ static bool parse_int(const char **p, bool allow_sign, long long *out)
     return true;
 }
 
+bool clock_plausible(int64_t unix_s)
+{
+    return unix_s >= CLOCK_MIN_UNIX && unix_s < CLOCK_MAX_UNIX;
+}
+
 bool clock_parse(const char *text, clock_sync_t *out)
 {
     if (!text) {
@@ -42,7 +43,7 @@ bool clock_parse(const char *text, clock_sync_t *out)
     if (!parse_int(&p, false, &secs) || *p++ != ' ' || !parse_int(&p, true, &offset) || *p != '\0') {
         return false;
     }
-    if (secs < CLOCK_MIN_UNIX || secs >= CLOCK_MAX_UNIX || offset < CLOCK_MIN_OFFSET || offset > CLOCK_MAX_OFFSET) {
+    if (!clock_plausible(secs) || offset < CLOCK_MIN_OFFSET || offset > CLOCK_MAX_OFFSET) {
         return false;
     }
     out->unix_s = secs;
