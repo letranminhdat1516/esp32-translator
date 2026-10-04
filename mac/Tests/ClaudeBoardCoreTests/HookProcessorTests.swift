@@ -117,3 +117,88 @@ func permissionRoundTrip(_ choice: BoardChoice) async {
     await p.process(Data("not json".utf8), conn)
     #expect(conn.replies.isEmpty && conn.closed && board.sent.isEmpty)
 }
+private let questionLine = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x/proj","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which color?","header":"Color","options":[{"label":"Red","description":"Warm"},{"label":"Green","description":""}],"multiSelect":false},{"question":"Which fruits?","header":"Fruits","options":[{"label":"Apple","description":"a"},{"label":"Banana","description":"b"},{"label":"Cherry","description":"c"}],"multiSelect":true}]}}"#.utf8)
+
+private func pages(_ board: FakeBoard) -> [(id: UInt32, index: Int, count: Int)] {
+    board.sent.compactMap { m -> (id: UInt32, index: Int, count: Int)? in
+        if case .question(let id, let index, let count, _, _) = m { return (id, index, count) }
+        return nil
+    }
+}
+
+@Test func questionRoundTripRepliesWithTheMappedAnswers() async throws {
+    if HookSchema.questionAnswers == .terminalOnly { return }      // questions never reach the board then
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(questionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let shown = pages(board)
+    #expect(shown.map(\.index) == [0, 1] && shown.allSatisfy { $0.count == 2 && $0.id == shown[0].id })
+    await p.requests.handle(.answers(id: shown[0].id, masks: [0b10, 0b101]))
+    await done.value
+    let e = try HookEvent.parse(questionLine)
+    let expected = AnswerMapping.questionReply([0b10, 0b101], questions: try #require(AskQuestion.parse(e.toolInput)),
+                                               toolInput: e.toolInput)
+    #expect(conn.replies == [expected])
+}
+
+@Test func hookDisconnectCancelsQuestion() async {
+    if HookSchema.questionAnswers == .terminalOnly { return }
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(questionLine, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let id = pages(board)[0].id
+    conn.hookGoesAway()                         // answered in the terminal / Remote Control
+    await done.value
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent.last == .cancel(id: id))
+    #expect(conn.replies == [BridgeReply(decision: nil)])
+    await p.requests.handle(.answers(id: id, masks: [1, 1]))   // a late Send changes nothing
+    #expect(conn.replies.count == 1)
+}
+
+@Test func unsupportedQuestionFallsThroughImmediately() async {
+    let line = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Q?","options":[{"label":"1"},{"label":"2"},{"label":"3"},{"label":"4"},{"label":"5"}]}]}}"#.utf8)
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let start = ContinuousClock.now
+    await p.process(line, conn)
+    #expect(ContinuousClock.now - start < .milliseconds(200))
+    #expect(conn.replies == [BridgeReply(decision: nil)])
+    try? await Task.sleep(for: .milliseconds(30))
+    #expect(board.sent.isEmpty)
+}
+
+@Test func permissionOffersAlwaysAllowOnlyWithAUsableSuggestion() async {
+    let line = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x/proj","tool_name":"Bash","tool_input":{"command":"git push"},"permission_suggestions":[{"rule":"Bash(git push *)","description":"d","specificity":"moderate"}]}"#.utf8)
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(line, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    let rule = AnswerMapping.alwaysRule(suggestions: try? HookEvent.parse(line).permissionSuggestions)
+    #expect(board.sent == [.permission(id: board.permissionIds[0], project: "proj", tool: "Bash", summary: "git push", alwaysRule: rule)])
+    let choice: BoardChoice = rule == nil ? .allow : .alwaysAllow
+    await p.requests.handle(.choice(id: board.permissionIds[0], choice))
+    await done.value
+    let expected = AnswerMapping.permissionReply(rule == nil ? .allow : .alwaysAllow,
+                                                 suggestions: try? HookEvent.parse(line).permissionSuggestions)
+    #expect(conn.replies == [expected])
+}
+
+@Test func alwaysAllowTapSendsTheAddRulesSuggestionVerbatim() async throws {
+    let line = Data(#"{"hook_event_name":"PermissionRequest","session_id":"s","cwd":"/x/proj","tool_name":"Bash","tool_input":{"command":"npm test"},"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm test:*"}],"behavior":"allow","destination":"localSettings"}]}"#.utf8)
+    let (p, board) = makeProcessor(ready: true)
+    let conn = FakeConn()
+    let done = Task { await p.process(line, conn) }
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(board.sent == [.permission(id: board.permissionIds[0], project: "proj", tool: "Bash", summary: "npm test",
+                                       alwaysRule: HookSchema.alwaysAllow == .unsupported ? nil : "Bash(npm test:*)")])
+    await p.requests.handle(.choice(id: board.permissionIds[0], .alwaysAllow))
+    await done.value
+    let suggestions = try HookEvent.parse(line).permissionSuggestions
+    #expect(conn.replies == [AnswerMapping.permissionReply(.alwaysAllow, suggestions: suggestions)])
+    if HookSchema.alwaysAllow == .suggestionsVerbatim {
+        #expect(conn.replies[0].updatedPermissions == suggestions.map { .array([$0.array![0]]) })
+    }
+}

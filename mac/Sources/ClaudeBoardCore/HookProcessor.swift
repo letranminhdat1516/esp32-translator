@@ -18,8 +18,8 @@ public protocol HookConnection: Sendable {
     func close()
 }
 
-/// Handles one hook event line received by the daemon. Never decides on its own: a permission request is
-/// answered only with what the board sent back, and every failure path replies `null` or nothing.
+/// Handles one hook event line received by the daemon. Never decides on its own: a request is answered
+/// only with what the board sent back, and every failure path replies `null` or nothing.
 public struct HookProcessor: Sendable {
     public let board: any BoardLinking
     public let requests: RequestQueue
@@ -37,20 +37,11 @@ public struct HookProcessor: Sendable {
         switch e.name {
         case "PermissionRequest":
             guard board.isReady else { conn.reply(BridgeReply(decision: nil)); return }
-            let requests = self.requests
-            let ask = Task {
-                await requests.ask(project: project, tool: e.toolName ?? "Tool", summary: Summary.permission(e))
-            }
-            // If the hook goes away (user answered in the terminal), cancel the board request.
-            conn.onPeerGone { ask.cancel() }
-            let d = await ask.value
-            let decision: String? = switch d {
-            case .allow?: "allow"
-            case .deny?: "deny"
-            default: nil
-            }
-            log("\(project) \(e.toolName ?? "") → \(decision ?? "fall through")")
-            conn.reply(BridgeReply(decision: decision))
+            let reply = e.toolName == "AskUserQuestion"
+                ? await askQuestion(e, project: project, conn: conn)
+                : await askPermission(e, project: project, conn: conn)
+            log("\(project) \(e.toolName ?? "") → \(reply.decision ?? "fall through")")
+            conn.reply(reply)
         case "Stop", "Notification":
             if board.isReady {
                 let text = e.name == "Stop" ? Summary.lastLine(e) : "Claude is waiting for you"
@@ -60,5 +51,44 @@ public struct HookProcessor: Sendable {
         default:
             conn.close()
         }
+    }
+
+    private func askPermission(_ e: HookEvent, project: String, conn: any HookConnection) async -> BridgeReply {
+        let rule = AnswerMapping.alwaysRule(suggestions: e.permissionSuggestions)
+        let tool = e.toolName ?? "Tool"
+        let summary = Summary.permission(e)
+        let response = await cancellable(conn) { [requests] in
+            await requests.ask(shape: .permission(alwaysOffered: rule != nil)) { id in
+                [.permission(id: id, project: project, tool: tool, summary: summary, alwaysRule: rule)]
+            }
+        }
+        return response.map { AnswerMapping.permissionReply($0, suggestions: e.permissionSuggestions) }
+            ?? BridgeReply(decision: nil)
+    }
+
+    private func askQuestion(_ e: HookEvent, project: String, conn: any HookConnection) async -> BridgeReply {
+        guard HookSchema.questionAnswers != .terminalOnly, let questions = AskQuestion.parse(e.toolInput) else {
+            log("\(project) AskUserQuestion not shown on the board (unsupported); Claude asks in the terminal")
+            return BridgeReply(decision: nil)
+        }
+        let shape = RequestShape.question(options: questions.map { $0.options.count }, multi: questions.map(\.multiSelect))
+        let response = await cancellable(conn) { [requests] in
+            await requests.ask(shape: shape) { id in
+                questions.enumerated().map { i, q in
+                    BoardMessage.question(id: id, index: i, count: questions.count, project: project, question: q)
+                }
+            }
+        }
+        guard case .answers(let masks) = response else { return BridgeReply(decision: nil) }
+        return AnswerMapping.questionReply(masks, questions: questions, toolInput: e.toolInput)
+    }
+
+    /// Runs `body`, cancelling it when the hook goes away (the user answered in the terminal): the queue then
+    /// cancels the request on the board.
+    private func cancellable(_ conn: any HookConnection,
+                             _ body: @escaping @Sendable () async -> BoardResponse?) async -> BoardResponse? {
+        let task = Task { await body() }
+        conn.onPeerGone { task.cancel() }
+        return await task.value
     }
 }
