@@ -274,6 +274,10 @@ void claude_ui_on_message(const claude_msg_t *m)
         }
         break;
     case CLAUDE_TIME:   /* main.c sets the clock; nothing to show */
+    case CLAUDE_SESSION:   /* v2 kinds: handled from Task 9 on */
+    case CLAUDE_SESSION_REMOVE:
+    case CLAUDE_SESSIONS_CLEAR:
+    case CLAUDE_QUESTION:
         break;
     }
     bsp_display_unlock();
