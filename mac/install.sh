@@ -1,12 +1,16 @@
 #!/bin/bash
 # mac/install.sh — build and install the Claude board bridge for the current user.
-# Test overrides: BIN, CLAUDE_SETTINGS, LOCAL_BIN, CLAUDE_BOARD_SKIP_LAUNCHD=1, CLAUDE_BOARD_SKIP_PAIR=1
+# Test overrides: BIN, CLAUDE_SETTINGS, LOCAL_BIN, CLAUDE_BOARD_HOME, CLAUDE_BOARD_SKIP_LAUNCHD=1, CLAUDE_BOARD_SKIP_PAIR=1
 set -euo pipefail
 cd "$(dirname "$0")"
 swift build -c release
 BIN="${BIN:-$HOME/.claude-board/bin}"
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
 mkdir -p "$BIN" "$(dirname "$SETTINGS")"
+# Owner-only: it holds the relay secret (mkdir -p "$BIN" above creates it 0755 on a first install)
+CB_HOME="${CLAUDE_BOARD_HOME:-$HOME/.claude-board}"
+mkdir -p "$CB_HOME"
+chmod 700 "$CB_HOME"
 # Never overwrite a signed binary in place (same inode → the kernel's code-signature cache can SIGKILL
 # the new code on Apple Silicon): copy to a temp name in the same directory, then rename over the old one.
 install_bin() {

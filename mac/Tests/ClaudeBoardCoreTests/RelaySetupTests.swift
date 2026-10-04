@@ -54,6 +54,33 @@ private func mode(_ path: String) -> Int {
     #expect(RelaySecretFile.load(path: dir + "/missing") == .failure(.missing))
 }
 
+@Test func existingDirectoryIsTightenedTo0700() throws {
+    let dir = tempDir() + "/home"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: false,
+                                            attributes: [.posixPermissions: 0o755])   // as install.sh's mkdir -p "$BIN" did
+    _ = try RelaySecretFile.loadOrCreate(path: dir + "/relay.secret")
+    #expect(mode(dir) == 0o700)
+}
+
+@Test func symlinkedDirectoryIsRefused() throws {
+    let base = tempDir()
+    let real = base + "/real"
+    try FileManager.default.createDirectory(atPath: real, withIntermediateDirectories: false)
+    symlink(real, base + "/home")
+    #expect(throws: RelaySecretError.unsafeDirectory) { try RelaySecretFile.loadOrCreate(path: base + "/home/relay.secret") }
+    #expect(!FileManager.default.fileExists(atPath: real + "/relay.secret"))
+}
+
+@Test func nonRegularSecretPathsAreRefused() throws {
+    let dir = tempDir()
+    let fifo = dir + "/fifo"
+    mkfifo(fifo, 0o600)
+    #expect(RelaySecretFile.load(path: fifo) == .failure(.notRegularFile))   // and does not block
+    let sub = dir + "/sub"
+    try FileManager.default.createDirectory(atPath: sub, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+    #expect(RelaySecretFile.load(path: sub) == .failure(.notRegularFile))
+}
+
 /// Renders a module matrix as a grey bitmap (quiet zone 4, 8 px per module) and decodes it with CoreImage
 private func decode(_ m: [[Bool]]) -> String? {
     let scale = 8, quiet = 4, n = (m.count + 2 * quiet) * scale
@@ -76,6 +103,27 @@ private func decode(_ m: [[Bool]]) -> String? {
     let m = try #require(PairingQR.matrix(url))
     #expect(m.count == m.first?.count)
     #expect(decode(m) == url)
+}
+
+@Test func pairingQRIsUprightWithoutMargin() throws {
+    // Finder patterns top-left, top-right and bottom-left (not bottom-right: that would be a mirrored code), and the
+    // matrix starts at the symbol itself (the quiet zone is added by terminal())
+    let m = try #require(PairingQR.matrix("claudeboard://relay?v=1&h=100.101.102.103&p=47821"))
+    let n = m.count
+    let finderRow = { (y: Int, x: Int) in (x..<x + 7).allSatisfy { m[y][$0] } }
+    #expect(finderRow(0, 0) && finderRow(6, 0))
+    #expect(finderRow(0, n - 7) && finderRow(6, n - 7))
+    #expect(finderRow(n - 7, 0) && finderRow(n - 1, 0))
+    #expect(!(finderRow(n - 7, n - 7) && finderRow(n - 1, n - 7)))
+    #expect((8..<n - 8).allSatisfy { m[6][$0] == ($0 % 2 == 0) })     // horizontal timing pattern on row 6
+}
+
+@Test func terminalQRHasAFourModuleQuietZone() throws {
+    let m = try #require(PairingQR.matrix("claudeboard://relay?v=1"))
+    let lines = PairingQR.terminal(m).split(separator: "\n").map { String($0.dropFirst(8).dropLast(4)) }
+    #expect(lines.count == (m.count + 8 + 1) / 2)
+    #expect(lines.prefix(2).allSatisfy { $0.allSatisfy { $0 == " " } })
+    #expect(lines.allSatisfy { $0.count == m.count + 8 && $0.prefix(4).allSatisfy { $0 == " " } && $0.suffix(4).allSatisfy { $0 == " " } })
 }
 
 @Test func terminalQRUsesHalfBlocksOnWhite() throws {
