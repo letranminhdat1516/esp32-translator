@@ -7,19 +7,34 @@ public actor RequestQueue {
         var continuation: CheckedContinuation<Decision?, Never>?
     }
 
-    private let send: @Sendable (BoardMessage) async -> Void
+    private let outbox: AsyncStream<BoardMessage>.Continuation   // single FIFO so board traffic never reorders
     private let timeout: Duration
     private var queue: [Pending] = []          // queue[0] is on the board
     private var nextId = UInt32.random(in: 1 ... 0x7fff_ffff)
 
     public init(send: @escaping @Sendable (BoardMessage) async -> Void, timeout: Duration = .seconds(90)) {
-        self.send = send
+        let (stream, continuation) = AsyncStream<BoardMessage>.makeStream()
+        self.outbox = continuation
         self.timeout = timeout
+        Task {
+            for await message in stream { await send(message) }
+        }
     }
 
-    public func ask(project: String, tool: String, summary: String) async -> Decision? {
+    deinit { outbox.finish() }
+
+    /// Ids are never 0: the board uses 0 as "no pending request".
+    private func allocateId() -> UInt32 {
+        if nextId == 0 { nextId = 1 }
         let id = nextId
         nextId &+= 1
+        return id
+    }
+
+    func seedNextId(_ value: UInt32) { nextId = value }
+
+    public func ask(project: String, tool: String, summary: String) async -> Decision? {
+        let id = allocateId()
         let message = BoardMessage.permission(id: id, project: project, tool: tool, summary: summary)
         let timer = Task { [timeout] in
             try? await Task.sleep(for: timeout)
@@ -29,7 +44,7 @@ public actor RequestQueue {
         return await withTaskCancellationHandler {
             await withCheckedContinuation { c in
                 queue.append(Pending(id: id, message: message, continuation: c))
-                if queue.count == 1 { Task { await send(message) } }
+                if queue.count == 1 { outbox.yield(message) }
             }
         } onCancel: {
             Task { await self.finish(id, with: nil, cancelOnBoard: true) }
@@ -48,9 +63,7 @@ public actor RequestQueue {
     }
 
     public func notifyFinished(project: String, line: String) async {
-        let id = nextId
-        nextId &+= 1
-        await send(.finished(id: id, project: project, line: line))
+        outbox.yield(.finished(id: allocateId(), project: project, line: line))
     }
 
     private func finish(_ id: UInt32, with decision: Decision?, cancelOnBoard: Bool) {
@@ -59,8 +72,8 @@ public actor RequestQueue {
         let p = queue.remove(at: index)
         p.continuation?.resume(returning: decision)
         if wasShown {
-            if cancelOnBoard { Task { await send(.cancel(id: id)) } }
-            if let next = queue.first { Task { await send(next.message) } }
+            if cancelOnBoard { outbox.yield(.cancel(id: id)) }
+            if let next = queue.first { outbox.yield(next.message) }
         }
     }
 }

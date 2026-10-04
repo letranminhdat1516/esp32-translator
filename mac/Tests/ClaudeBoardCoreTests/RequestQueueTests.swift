@@ -74,3 +74,39 @@ actor Sent {
     await q.boardDisconnected()
     #expect(await d == nil)
 }
+
+private func tag(_ m: BoardMessage) -> String {
+    switch m {
+    case .permission(let id, _, _, _): "perm\(id)"
+    case .cancel(let id): "cancel\(id)"
+    case .finished(let id, _, _): "fin\(id)"
+    }
+}
+
+@Test func cancelOfHeadIsSentBeforeNextPermission() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    let a = Task { await q.ask(project: "p", tool: "Bash", summary: "one") }
+    try? await Task.sleep(for: .milliseconds(30))
+    async let b = q.ask(project: "p", tool: "Bash", summary: "two")
+    try? await Task.sleep(for: .milliseconds(30))
+    a.cancel()
+    try? await Task.sleep(for: .milliseconds(50))
+    let msgs = await sent.messages
+    let ids = await sent.permissionIds()
+    #expect(ids.count == 2)
+    #expect(msgs.map(tag) == ["perm\(ids[0])", "cancel\(ids[0])", "perm\(ids[1])"])
+    await q.handle(Answer(id: ids[1], decision: .allow))
+    #expect(await b == .allow)
+}
+
+@Test func idsNeverZeroAcrossWrap() async {
+    let sent = Sent()
+    let q = RequestQueue(send: { await sent.add($0) })
+    await q.seedNextId(UInt32.max)
+    await q.notifyFinished(project: "p", line: "a")   // uses max
+    await q.notifyFinished(project: "p", line: "b")   // must skip 0
+    try? await Task.sleep(for: .milliseconds(30))
+    let ids = await sent.messages.map(tag)
+    #expect(ids == ["fin\(UInt32.max)", "fin1"])
+}
