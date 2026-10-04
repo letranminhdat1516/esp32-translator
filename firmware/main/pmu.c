@@ -2,7 +2,7 @@
  * AXP2101 power-management chip (I2C 0x34): battery gauge and the big PWR button.
  *
  * PWR button (polled from the PMU interrupt status, 10 Hz; counting in modes.c):
- *   x1 / x2 / x3  → shell.c: lock-unlock / Claude mode / session picker
+ *   x1 / x2 / x3  → shell.c: lock (on the lock: show the lock face) / translator / Claude mode
  *   hold 3 s      → power off (on USB power, where the PMU would turn straight back on: screen off)
  */
 #include "bsp/esp-bsp.h"

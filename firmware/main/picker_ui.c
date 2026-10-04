@@ -1,6 +1,6 @@
 /*
- * Session picker (PWR x3): up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
- * recent. Row: coloured dot (red needs you, yellow working, green idle, grey ended), project (+ "· new" when
+ * Session picker (tap the top of the Claude screen): up to 6 Claude Code sessions from the Mac, "needs you"
+ * first, then the most recent. Row: coloured dot (red needs you, yellow working, green idle, grey ended), project (+ "· new" when
  * its turn ended while another session was focused), short state; the focused one has a white outline.
  * Tap a row: focus it (the Mac is told) and go to the Claude screen.
  * The session table (sessions.c) also feeds the Claude screen. It is written from the NimBLE host task and

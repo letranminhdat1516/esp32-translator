@@ -2,9 +2,9 @@
  * Board shell: turns button and gesture inputs into mode changes (modes.c) and applies them: which screen
  * is loaded and whether the panel must wake. The panel power policy itself is read by ui.c's screen timer
  * (shell_snapshot + modes_panel).
- * Inputs: PWR x1/x2/x3 from pmu.c, BOOT (GPIO0, active low) by interrupt here, lock-screen taps from
- * lock_ui.c, Claude requests from main.c / claude_ui.c. shell_post() never blocks and is safe from any task,
- * LVGL callbacks and timers included; only the shell task touches the display lock.
+ * Inputs: PWR x1/x2/x3 from pmu.c, BOOT (GPIO0, active low) by interrupt here, lock-screen taps and swipes
+ * from lock_ui.c, Claude requests and the picker tap from main.c / claude_ui.c. shell_post() never blocks and
+ * is safe from any task, LVGL callbacks and timers included; only the shell task touches the display lock.
  */
 #include "bsp/esp-bsp.h"
 #include "driver/gpio.h"
@@ -29,9 +29,10 @@ static portMUX_TYPE s_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static const char *const EV_NAMES[] = {
     "PWR x1", "PWR x2", "PWR x3", "BOOT x1", "tap x1", "tap x2", "Claude request", "Claude request done",
-    "session picked", "iPhone notice", "iPhone notice done",
+    "session picked", "iPhone notice", "iPhone notice done", "swipe up",
+    "open picker",
 };
-_Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_NOTICE_DONE + 1, "EV_NAMES out of sync");
+_Static_assert(sizeof EV_NAMES / sizeof EV_NAMES[0] == MODES_EV_OPEN_PICKER + 1, "EV_NAMES out of sync");
 _Static_assert(CLAUDE_BOARD_OTHER == 0 && CLAUDE_BOARD_CLAUDE == 1 && CLAUDE_BOARD_PICKER == 2,
                "modes_report() returns CLAUDE_BOARD_* values");
 

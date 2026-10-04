@@ -1,7 +1,8 @@
 /*
  * Claude companion screen:
  *   top    : "Claude · Mac connected", "Claude · N new" (done events of other sessions not seen yet),
- *            or "Claude · Mac not connected"
+ *            or "Claude · Mac not connected"; a tap on the top area (status, project, title) on the session
+ *            view opens the session picker (MODES_EV_OPEN_PICKER)
  *   middle : the focused session (project, "State · elapsed", last assistant line), or the request asked
  *   bottom : Deny / Allow, and Always allow when the Mac offers a rule, while a permission request is pending;
  *            Deny + why (when the Mac voice link is up): say the reason, Send denies with it (voice_ui.c)
@@ -13,7 +14,7 @@
  * MODES_EV_URGENT_DONE after a short look at the result, and the shell restores the mode (or the lock).
  * If the user leaves a shown request (BOOT x1, PWR x1/x2/x3), it stays pending here and on the Mac; the
  * Claude screen shows it again (controls re-armed) until it is answered, cancelled or the Mac drops, and
- * unlocking (PWR x1, lock-screen double tap) brings it back on top (modes.c).
+ * unlocking in place (lock-screen swipe up or double tap) brings it back on top (modes.c).
  * A request with no answer or cancel REQUEST_CAP_MS after it arrived is dropped here as if cancelled (the
  * Mac gives up at 90 s and sends a cancel; this covers a lost cancel).
  * Session rows live in picker_ui.c (sessions.c table); this screen shows the focused one.
@@ -48,6 +49,7 @@ static lv_obj_t *s_always;
 static lv_obj_t *s_deny_why;
 static lv_obj_t *s_speak;
 static lv_obj_t *s_speak_hint;
+static lv_obj_t *s_picker_area;          /* invisible tap target over the top labels: session picker */
 static uint32_t s_speak_handle;          /* focused session Speak would target; 0 = Speak not usable */
 static volatile uint32_t s_pending_id;   /* 0 = none */
 static bool s_always_offered;            /* the pending permission carries a rule */
@@ -200,7 +202,7 @@ void claude_ui_refresh_session_locked(void)
     }
     const claude_session_t *f = picker_ui_focused_locked();
     if (f == NULL) {
-        show_idle("No session", "PWR x3 to pick a session.");
+        show_idle("No session", "Tap here to pick a session.");
         return;
     }
     char title[48];
@@ -225,7 +227,7 @@ static void elapsed_cb(lv_timer_t *t)
 }
 
 /* Runs inside lv_screen_load, i.e. in the shell task with the display lock held: the Claude screen came back
- * (PWR x2, a takeover, an unlock). A request left pending meanwhile must be read again before it takes a tap. */
+ * (PWR x3, a takeover, an unlock). A request left pending meanwhile must be read again before it takes a tap. */
 static void on_screen_loaded(lv_event_t *e)
 {
     arm_buttons();
@@ -323,6 +325,17 @@ static void on_speak(lv_event_t *e)
     }
 }
 
+/* Runs in the LVGL task (lock already held): the top area was tapped. Not an answer control, but it must not
+ * act blind (dark panel, press before arming), under the voice overlay or while a request (or its result) is
+ * shown; modes.c also ignores it unless the Claude mode's own view is up (no takeover, notice or lock). */
+static void on_picker_area(lv_event_t *e)
+{
+    if (voice_ui_active_locked() || !claude_ui_tap_armed() || s_pending_id != 0 || s_restore_timer != NULL) {
+        return;
+    }
+    shell_post(MODES_EV_OPEN_PICKER);
+}
+
 /* Runs in the LVGL task (lock already held): say why, Send denies with it */
 static void on_deny_why(lv_event_t *e)
 {
@@ -392,6 +405,15 @@ void claude_ui_init(void)
     s_speak = make_button("Speak", 0x1e6fd9, 150, 0, -70, on_speak, 0);
     lv_obj_set_style_bg_color(s_speak, lv_color_hex(0x333333), LV_STATE_DISABLED);
     s_speak_hint = make_label(&font_vi_22, 0x9a9a9a, 340, 290);
+    /* Session picker: the top area (status, project, title and the first detail lines, y 40..200). Below the
+     * question pages and the voice overlay (created after it), so those cover it while shown. */
+    s_picker_area = lv_obj_create(s_scr);
+    lv_obj_remove_style_all(s_picker_area);
+    lv_obj_set_size(s_picker_area, 380, 160);
+    lv_obj_align(s_picker_area, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_set_scrollable(s_picker_area, false);
+    lv_obj_add_event_cb(s_picker_area, on_press, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_picker_area, on_picker_area, LV_EVENT_CLICKED, NULL);
     lv_label_set_text(s_speak_hint, "Open with cb for voice");
     lv_obj_set_hidden(s_speak, true);
     lv_obj_set_hidden(s_speak_hint, true);
@@ -529,6 +551,7 @@ void claude_ui_set_touch_enabled(bool on)
     lv_obj_set_clickable(s_always, on);
     lv_obj_set_clickable(s_speak, on);
     lv_obj_set_clickable(s_deny_why, on);
+    lv_obj_set_clickable(s_picker_area, on);
 }
 
 bool claude_ui_pending(void)

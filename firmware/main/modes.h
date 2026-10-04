@@ -22,6 +22,9 @@ typedef enum {
     MODES_EV_PICK,         /* a session was tapped in the picker: Claude mode */
     MODES_EV_NOTICE,       /* an iPhone notice (Claude app, ANCS) wants the screen: show it, wake the panel */
     MODES_EV_NOTICE_DONE,  /* the notice was closed, timed out or removed on the iPhone */
+    MODES_EV_SWIPE_UP,     /* swipe up on the lock face: unlocks like a double tap, only while the face is
+                            * visible (ignored on the dark panel: pocket guard) */
+    MODES_EV_OPEN_PICKER,  /* the session title area on the Claude screen was tapped: session picker */
 } modes_event_t;
 
 /* Panel power policy: AUTO = the usual idle timer / manual screen-off decide */

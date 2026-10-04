@@ -18,7 +18,7 @@ static bool unlock_to(modes_t *m, board_mode_t mode)
     return true;
 }
 
-/* Unlocking (PWR x1 from the lock, tap x2 on the lock screen) brings a request left behind back on top */
+/* Unlocking (tap x2 or swipe up on the lock screen) brings a request left behind back on top */
 static bool unlock_in_place(modes_t *m)
 {
     m->locked = false;
@@ -38,17 +38,20 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
             return false;
         }
         if (m->locked) {
-            /* Back to the mode in use; a request shown over the lock (or left pending) is shown until it is done */
-            return unlock_in_place(m);
+            /* PWR x1 never unlocks: it shows the lock face (swipe up or double tap to unlock). A request shown
+             * over the lock goes dark (it stays pending and comes back on unlock). */
+            m->urgent = false;
+            m->face_until_us = now_us + MODES_FACE_US;
+            return false;
         }
         m->locked = true;
         m->urgent = false;   /* the user put the board away: a shown request goes dark (it stays pending) */
         m->face_until_us = 0;
         return false;
     case MODES_EV_PWR_2:
-        return unlock_to(m, BOARD_CLAUDE);
+        return unlock_to(m, BOARD_TRANSLATOR);
     case MODES_EV_PWR_3:
-        return unlock_to(m, BOARD_PICKER);
+        return unlock_to(m, BOARD_CLAUDE);
     case MODES_EV_BOOT_1:
         return unlock_to(m, BOARD_TRANSLATOR);
     case MODES_EV_TAP_1:
@@ -61,6 +64,15 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
             return unlock_in_place(m);
         }
         return false;
+    case MODES_EV_SWIPE_UP:
+        /* Only on the visible face: a swipe on the dark panel (pocket) does nothing here */
+        return modes_face_visible(m, now_us) ? unlock_in_place(m) : false;
+    case MODES_EV_OPEN_PICKER:
+        if (m->locked || m->urgent || m->notice || m->mode != BOARD_CLAUDE) {
+            return false;   /* only from the Claude screen's session view */
+        }
+        m->mode = BOARD_PICKER;
+        return true;
     case MODES_EV_URGENT:
         m->urgent = true;
         m->pending = true;
