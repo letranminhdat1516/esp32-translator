@@ -133,7 +133,7 @@ void voice_ui_request_gone_locked(uint32_t id);     /* an Other / deny capture's
 bool voice_ui_active_locked(void);                  /* the overlay is shown */
 void voice_ui_on_message(const claude_msg_t *m);    /* kind 8, NimBLE host task; takes the lock */
 void voice_ui_set_link(bool on);                    /* takes the lock */
-void voice_ui_capture_ended(uint32_t id);           /* audio task, after its stop input; takes the lock */
+void voice_ui_capture_ended(uint32_t id, bool stop_sent); /* audio task, after its stop input; takes the lock */
 void voice_ui_level(int percent);                   /* audio task: level ring, 0 = hidden; takes the lock */
 
 /* lock_ui.c: lock screen (logo, clock, battery) */

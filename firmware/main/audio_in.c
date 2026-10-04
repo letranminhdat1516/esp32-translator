@@ -211,10 +211,11 @@ static void end_voice(uint32_t id, bool stop_input, const char *why, const strea
     if (stop_input) {
         uint8_t buf[CLAUDE_INPUT_MAX];
         size_t n = claude_encode_voice(id, CLAUDE_INPUT_VOICE_STOP, buf);
-        if (!ble_link_send_claude_input(buf, n)) {
+        bool sent = ble_link_send_claude_input_retry(buf, n);   /* may block briefly: this is the audio task */
+        if (!sent) {
             ESP_LOGW(TAG, "voice %lu: stop not sent", (unsigned long)id);
         }
-        voice_ui_capture_ended(id);
+        voice_ui_capture_ended(id, sent);
     }
 }
 

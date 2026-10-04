@@ -135,6 +135,12 @@ static void redraw(void)
     }
 }
 
+/* The Mac could not be reached for a voice input: "Mac not connected." only when the link is really down */
+static const char *unreachable_note(void)
+{
+    return ble_link_claude_connected() ? "Couldn't reach the Mac — try again" : "Mac not connected.";
+}
+
 /* Hides the overlay; what is under it (session view, permission, question page) shows again */
 static void close_overlay(void)
 {
@@ -192,7 +198,7 @@ static void wait_cb(lv_timer_t *t)
     bool sending = s_flow.state == VOICE_SENDING;
     uint8_t out[CLAUDE_INPUT_MAX];
     size_t n = claude_encode_voice(s_flow.id, CLAUDE_INPUT_VOICE_CANCEL, out);
-    ble_link_send_claude_input(out, n);
+    ble_link_send_claude_input_retry(out, n);
     ESP_LOGW(TAG, "voice %lu: no answer from the Mac", (unsigned long)s_flow.id);
     voice_fail(&s_flow, sending ? "No answer from the Mac. Check the terminal." : "No answer from the Mac.");
     on_result();
@@ -243,8 +249,8 @@ void voice_ui_cancel_locked(void)
     }
     uint8_t out[CLAUDE_INPUT_MAX];
     size_t n = voice_cancel(&s_flow, out);   /* back to IDLE */
-    if (n > 0) {
-        ble_link_send_claude_input(out, n);
+    if (n > 0 && !ble_link_send_claude_input_retry(out, n)) {
+        ESP_LOGW(TAG, "voice: cancel not sent");   /* the Mac drops the capture on its own timeout */
     }
     audio_in_voice_abort();
     close_overlay();
@@ -285,8 +291,8 @@ static void on_again(lv_event_t *e)
     uint32_t target = s_flow.target;
     uint8_t out[CLAUDE_INPUT_MAX];
     size_t n = voice_cancel(&s_flow, out);
-    if (n > 0) {
-        ble_link_send_claude_input(out, n);
+    if (n > 0 && !ble_link_send_claude_input_retry(out, n)) {
+        ESP_LOGW(TAG, "voice: cancel not sent");
     }
     if (!voice_ui_start_locked(purpose, question, target)) {
         close_overlay();
@@ -314,11 +320,12 @@ static void on_send(lv_event_t *e)
     if (n == 0) {
         return;
     }
-    if (ble_link_send_claude_input(out, n)) {
+    if (ble_link_send_claude_input_retry(out, n)) {
         ESP_LOGI(TAG, "voice %lu: send", (unsigned long)s_flow.id);
         start_timer(WAIT_MAC_MS, wait_cb);
     } else {
-        voice_fail(&s_flow, "Mac not connected.");
+        ESP_LOGW(TAG, "voice %lu: send not sent", (unsigned long)s_flow.id);
+        voice_fail(&s_flow, unreachable_note());   /* nothing was sent: nothing is typed */
         on_result();
     }
     redraw();
@@ -459,11 +466,20 @@ void voice_ui_set_link(bool on)
     bsp_display_unlock();
 }
 
-void voice_ui_capture_ended(uint32_t id)
+void voice_ui_capture_ended(uint32_t id, bool stop_sent)
 {
     bsp_display_lock((uint32_t)-1);
     if (s_box != NULL && voice_captured(&s_flow, id)) {
-        start_timer(WAIT_MAC_MS, wait_cb);
+        if (stop_sent) {
+            start_timer(WAIT_MAC_MS, wait_cb);
+        } else {
+            /* The Mac never heard the end: drop the capture there (best effort) and say so now */
+            uint8_t out[CLAUDE_INPUT_MAX];
+            size_t n = claude_encode_voice(id, CLAUDE_INPUT_VOICE_CANCEL, out);
+            ble_link_send_claude_input_retry(out, n);
+            voice_fail(&s_flow, unreachable_note());
+            on_result();
+        }
         redraw();
     }
     bsp_display_unlock();
