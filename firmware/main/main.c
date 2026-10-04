@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <string.h>
+
 #include "bsp/esp-bsp.h"
 #include "driver/rtc_io.h"
 #include "esp_log.h"
@@ -67,13 +70,20 @@ void app_on_claude_message(const claude_msg_t *msg)
     switch (msg->kind) {
     case CLAUDE_PERMISSION:
         claude_ui_on_message(msg);
-        claude_ui_show(true);        /* a request always takes over the screen */
+        claude_ui_present_request();   /* takes over the screen; the previous one comes back afterwards */
         ui_force_screen_on();
         chime_play(CHIME_REQUEST);
         break;
     case CLAUDE_FINISHED:
         claude_ui_on_message(msg);
-        ui_toast("Claude finished", 3000);
+        {
+            /* "Claude finished: <project>" (project = first line). Host task only, so a static buffer is fine. */
+            static char toast[CLAUDE_TEXT_MAX + 32];
+            const char *nl = strchr(msg->text, '\n');
+            int project_len = nl ? (int)(nl - msg->text) : (int)strlen(msg->text);
+            snprintf(toast, sizeof(toast), "Claude finished: %.*s", project_len, msg->text);
+            ui_toast(toast, 3000);
+        }
         chime_play(CHIME_DONE);
         break;
     case CLAUDE_CANCEL:
@@ -155,18 +165,21 @@ void app_main(void)
     rec_lang_t lang;
     while (true) {
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (!s_connected && !s_claude_link && s_disconnected_since != 0 &&
-                    esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
-                /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power */
+            if (!s_connected && !s_claude_link && s_disconnected_since != 0) {
+                /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
+                 * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;
                 if (pmu_usb_powered()) {
+                    s_disconnected_since = esp_timer_get_time();
                     if (!usb_logged) {
-                        ESP_LOGI(TAG, "idle timeout, but USB powered: not sleeping");
+                        ESP_LOGI(TAG, "on USB power: not sleeping while idle");
                         usb_logged = true;
                     }
                 } else {
                     usb_logged = false;
-                    app_enter_deep_sleep();
+                    if (esp_timer_get_time() - s_disconnected_since > SLEEP_AFTER_DISCONNECT_US) {
+                        app_enter_deep_sleep();
+                    }
                 }
             }
             continue;

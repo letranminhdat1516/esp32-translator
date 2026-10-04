@@ -34,7 +34,7 @@ static bool s_connected;
 static volatile int64_t s_last_activity_us;
 static bool s_screen_on = true;
 /* Double-tap off: stays dark (ignores taps and subtitles) until the next double-tap */
-static bool s_manual_off;
+static volatile bool s_manual_off;
 static lv_obj_t *s_translator_scr;
 
 static void lock(void)

@@ -77,7 +77,7 @@ bool pmu_usb_powered(void);
 
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);
-void claude_ui_show(bool show);
+void claude_ui_present_request(void);               /* request takes over the screen; restored when done */
 bool claude_ui_visible(void);
 void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
 void claude_ui_set_link(bool connected);

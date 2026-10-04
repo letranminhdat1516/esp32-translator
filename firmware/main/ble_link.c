@@ -28,6 +28,12 @@ void ble_store_config_init(void);
 
 static const char *TAG = "ble";
 
+/* sdkconfig is generated once from sdkconfig.defaults and never refreshed: an old one silently keeps one
+ * BLE connection and RAM-only bonds. Fail the build instead of shipping a board that cannot host the Mac. */
+#if !defined(CONFIG_BT_NIMBLE_MAX_CONNECTIONS) || CONFIG_BT_NIMBLE_MAX_CONNECTIONS < 2 || !defined(CONFIG_BT_NIMBLE_NVS_PERSIST)
+#error "Stale sdkconfig: delete firmware/sdkconfig and rebuild"
+#endif
+
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
                                         0x1e, 0x4c, 0x2f, 0x3b, (last), 0x00, 0xc0, 0xa7)
 
@@ -47,6 +53,8 @@ static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
 #define TEXT_KIND_MAIN   0
 #define TEXT_KIND_STATUS 1
 #define TEXT_MAX         1024
+/* One Claude request write: the Mac chunks to ATT MTU - 3, but a long (prepared) write can carry up to 512 */
+#define CLAUDE_WRITE_MAX 512
 
 static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
@@ -123,11 +131,13 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         if (conn_handle != s_mac_conn) {
             return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* only the subscribed Mac may feed the parser */
         }
-        if (ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof(buf), &len) != 0) {
+        /* Static, not on the 4 KB host task stack: access callbacks only run in the NimBLE host task */
+        static uint8_t claude_buf[CLAUDE_WRITE_MAX];
+        if (ble_hs_mbuf_to_flat(ctxt->om, claude_buf, sizeof(claude_buf), &len) != 0) {
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
         static claude_msg_t msg;
-        if (claude_rx_feed(&s_claude_rx, buf, len, &msg)) {
+        if (claude_rx_feed(&s_claude_rx, claude_buf, len, &msg)) {
             app_on_claude_message(&msg);
         }
         return 0;
@@ -273,8 +283,21 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     return 0;
 }
 
+/* Advertising interval in 0.625 ms units. Fast (stack default) while nobody is connected; once one link is
+ * up (e.g. the iPhone streaming audio) only the second slot is offered, slowly, to save radio time. */
+#define ADV_SLOW_ITVL_MIN 1280   /* 800 ms */
+#define ADV_SLOW_ITVL_MAX 1600   /* 1000 ms */
+
 static void start_advertising(void)
 {
+    if (s_connections >= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
+        return;
+    }
+    /* Restart so the interval always matches the current link count */
+    if (ble_gap_adv_active()) {
+        ble_gap_adv_stop();
+    }
+
     struct ble_hs_adv_fields fields = { 0 };
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     fields.uuids128 = &s_svc_uuid;
@@ -296,6 +319,10 @@ static void start_advertising(void)
     struct ble_gap_adv_params adv = { 0 };
     adv.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv.disc_mode = BLE_GAP_DISC_MODE_GEN;
+    if (s_connections > 0) {
+        adv.itvl_min = ADV_SLOW_ITVL_MIN;
+        adv.itvl_max = ADV_SLOW_ITVL_MAX;
+    }
     rc = ble_gap_adv_start(s_own_addr_type, NULL, BLE_HS_FOREVER, &adv, gap_event, NULL);
     if (rc != 0 && rc != BLE_HS_EALREADY) {
         ESP_LOGE(TAG, "adv start rc=%d", rc);
