@@ -60,10 +60,18 @@ public enum RelayFrame: Equatable, Sendable {
         }
     }
 
+    /// encode(), but only for a frame `sender` may send and the peer's decode accepts (a frame it would refuse
+    /// closes the connection): nil for anything else, which the sockets then drop
+    public func wire(from sender: Sender) -> Data? {
+        let data = encode()
+        return Self.decode(data, from: sender) == self ? data : nil
+    }
+
     /// nil: malformed, unknown, or not a frame `sender` may send (the connection is then closed)
     public static func decode(_ data: Data, from sender: Sender) -> RelayFrame? {
+        guard data.count <= maxFrame else { return nil }      // before copying: the peer controls data.count
         let all = [UInt8](data)
-        guard let type = all.first, all.count <= maxFrame else { return nil }
+        guard let type = all.first else { return nil }
         let b = Array(all.dropFirst())
         let frame: RelayFrame?
         switch type {

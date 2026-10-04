@@ -66,3 +66,19 @@ import Testing
     #expect(RelayFrame.fit("abc", maxBytes: 10) == "abc")
     #expect(RelayFrame.fit("", maxBytes: 0) == "")
 }
+
+@Test func onlyFramesThePeerWouldAcceptGoOnTheWire() {
+    // The sender's own, well-formed frames: the same bytes as encode()
+    #expect(RelayFrame.boardLink(true).wire(from: .phone) == RelayFrame.boardLink(true).encode())
+    #expect(RelayFrame.voiceBegin(4).wire(from: .mac) == RelayFrame.voiceBegin(4).encode())
+    // Wrong direction, or a frame decode would refuse (the peer would close the connection): nothing to send
+    #expect(RelayFrame.toBoard(Data([0, 1, 0, 0, 0])).wire(from: .phone) == nil)
+    #expect(RelayFrame.toBoard(Data([0, 1])).wire(from: .mac) == nil)
+    #expect(RelayFrame.voiceBegin(0).wire(from: .mac) == nil)
+    #expect(RelayFrame.voiceStatus("").wire(from: .phone) == nil)
+    #expect(RelayFrame.transcript(1, final: true, String(repeating: "a", count: 1001)).wire(from: .phone) == nil)
+}
+
+@Test func oversizedInputIsRefusedBeforeCopying() {
+    #expect(RelayFrame.decode(Data([0x13]) + Data(count: 1 << 20), from: .phone) == nil)
+}
