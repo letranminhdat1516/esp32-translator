@@ -11,7 +11,7 @@ final class ESPLink: NSObject, @unchecked Sendable {
     static let textChar = CBUUID(string: "A7C00003-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let controlChar = CBUUID(string: "A7C00004-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
 
-    enum TextKind: UInt8 { case subtitle = 0, status = 1 }
+    enum TextKind: UInt8 { case subtitle = 0, status = 1, time = 2 }
 
     /// Called on the BLE queue for every audio packet
     var onAudioPacket: (@Sendable (Data) -> Void)?
@@ -66,6 +66,14 @@ final class ESPLink: NSObject, @unchecked Sendable {
         while !pendingChunks.isEmpty && peripheral.canSendWriteWithoutResponse {
             peripheral.writeValue(pendingChunks.removeFirst(), for: characteristic, type: .withoutResponse)
         }
+    }
+
+    /// Wall clock for the board's lock face: one text write, kind 2, ASCII "<unix seconds> <UTC offset minutes>"
+    /// (same format as the Mac's Claude time message; see firmware/main/clock.h)
+    static func timePayload(at date: Date = Date(), in timeZone: TimeZone = .current) -> Data {
+        let seconds = Int64(date.timeIntervalSince1970.rounded(.down))
+        let offset = timeZone.secondsFromGMT(for: date) / 60
+        return Data([0x03, TextKind.time.rawValue]) + Data("\(seconds) \(offset)".utf8)
     }
 
     /// Takes the tail of a string within a byte budget, never splitting a character
@@ -143,6 +151,10 @@ extension ESPLink: CBPeripheralDelegate {
                 peripheral.setNotifyValue(true, for: c)
             default: break
             }
+        }
+        // Set the board clock (with response: never dropped or replaced by a subtitle write)
+        if let textCharacteristic {
+            peripheral.writeValue(Self.timePayload(), for: textCharacteristic, type: .withResponse)
         }
         // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {
