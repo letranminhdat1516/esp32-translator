@@ -57,6 +57,7 @@ bool claude_links_answer(claude_links_t *l, uint16_t conn, bool on)
     p->answer = on;
     if (!on) {
         p->role = CLAUDE_ROLE_NONE;
+        p->want = CLAUDE_ROLE_NONE;
     }
     return true;
 }
@@ -80,14 +81,50 @@ void claude_links_mtu(claude_links_t *l, uint16_t conn, uint16_t mtu)
     }
 }
 
+static bool role_held_elsewhere(const claude_links_t *l, int i, claude_role_t role)
+{
+    for (int j = 0; j < CLAUDE_LINK_PEERS; j++) {
+        if (j != i && l->peer[j].conn != CLAUDE_CONN_NONE && l->peer[j].role == role) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Grants each waiting hello that is allowed now */
+static void grant_waiting(claude_links_t *l)
+{
+    for (int i = 0; i < CLAUDE_LINK_PEERS; i++) {
+        claude_peer_t *p = &l->peer[i];
+        if (p->conn == CLAUDE_CONN_NONE || !p->answer || p->want == CLAUDE_ROLE_NONE || p->role != CLAUDE_ROLE_NONE) {
+            continue;
+        }
+        if (p->want == CLAUDE_ROLE_MAC && p->conn == l->phone) {
+            continue;   /* a Mac never holds the translator audio role */
+        }
+        if (p->want == CLAUDE_ROLE_RELAY && p->conn != l->phone) {
+            continue;   /* the relay is the translator app itself */
+        }
+        if (!role_held_elsewhere(l, i, p->want)) {
+            p->role = p->want;
+        }
+    }
+}
+
 void claude_links_phone(claude_links_t *l, uint16_t conn)
 {
     l->phone = conn;
     for (int i = 0; i < CLAUDE_LINK_PEERS; i++) {
-        if (l->peer[i].role == CLAUDE_ROLE_RELAY && l->peer[i].conn != conn) {
-            l->peer[i].role = CLAUDE_ROLE_NONE;
+        claude_peer_t *p = &l->peer[i];
+        if (p->role == CLAUDE_ROLE_RELAY && p->conn != conn) {
+            p->role = CLAUDE_ROLE_NONE;   /* want stays: back with the audio role on this link */
+        }
+        if (p->want == CLAUDE_ROLE_MAC && conn != CLAUDE_CONN_NONE && p->conn == conn) {
+            p->role = CLAUDE_ROLE_NONE;   /* the translator app's link is never the Mac */
+            p->want = CLAUDE_ROLE_NONE;
         }
     }
+    grant_waiting(l);
 }
 
 void claude_links_disconnected(claude_links_t *l, uint16_t conn)
@@ -99,6 +136,7 @@ void claude_links_disconnected(claude_links_t *l, uint16_t conn)
     if (l->phone == conn) {
         l->phone = CLAUDE_CONN_NONE;
     }
+    grant_waiting(l);   /* a waiting Mac hello on a newer link of the same Mac */
 }
 
 bool claude_links_hello(claude_links_t *l, uint16_t conn, claude_role_t role)
@@ -108,22 +146,15 @@ bool claude_links_hello(claude_links_t *l, uint16_t conn, claude_role_t role)
         return false;
     }
     claude_peer_t *p = &l->peer[i];
-    if (p->role != CLAUDE_ROLE_NONE) {
-        return p->role == role;
+    if (p->want != CLAUDE_ROLE_NONE && p->want != role) {
+        return false;   /* one role per subscription */
     }
     if (role == CLAUDE_ROLE_MAC && conn == l->phone) {
-        return false;   /* a Mac never holds the translator audio role */
+        return false;   /* the translator app's link is never the Mac: not kept either */
     }
-    if (role == CLAUDE_ROLE_RELAY && conn != l->phone) {
-        return false;   /* the relay is the translator app itself */
-    }
-    for (int j = 0; j < CLAUDE_LINK_PEERS; j++) {
-        if (j != i && l->peer[j].conn != CLAUDE_CONN_NONE && l->peer[j].role == role) {
-            return false;
-        }
-    }
-    p->role = role;
-    return true;
+    p->want = role;
+    grant_waiting(l);
+    return p->role == role;
 }
 
 bool claude_links_may_write(const claude_links_t *l, uint16_t conn)

@@ -98,6 +98,9 @@ async def main(what):
             cap["samples"] += adpcm_decode(data)
 
         await c.start_notify(ANS, on_input)
+        # Phase 5: the board gives this link the Mac role only after the hello (kind 9 "mac")
+        for ch in chunks(message(9, 0, "mac"), c.mtu_size - 3):
+            await c.write_gatt_char(REQ, ch, response=True)
         await c.start_notify(VOICE, on_voice)
 
         async def send(kind, mid, text=""):

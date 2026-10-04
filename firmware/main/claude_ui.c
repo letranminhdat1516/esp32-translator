@@ -1,7 +1,7 @@
 /*
  * Claude companion screen:
- *   top    : "Claude · Mac connected", "Claude · N new" (done events of other sessions not seen yet),
- *            or "Claude · Mac not connected"; a tap on the top area (status, project, title) on the session
+ *   top    : "Claude · Mac connected" / "Claude · via iPhone", "Claude · N new" (done events of other sessions not
+ *            seen yet), or "Claude · Mac not connected"; a tap on the top area (status, project, title) on the session
  *            view opens the session picker (MODES_EV_OPEN_PICKER)
  *   middle : the focused session (project, "State · elapsed", last assistant line), or the request asked
  *   bottom : Deny / Allow, and Always allow when the Mac offers a rule, while a permission request is pending;
@@ -182,7 +182,7 @@ static void refresh_status(void)
     } else if (badge > 0) {
         snprintf(status, sizeof(status), "Claude · %d new", badge);
     } else {
-        snprintf(status, sizeof(status), "Claude · Mac connected");
+        snprintf(status, sizeof(status), ble_link_claude_relayed() ? "Claude · via iPhone" : "Claude · Mac connected");
     }
     lv_label_set_text(s_status, status);
 }

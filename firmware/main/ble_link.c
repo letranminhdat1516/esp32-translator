@@ -32,6 +32,7 @@ void ble_store_config_init(void);
 
 #include "app.h"
 #include "claude_proto.h"
+#include "claude_link.h"
 #include "ancs.h"
 #include "clock.h"
 #include "link_pace.h"
@@ -58,14 +59,19 @@ static const char *TAG = "ble";
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
                                         0x1e, 0x4c, 0x2f, 0x3b, (last), 0x00, 0xc0, 0xa7)
 
+_Static_assert(CLAUDE_CONN_NONE == BLE_HS_CONN_HANDLE_NONE, "claude_link.h must use NimBLE's no-connection value");
+_Static_assert(CLAUDE_LINK_PEERS >= CONFIG_BT_NIMBLE_MAX_CONNECTIONS, "claude_link.h needs a slot per connection");
+
 static const ble_uuid128_t s_svc_uuid = SVC_UUID(0x01);
 static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 
-/* Claude companion service (the Mac). Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr.
+/* Claude companion service. Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr, from the Mac or
+ * the iPhone relay, after its hello (kind 9); before that only the hello is taken.
  * Answers (notify): answers, board mode, focus and voice inputs, at most CLAUDE_INPUT_MAX bytes (claude_proto.h).
- * Voice (notify): the board mic as IMA ADPCM, same packets as the iPhone audio, only during a voice capture. */
+ * Voice (notify): the board mic as IMA ADPCM, same packets as the iPhone audio, only during a voice capture.
+ * Answers and voice go to the active Claude link (claude_link.h: the Mac, else the relay). */
 static const ble_uuid128_t s_claude_svc_uuid = SVC_UUID(0x10);
 static const ble_uuid128_t s_claude_req_uuid = SVC_UUID(0x11);
 static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
@@ -87,16 +93,21 @@ static uint16_t s_ctrl_handle;
 static uint16_t s_claude_req_handle;
 static uint16_t s_claude_ans_handle;
 static uint16_t s_claude_voice_handle;
-/* The connection subscribed to the voice characteristic, whatever its role: its CCCD may be written (or restored
- * from the bond) before the answer CCCD makes it the Mac. Voice is live when it is s_mac_conn. */
-static volatile uint16_t s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
 /* One 20 ms ADPCM frame per notification: 5 header + 160 data bytes + 3 ATT */
 #define VOICE_MIN_MTU 168
-static claude_rx_t s_claude_rx;
+/* Claude link roles per connection (claude_link.h): the Mac or the iPhone relay, from their hello. Host task only. */
+static claude_links_t s_links;
+static claude_link_state_t s_link_state = { .active = CLAUDE_CONN_NONE };
+/* One reassembly buffer per link slot: the Mac and the relay may both be writing (hellos) */
+static claude_rx_t s_claude_rx[CLAUDE_LINK_PEERS];
+/* Snapshots of s_link_state for the audio and LVGL tasks */
+static volatile uint16_t s_claude_conn = BLE_HS_CONN_HANDLE_NONE;
+static volatile bool s_claude_voice;
+static volatile bool s_claude_relayed;
+static volatile uint16_t s_claude_mtu;
 
-/* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
+/* Links: the iPhone (translator audio; also the Claude relay when the app relays) and the Mac (Claude, direct) */
 static volatile uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
-static volatile uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
 /* A bonded iPhone whose audio CCCD NimBLE restored from the bond when the link encrypted: the translator app may
  * or may not be open (iOS keeps the link for ANCS without it). NimBLE only reports a CCCD write that changes the
  * stored flags (ble_gatts.c ble_gatts_subscribe_event), and the restore has already set them: when the app then
@@ -194,13 +205,13 @@ static bool peer_bonded(uint16_t conn)
     return ble_store_read_peer_sec(&key, &value) == 0;
 }
 
-/* The relaxed pace for the ANCS link, if it carries ANCS alone: not the translator app's audio link, never the Mac,
- * and only once the settle window after its connect (or after it became the waiting audio link) is over; until
- * then the pace timer comes back here. */
+/* The relaxed pace for the ANCS link, if it carries ANCS alone: not the translator app's audio link, never the active
+ * Claude link, and only once the settle window after its connect (or after it became the waiting audio link) is
+ * over; until then the pace timer comes back here. */
 static void relax_if_ancs_only(void)
 {
     uint16_t conn = s_ancs_conn;
-    if (conn == BLE_HS_CONN_HANDLE_NONE || conn == s_phone_conn || conn == s_mac_conn) {
+    if (conn == BLE_HS_CONN_HANDLE_NONE || conn == s_phone_conn || conn == s_claude_conn) {
         return;
     }
     struct link_slot *slot = slot_of(conn);
@@ -229,6 +240,39 @@ void ble_link_ancs_link(uint16_t conn, bool up)
         relax_if_ancs_only();
     } else {
         ble_npl_callout_stop(&s_pace_timer);
+    }
+}
+
+/* Recomputes the active Claude link after any change and tells the app, in order (claude_link_events) */
+static void apply_links(void)
+{
+    claude_link_state_t was = s_link_state;
+    claude_link_state_t now = claude_links_state(&s_links, VOICE_MIN_MTU);
+    s_link_state = now;
+    s_claude_conn = now.active;
+    s_claude_voice = now.voice;
+    s_claude_relayed = now.relayed;
+    s_claude_mtu = now.mtu;
+    claude_link_ev_t ev[3];
+    size_t n = claude_link_events(was, now, ev);
+    for (size_t i = 0; i < n; i++) {
+        switch (ev[i]) {
+        case CLAUDE_LINK_EV_DOWN:
+            ESP_LOGI(TAG, "Claude link down (%s)", was.relayed ? "iPhone relay" : "Mac");
+            app_on_claude_link(false);   /* also ends voice (main.c) */
+            break;
+        case CLAUDE_LINK_EV_UP:
+            ESP_LOGI(TAG, "Claude link up: %s (link %d, MTU %u)", now.relayed ? "via the iPhone relay" : "the Mac",
+                     now.active, now.mtu);
+            app_on_claude_link(true);
+            break;
+        case CLAUDE_LINK_EV_VOICE_ON:
+            app_on_claude_voice_link(true);
+            break;
+        case CLAUDE_LINK_EV_VOICE_OFF:
+            app_on_claude_voice_link(false);
+            break;
+        }
     }
 }
 
@@ -264,6 +308,8 @@ static void phone_audio_on(uint16_t conn)
         set_pace(conn, true);
     }
     app_on_connection_changed(true);
+    claude_links_phone(&s_links, conn);   /* a relay hello said before the promotion is granted now */
+    apply_links();
     request_encryption(conn);   /* the translator app: ANCS needs it */
 }
 
@@ -272,6 +318,9 @@ static void phone_audio_on(uint16_t conn)
 static void phone_audio_off(bool link_up)
 {
     s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+    /* First: the relay goes with the translator role, and the pace check below skips the active Claude link */
+    claude_links_phone(&s_links, BLE_HS_CONN_HANDLE_NONE);
+    apply_links();
     if (link_up) {
         relax_if_ancs_only();   /* ANCS alone does not need the audio pace */
     }
@@ -409,8 +458,9 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         handle_text_write(buf, len);
         return 0;
     } else if (attr_handle == s_claude_req_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        if (conn_handle != s_mac_conn) {
-            return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* only the subscribed Mac may feed the parser */
+        int slot = claude_links_slot(&s_links, conn_handle);
+        if (slot < 0 || !claude_links_may_write(&s_links, conn_handle)) {
+            return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* subscribe to the answer characteristic first */
         }
         /* Static, not on the (6 KB) host task stack: access callbacks only run in the NimBLE host task */
         static uint8_t claude_buf[CLAUDE_WRITE_MAX];
@@ -418,9 +468,28 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
         static claude_msg_t msg;
-        if (claude_rx_feed(&s_claude_rx, claude_buf, len, &msg)) {
-            app_on_claude_message(&msg);
+        if (!claude_rx_feed(&s_claude_rx[slot], claude_buf, len, &msg)) {
+            return 0;
         }
+        if (msg.kind == CLAUDE_LINK) {
+            int hello = claude_parse_hello(&msg);
+            claude_role_t role = hello == CLAUDE_HELLO_MAC     ? CLAUDE_ROLE_MAC
+                                 : hello == CLAUDE_HELLO_RELAY ? CLAUDE_ROLE_RELAY
+                                                               : CLAUDE_ROLE_NONE;
+            if (claude_links_hello(&s_links, conn_handle, role)) {
+                ESP_LOGI(TAG, "link %d: Claude hello \"%.8s\"", conn_handle, msg.text);
+            } else {
+                /* Kept when it may be granted later (claude_link.h): a relay before the promotion of its link */
+                ESP_LOGW(TAG, "link %d: Claude hello \"%.8s\" refused", conn_handle, msg.text);
+            }
+            apply_links();
+            return 0;
+        }
+        if (conn_handle != s_link_state.active) {
+            ESP_LOGW(TAG, "link %d: Claude message kind %d from an inactive link dropped", conn_handle, msg.kind);
+            return 0;
+        }
+        app_on_claude_message(&msg);
         return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
@@ -531,13 +600,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         if (event->disconnect.conn.conn_handle == s_audio_pending_conn) {
             s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
         }
-        if (event->disconnect.conn.conn_handle == s_voice_conn) {
-            s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
-        }
-        if (event->disconnect.conn.conn_handle == s_mac_conn) {
-            s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
-            s_claude_rx.len = 0;
-            app_on_claude_link(false);   /* also ends voice (main.c) */
+        {
+            int slot = claude_links_slot(&s_links, event->disconnect.conn.conn_handle);
+            if (slot >= 0) {
+                s_claude_rx[slot].len = 0;
+            }
+            claude_links_disconnected(&s_links, event->disconnect.conn.conn_handle);
+            apply_links();   /* the Claude link went down, or moved to the other link */
         }
         ancs_client_on_disconnect(event->disconnect.conn.conn_handle, event->disconnect.conn.peer_id_addr.type,
                                   event->disconnect.conn.peer_id_addr.val);
@@ -567,34 +636,23 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 }
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
-            bool on = event->subscribe.cur_notify;
-            if (on && s_mac_conn != BLE_HS_CONN_HANDLE_NONE && s_mac_conn != event->subscribe.conn_handle) {
-                ESP_LOGW(TAG, "Claude role already held, ignoring second subscriber");
-            } else if (on || event->subscribe.conn_handle == s_mac_conn) {
-                s_mac_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
-                if (!on) {
-                    s_claude_rx.len = 0;
-                }
-                ESP_LOGI(TAG, "Mac Claude link %s", on ? "on" : "off");
-                app_on_claude_link(on);   /* off also ends voice (main.c) */
-                if (on && s_voice_conn == event->subscribe.conn_handle) {
-                    app_on_claude_voice_link(true);   /* voice was subscribed first */
-                }
-            }
-        } else if (event->subscribe.attr_handle == s_claude_voice_handle) {
             uint16_t conn = event->subscribe.conn_handle;
             bool on = event->subscribe.cur_notify;
-            if (on) {
-                s_voice_conn = conn;
-            } else if (s_voice_conn == conn) {
-                s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
+            if (!claude_links_answer(&s_links, conn, on)) {
+                ESP_LOGW(TAG, "link %d: no room for another Claude subscriber", conn);
             }
-            /* Only the Mac that holds the Claude role streams voice; a voice CCCD seen before the answer one is
-             * kept and goes live when that one arrives */
-            if (conn == s_mac_conn) {
-                ESP_LOGI(TAG, "Mac voice %s", on ? "on" : "off");
-                app_on_claude_voice_link(on);
+            if (!on) {
+                int slot = claude_links_slot(&s_links, conn);
+                if (slot >= 0) {
+                    s_claude_rx[slot].len = 0;
+                }
             }
+            ESP_LOGI(TAG, "link %d: Claude answers %s%s", conn, on ? "on" : "off",
+                     event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_RESTORE ? " (restored)" : "");
+            apply_links();   /* a role needs the hello that follows (kind 9) */
+        } else if (event->subscribe.attr_handle == s_claude_voice_handle) {
+            claude_links_voice(&s_links, event->subscribe.conn_handle, event->subscribe.cur_notify);
+            apply_links();   /* voice is live only on the active link with a full-frame MTU */
         }
         break;
 
@@ -629,9 +687,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %d", event->mtu.value);
-        if (event->mtu.conn_handle == s_mac_conn && s_voice_conn == s_mac_conn) {
-            app_on_claude_voice_link(true);   /* voice waits for a full-frame MTU: Speak may appear now */
-        }
+        claude_links_mtu(&s_links, event->mtu.conn_handle, event->mtu.value);
+        apply_links();   /* voice waits for a full-frame MTU: Speak may appear now */
         break;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
@@ -796,6 +853,7 @@ void ble_link_init(void)
         s_slots[i].conn = BLE_HS_CONN_HANDLE_NONE;
     }
     ble_npl_event_init(&s_wake_ev, on_wake_phone, NULL);
+    claude_links_init(&s_links);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
     /* Just Works bonding (no keypad); only the Claude characteristics demand encryption */
@@ -864,12 +922,17 @@ void ble_link_notify_control(uint8_t state)
 
 bool ble_link_claude_connected(void)
 {
-    return s_mac_conn != BLE_HS_CONN_HANDLE_NONE;
+    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE;
+}
+
+bool ble_link_claude_relayed(void)
+{
+    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE && s_claude_relayed;
 }
 
 static int send_claude_input(const uint8_t *data, size_t len)
 {
-    uint16_t conn = s_mac_conn;
+    uint16_t conn = s_claude_conn;
     if (conn == BLE_HS_CONN_HANDLE_NONE || len == 0 || len > CLAUDE_INPUT_MAX) {
         return BLE_HS_ENOTCONN;
     }
@@ -909,21 +972,18 @@ bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
 
 uint16_t ble_link_mac_mtu(void)
 {
-    uint16_t conn = s_mac_conn;
-    return conn == BLE_HS_CONN_HANDLE_NONE ? 0 : ble_att_mtu(conn);
+    return s_claude_conn == BLE_HS_CONN_HANDLE_NONE ? 0 : s_claude_mtu;
 }
 
-/* The Mac subscribed to voice and the MTU fits a full frame per notification (the link has settled) */
+/* The active Claude link (Mac or relay) subscribed to voice and its MTU fits a full frame per notification */
 bool ble_link_voice_ready(void)
 {
-    uint16_t conn = s_mac_conn;
-    return conn != BLE_HS_CONN_HANDLE_NONE && s_voice_conn == conn && ble_att_mtu(conn) >= VOICE_MIN_MTU;
+    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE && s_claude_voice;
 }
 
 uint16_t ble_link_voice_payload_max(void)
 {
-    uint16_t conn = s_mac_conn;
-    uint16_t mtu = conn == BLE_HS_CONN_HANDLE_NONE ? 0 : ble_att_mtu(conn);
+    uint16_t mtu = s_claude_conn == BLE_HS_CONN_HANDLE_NONE ? 0 : s_claude_mtu;
     return mtu > 23 ? mtu - 3 : 20;
 }
 
@@ -931,8 +991,8 @@ uint16_t ble_link_voice_payload_max(void)
 bool ble_link_send_voice(const uint8_t *data, uint16_t len)
 {
     for (int attempt = 0; attempt < 5; attempt++) {
-        uint16_t conn = s_mac_conn;
-        if (conn == BLE_HS_CONN_HANDLE_NONE || s_voice_conn != conn) {
+        uint16_t conn = s_claude_conn;
+        if (conn == BLE_HS_CONN_HANDLE_NONE || !s_claude_voice) {
             return false;
         }
         struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);

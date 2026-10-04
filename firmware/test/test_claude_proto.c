@@ -403,6 +403,13 @@ static void hello_parses(void)
     bad.id = 0;
     bad.kind = CLAUDE_FINISHED;
     assert(claude_parse_hello(&bad) == CLAUDE_HELLO_NONE);           /* only kind 9 */
+
+    claude_msg_t open;
+    memset(&open, 'a', sizeof open);                                 /* no NUL anywhere in text */
+    open.kind = CLAUDE_LINK;
+    open.id = 0;
+    memcpy(open.text, "mac", 3);
+    assert(claude_parse_hello(&open) == CLAUDE_HELLO_NONE);
 }
 
 int main(void)

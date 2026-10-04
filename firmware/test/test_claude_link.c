@@ -60,6 +60,10 @@ static void mac_never_on_the_phone_link(void)
     claude_links_answer(&l, PHONE, true);
     assert(!claude_links_hello(&l, PHONE, CLAUDE_ROLE_MAC));
     assert(st(&l).active == CLAUDE_CONN_NONE);
+    claude_links_phone(&l, CLAUDE_CONN_NONE);                        /* the app goes silent: still not the Mac */
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+    claude_links_phone(&l, PHONE);
+    assert(claude_links_hello(&l, PHONE, CLAUDE_ROLE_RELAY));        /* the refused hello left nothing behind */
 }
 
 static void mac_preferred_over_relay(void)
@@ -178,6 +182,69 @@ static void link_events_for_a_switch_with_voice(void)
     assert(claude_link_events(relay_voice, relay_voice_bigger, ev) == 0);
 }
 
+static void relay_hello_before_the_phone_role_is_kept(void)
+{
+    /* Phase 4: a restored audio CCCD makes the link wait; the app's first translator write promotes it, possibly
+     * after its relay hello */
+    claude_links_t l = fresh();
+    claude_links_answer(&l, PHONE, true);
+    assert(!claude_links_hello(&l, PHONE, CLAUDE_ROLE_RELAY));       /* not the phone link yet */
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+    claude_links_phone(&l, PHONE);                                   /* promoted */
+    claude_link_state_t s = st(&l);
+    assert(s.active == PHONE && s.relayed);
+    assert(claude_links_hello(&l, PHONE, CLAUDE_ROLE_RELAY));        /* the app's second hello is harmless */
+    assert(!claude_links_hello(&l, PHONE, CLAUDE_ROLE_MAC));
+    /* the role goes with the translator role (app silent) and comes back with it on the same link */
+    claude_links_phone(&l, CLAUDE_CONN_NONE);
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+    claude_links_phone(&l, PHONE);
+    assert(st(&l).active == PHONE);
+    /* an unsubscribe forgets the hello */
+    claude_links_answer(&l, PHONE, false);
+    claude_links_answer(&l, PHONE, true);
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+}
+
+static void relay_hello_is_not_kept_for_another_phone_link(void)
+{
+    claude_links_t l = fresh();
+    claude_links_answer(&l, OTHER, true);
+    assert(!claude_links_hello(&l, OTHER, CLAUDE_ROLE_RELAY));
+    claude_links_phone(&l, PHONE);                                   /* a different link gets the audio role */
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+}
+
+static void phone_role_clears_a_mac_role_on_that_link(void)
+{
+    claude_links_t l = fresh();
+    claude_links_answer(&l, OTHER, true);
+    assert(claude_links_hello(&l, OTHER, CLAUDE_ROLE_MAC));
+    claude_links_phone(&l, OTHER);                                   /* that link now holds the translator audio */
+    assert(st(&l).active == CLAUDE_CONN_NONE);
+    claude_links_phone(&l, CLAUDE_CONN_NONE);
+    assert(st(&l).active == CLAUDE_CONN_NONE);                       /* not even after it lets the audio go */
+    assert(!claude_links_hello(&l, OTHER, CLAUDE_ROLE_RELAY));       /* it is not the phone link any more */
+    claude_links_phone(&l, OTHER);
+    claude_links_answer(&l, OTHER, false);                           /* the app resubscribes and says relay */
+    claude_links_answer(&l, OTHER, true);
+    assert(claude_links_hello(&l, OTHER, CLAUDE_ROLE_RELAY));
+}
+
+static void reconnecting_mac_takes_over_the_stale_slot(void)
+{
+    /* The Mac reconnects before the board noticed its old link drop (supervision timeout) */
+    claude_links_t l = fresh();
+    claude_links_answer(&l, MAC, true);
+    claude_links_hello(&l, MAC, CLAUDE_ROLE_MAC);
+    claude_links_answer(&l, OTHER, true);
+    assert(!claude_links_hello(&l, OTHER, CLAUDE_ROLE_MAC));         /* the old link still holds the role */
+    assert(st(&l).active == MAC);
+    claude_links_disconnected(&l, MAC);                              /* the stale link times out */
+    assert(st(&l).active == OTHER);                                  /* no second hello needed */
+    assert(!claude_links_hello(&l, OTHER, CLAUDE_ROLE_RELAY));       /* still one role per link */
+}
+
 int main(void)
 {
     mac_needs_subscription_and_hello();
@@ -192,6 +259,10 @@ int main(void)
     mtu_before_subscription_is_kept();
     slots_full_is_refused();
     link_events_for_a_switch_with_voice();
+    relay_hello_before_the_phone_role_is_kept();
+    relay_hello_is_not_kept_for_another_phone_link();
+    phone_role_clears_a_mac_role_on_that_link();
+    reconnecting_mac_takes_over_the_stale_slot();
     puts("claude_link: all tests passed");
     return 0;
 }

@@ -21,10 +21,10 @@ void app_request_recording(rec_lang_t lang);
 rec_lang_t app_get_recording(void);
 /* iPhone translation link (audio characteristic subscribed) up/down */
 void app_on_connection_changed(bool connected);
-/* Mac Claude link (answer characteristic subscribed) up/down, and an incoming Claude message */
+/* Claude link (the Mac, or the iPhone relay) up/down, and an incoming Claude message from it */
 void app_on_claude_link(bool connected);
 void app_on_claude_message(const claude_msg_t *msg);
-/* Mac voice characteristic subscribed / left (NimBLE host task) */
+/* Voice live on the Claude link (voice characteristic subscribed, full-frame MTU) or not (NimBLE host task) */
 void app_on_claude_voice_link(bool on);
 /* iPhone notifications (ANCS) ready / gone: a link for the deep-sleep rule (NimBLE host task) */
 void app_on_phone_notices_link(bool up);
@@ -55,14 +55,17 @@ void ble_link_notify_control(uint8_t state);
  * host task) and request lang again; false: no such link */
 bool ble_link_wake_phone(rec_lang_t lang);
 bool ble_link_claude_connected(void);
+/* The Claude link is the iPhone relay (the Mac is out of range), not the Mac itself */
+bool ble_link_claude_relayed(void);
 bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* CLAUDE_DECISION_* */
-/* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX; false if no Mac */
+/* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX, over the Claude link (the Mac or the
+ * iPhone relay); false without one */
 bool ble_link_send_claude_input(const uint8_t *data, size_t len);
 /* The same, retried briefly while the BLE buffers are full (a voice start: the link may still be settling) */
 bool ble_link_send_claude_input_retry(const uint8_t *data, size_t len);
-uint16_t ble_link_mac_mtu(void);                    /* negotiated ATT MTU of the Mac link, 0 without one */
+uint16_t ble_link_mac_mtu(void);                    /* ATT MTU of the Claude link (Mac or relay), 0 without one */
 /* Claude voice characteristic: the board mic to the Mac during a voice capture. Send from the audio task only.
- * ready: the Mac subscribed and the MTU fits one 20 ms frame per notification. */
+ * ready: the Claude link (Mac or relay) subscribed and its MTU fits one 20 ms frame per notification. */
 bool ble_link_voice_ready(void);
 uint16_t ble_link_voice_payload_max(void);
 bool ble_link_send_voice(const uint8_t *data, uint16_t len);

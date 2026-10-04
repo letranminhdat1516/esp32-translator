@@ -77,7 +77,7 @@ void app_on_claude_link(bool connected)
     ui_mark_activity();
 }
 
-/* NimBLE host task: the Mac subscribed to (or left) the voice characteristic */
+/* NimBLE host task: voice went live (or not) on the Claude link, the Mac or the iPhone relay (ble_link.c) */
 void app_on_claude_voice_link(bool on)
 {
     ESP_LOGI(TAG, "Claude voice %s", on ? "up" : "down");

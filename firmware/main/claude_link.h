@@ -4,7 +4,9 @@
  * A connection gets a role only from its hello (claude_proto.h kind 9), written after it subscribed to the answer
  * characteristic: "mac" (the daemon, direct) on any connection except the translator app's, "relay" (the iPhone
  * app) only on the connection that holds the translator audio role. One holder per role. A restored (bonded) CCCD
- * without a hello is no role. The active link is the Mac, otherwise the relay. Voice is live when the active link
+ * without a hello is no role. A hello that cannot be granted yet is kept for that subscription and granted as soon
+ * as it can: a relay hello written before its link got the translator audio role (a restored audio CCCD waits for
+ * the app's first translator write), a Mac hello while the Mac's previous, stale link still holds the role. The active link is the Mac, otherwise the relay. Voice is live when the active link
  * subscribed to the voice characteristic and its MTU fits one audio frame.
  * All calls from the NimBLE host task (ble_link.c).
  */
@@ -26,7 +28,8 @@ typedef struct {
     uint16_t conn;        /* CLAUDE_CONN_NONE: free slot */
     bool answer;          /* answer CCCD on (written or restored) */
     bool voice;           /* voice CCCD on */
-    claude_role_t role;   /* from the hello; cleared with the answer CCCD */
+    claude_role_t role;   /* granted from the hello; cleared with the answer CCCD */
+    claude_role_t want;   /* the hello said (granted or waiting); cleared with the answer CCCD */
     uint16_t mtu;
 } claude_peer_t;
 
@@ -56,11 +59,12 @@ int claude_links_slot(const claude_links_t *l, uint16_t conn);
 bool claude_links_answer(claude_links_t *l, uint16_t conn, bool on);
 bool claude_links_voice(claude_links_t *l, uint16_t conn, bool on);
 void claude_links_mtu(claude_links_t *l, uint16_t conn, uint16_t mtu);
-/* The translator audio role moved (CLAUDE_CONN_NONE: nobody); a relay elsewhere loses its role */
+/* The translator audio role moved (CLAUDE_CONN_NONE: nobody); a relay elsewhere loses its role (it comes back with
+ * the audio role on its link), a Mac role on conn is dropped for good, a waiting relay hello on conn is granted */
 void claude_links_phone(claude_links_t *l, uint16_t conn);
 void claude_links_disconnected(claude_links_t *l, uint16_t conn);
-/* The hello of conn. false: refused (not subscribed, wrong connection for the role, role held elsewhere, or a
- * different role than the one it already has) */
+/* The hello of conn. true: conn holds the role now. false: not granted (not subscribed, a different role than the
+ * one it said before, or not allowed yet: wrong connection for the role or role held elsewhere, kept until it is) */
 bool claude_links_hello(claude_links_t *l, uint16_t conn, claude_role_t role);
 /* Request writes are taken (into that link's reassembly buffer) only from answer-subscribed connections */
 bool claude_links_may_write(const claude_links_t *l, uint16_t conn);
