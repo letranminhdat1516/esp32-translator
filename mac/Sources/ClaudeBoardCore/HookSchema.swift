@@ -31,5 +31,6 @@ public enum HookSchema {
     public static let alwaysAllow: AlwaysAllowStyle = .suggestionsVerbatim
     public static let questionAnswers: QuestionAnswerStyle = .updatedInputJoined
     /// SessionStart / SessionEnd fire from settings hooks (else: 2 h idle fallback)
+    /// Keep equal to SESSION_HOOKS in mac/claude_settings.py (which hooks the installer adds).
     public static let sessionHooks = true
 }

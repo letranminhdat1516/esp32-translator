@@ -143,3 +143,41 @@ private func rows(_ ms: some Collection<BoardMessage>) -> [SessionRow] {
     let new = [row(4, 40), row(3, 30), row(2, 25)]
     #expect(kinds(SessionSync.diff(old: old, new: new)) == ["rm1", "row4", "row2"])
 }
+
+@Test func aSlowHandOffNeverLeavesAStaleRowOnTheBoard() async {
+    let sent = Sent()
+    let hub = SessionHub(sessionHooks: true,
+                         post: { m in                      // the "working" row is slow to hand over
+                             if case .session(let r) = m, r.state == .working { try? await Task.sleep(for: .milliseconds(40)) }
+                             await sent.add(m)
+                         },
+                         finished: { await sent.add(.finished(id: 0, project: $0, line: $1)) })
+    await hub.boardInput(.mode(.claude))
+    async let first: Void = hub.record(hookEvent("UserPromptSubmit"))
+    try? await Task.sleep(for: .milliseconds(10))
+    await hub.record(hookEvent("Stop", extra: #","last_assistant_message":"Done.""#))
+    await first
+    try? await Task.sleep(for: .milliseconds(60))
+    let messages = await sent.messages
+    var last: [UInt32: SessionRow] = [:]
+    for m in messages { if case .session(let r) = m { last[r.handle] = r } }
+    #expect(last.values.sorted { $0.handle < $1.handle } == (await hub.currentRows))
+    #expect(kinds(messages) == ["clear", "row1", "fin:alpha:Done.", "row1"])   // in event order
+}
+
+@Test func concurrentEventsNeverLeaveAStaleRowOnTheBoard() async {
+    let sent = Sent()
+    let hub = SessionHub(sessionHooks: true,
+                         post: { m in for _ in 0..<Int.random(in: 0...3) { await Task.yield() }; await sent.add(m) },
+                         finished: { _, _ in })
+    await hub.boardInput(.mode(.claude))
+    await withTaskGroup(of: Void.self) { g in
+        for i in 0..<40 {
+            g.addTask { await hub.record(hookEvent(i % 2 == 0 ? "UserPromptSubmit" : "Stop", sid: "s\(i % 3)")) }
+        }
+    }
+    try? await Task.sleep(for: .milliseconds(20))
+    var last: [UInt32: SessionRow] = [:]
+    for m in await sent.messages { if case .session(let r) = m { last[r.handle] = r } }
+    #expect(last.values.sorted { $0.handle < $1.handle } == (await hub.currentRows).sorted { $0.handle < $1.handle })
+}

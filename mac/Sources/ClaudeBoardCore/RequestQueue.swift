@@ -77,7 +77,7 @@ public actor RequestQueue {
         let messages = build(id)
         let timer = Task { [timeout] in
             try? await Task.sleep(for: timeout)
-            if !Task.isCancelled { await self.finish(id, with: nil, cancelOnBoard: true) }
+            if !Task.isCancelled { self.finish(id, with: nil, cancelOnBoard: true) }   // runs on the queue
         }
         defer { timer.cancel() }
         return await withTaskCancellationHandler {

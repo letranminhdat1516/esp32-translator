@@ -137,7 +137,11 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
             return
         }
         guard c.isNotifying else {
+            // Unsubscribed without a disconnect: send drops everything from now on, so report "not ready"
+            // (requests fall through, the session hub resyncs fully on the next activation).
+            let was = subscribed
             subscribed = false
+            if was { onConnectionChange?(false) }
             return
         }
         subscribed = true

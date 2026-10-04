@@ -22,6 +22,12 @@ public actor SessionHub {
     private let post: @Sendable (BoardMessage) async -> Void
     private let finished: @Sendable (String, String) async -> Void
     private let clock: @Sendable () -> Int64
+    /// Board traffic in the order it was decided. `post` suspends (it hops to another actor), and other events
+    /// run on the hub meanwhile: one drainer at a time keeps their messages in this order, so a newer row is
+    /// never overtaken by an older one.
+    private enum Out { case board(BoardMessage), finished(project: String, line: String) }
+    private var outbox: [Out] = []
+    private var draining = false
 
     public init(sessionHooks: Bool,
                 post: @escaping @Sendable (BoardMessage) async -> Void,
@@ -39,7 +45,7 @@ public actor SessionHub {
 
     public func record(_ e: HookEvent) async {
         if case .focusedDone(let project, let line) = tracker.record(e, now: clock()) {
-            await finished(project, line)
+            outbox.append(.finished(project: project, line: line))
         }
         await push()
     }
@@ -76,12 +82,33 @@ public actor SessionHub {
         await push()
     }
 
+    /// Queues what the board needs to match the tracker (nothing while it shows another mode), then delivers.
     private func push() async {
-        guard mode != .other else { return }
+        guard mode != .other else { await deliver(); return }
         let rows = tracker.rows()
         var messages: [BoardMessage] = shown == nil ? [.sessionsClear] : []
         messages += SessionSync.diff(old: shown ?? [:], new: rows)
-        shown = Dictionary(uniqueKeysWithValues: rows.map { ($0.handle, $0) })   // before awaiting: reentrancy
-        for m in messages { await post(m) }
+        shown = Dictionary(uniqueKeysWithValues: rows.map { ($0.handle, $0) })
+        outbox += messages.map(Out.board)
+        await deliver()
     }
+
+    /// Hands the outbox over in order. A call that finds a drainer already running returns at once: that
+    /// drainer delivers its messages too.
+    private func deliver() async {
+        guard !draining else { return }
+        draining = true
+        while !outbox.isEmpty {
+            switch outbox.removeFirst() {
+            case .board(let m): await post(m)
+            case .finished(let project, let line): await finished(project, line)
+            }
+        }
+        draining = false
+    }
+}
+
+extension SessionHub {
+    /// The rows as the tracker has them now (tests)
+    var currentRows: [SessionRow] { tracker.rows() }
 }

@@ -9,7 +9,7 @@ import json, os, plistlib, sys, tempfile, time
 
 # Hook spike (docs/superpowers/notes/2026-10-04-hook-spike.md, Decisions table, SESSION_HOOKS):
 # SessionStart / SessionEnd fire from settings hooks. If False the daemon ends silent sessions after 2 h.
-SESSION_HOOKS = True
+SESSION_HOOKS = True  # keep equal to HookSchema.sessionHooks (Sources/ClaudeBoardCore/HookSchema.swift)
 
 # (event, extra keys of the matcher entry, extra keys of our hook object)
 HOOKS = [
