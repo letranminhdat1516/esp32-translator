@@ -101,3 +101,44 @@ private let mode = BoardInput.mode(.claude)
     r.voiceAudio(Data(count: 85), from: .direct); r.flush()
     #expect(log.all == ["audio 85"])
 }
+
+/// Direct and relay ready, the board followed to the relay (direct stale)
+private func onTheRelayWithDirectStale() -> (BoardRouter, RouterLog) {
+    let (r, log) = makeRouter()
+    r.pathReady(.direct, true); r.pathReady(.relay, true); r.input(mode, from: .relay); r.flush()
+    log.clear()
+    return (r, log)
+}
+
+private let answering: [BoardInput] = [.choice(id: 5, .allow), .answers(id: 5, masks: [1]), .voiceSend(voice: 3)]
+
+@Test func anAnswerThatSwitchesThePathIsDropped() {
+    for input in answering {
+        let (r, log) = onTheRelayWithDirectStale()
+        r.input(input, from: .direct); r.flush()          // direct takes over, but the answer belongs to the relay's screen
+        #expect(r.activePath == .direct && log.all == ["down", "up"], "\(input)")
+    }
+    let (r, log) = onTheRelayWithDirectStale()
+    r.input(.focus(handle: 9), from: .direct); r.flush()  // inputs that cannot answer still arrive
+    #expect(log.all == ["down", "up", "input \(BoardInput.focus(handle: 9))"])
+}
+
+@Test func onlyTheModeReportFollowsTheBoardToTheRelay() {
+    let (r, log) = makeRouter()
+    r.pathReady(.direct, true); r.pathReady(.relay, true); r.flush()
+    log.clear()
+    for input in answering + [.focus(handle: 9), .voiceCancel(voice: 3)] {
+        r.input(input, from: .relay); r.flush()
+        #expect(r.activePath == .direct && log.all.isEmpty, "\(input)")
+    }
+    r.input(mode, from: .relay); r.flush()
+    #expect(r.activePath == .relay && log.all == ["down", "up", "input \(mode)"])
+}
+
+@Test func aRepeatedDirectReadyDoesNotClearStale() {
+    let (r, log) = onTheRelayWithDirectStale()
+    r.pathReady(.direct, true); r.flush()                // no change in readiness: the board is still on the relay
+    #expect(r.activePath == .relay && log.all.isEmpty)
+    r.send(.sessionsClear)
+    #expect(log.all == ["send relay 6"])
+}

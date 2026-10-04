@@ -140,6 +140,7 @@ public final class RoutedVoiceEngine: VoiceEngine, @unchecked Sendable {
     private let path: @Sendable () -> BoardPath?
     private let lock = NSLock()
     private var localReady = false
+    private var decided: BoardPath?   // the path `prepare` chose; `begin` of the same capture uses it
 
     public init(local: (any VoiceEngine)?, relay: any VoiceEngine, path: @escaping @Sendable () -> BoardPath?) {
         self.local = local
@@ -147,8 +148,12 @@ public final class RoutedVoiceEngine: VoiceEngine, @unchecked Sendable {
         self.path = path
     }
 
+    /// Reads the path once for the capture: VoiceHub calls `prepare` then `begin`, and both use this decision
+    /// (a path change in between reaches VoiceHub as a disconnect, which cancels the capture)
     public func prepare() async -> String? {
-        if path() == .relay { return await relay.prepare() }
+        let p = path()
+        lock.withLock { decided = p }
+        if p == .relay { return await relay.prepare() }
         guard let local else { return "Voice needs macOS 26 on the Mac" }
         if lock.withLock({ localReady }) { return nil }
         let why = await local.prepare()
@@ -157,7 +162,8 @@ public final class RoutedVoiceEngine: VoiceEngine, @unchecked Sendable {
     }
 
     public func begin(onPartial: @escaping @Sendable (String) -> Void) async throws -> any VoiceStream {
-        if path() == .relay { return try await relay.begin(onPartial: onPartial) }
+        let p = lock.withLock { () -> BoardPath? in defer { decided = nil }; return decided } ?? path()
+        if p == .relay { return try await relay.begin(onPartial: onPartial) }
         guard let local else { throw Unavailable.noLocalEngine }
         return try await local.begin(onPartial: onPartial)
     }

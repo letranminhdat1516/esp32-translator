@@ -112,6 +112,22 @@ private final class RelaySent: @unchecked Sendable {
     #expect(await noLocal.prepare() == "Voice needs macOS 26 on the Mac")
 }
 
+@Test func routedEngineDecidesThePathOncePerCapture() async throws {
+    let local = FakeEngine(finals: ["local"])
+    let relayFrames = RelaySent()
+    let relay = RelayVoiceEngine(send: { relayFrames.add($0) })
+    relay.setStatus(nil)
+    let path = PathBox()
+    path.value = .relay
+    let routed = RoutedVoiceEngine(local: local, relay: relay, path: { path.value })
+    #expect(await routed.prepare() == nil)
+    path.value = .direct                                    // changes between the precheck and the start
+    _ = try await routed.begin { _ in }
+    #expect(local.streams.isEmpty && relayFrames.all.count == 1)
+    _ = try await routed.begin { _ in }                     // the next capture reads the path again
+    #expect(local.streams.count == 1)
+}
+
 private final class PathBox: @unchecked Sendable {
     private let lock = NSLock()
     private var p: BoardPath?
