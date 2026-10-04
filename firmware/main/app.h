@@ -5,6 +5,7 @@
 
 #include "claude_proto.h"
 #include "lvgl.h"
+#include "modes.h"
 
 /* Board microphone streaming state */
 typedef enum {
@@ -77,6 +78,7 @@ bool pmu_usb_powered(void);
 
 /* claude_ui.c: Claude companion screen */
 void claude_ui_init(void);
+lv_obj_t *claude_ui_screen(void);
 void claude_ui_present_request(void);               /* request takes over the screen; restored when done */
 bool claude_ui_visible(void);
 void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
@@ -84,6 +86,20 @@ void claude_ui_set_link(bool connected);
 void claude_ui_toggle(void);                        /* atomic Translator <-> Claude switch */
 void claude_ui_set_touch_enabled(bool on);          /* LVGL task: Allow/Deny ignore taps while the panel is dark */
 bool claude_ui_pending(void);                       /* a permission request awaits an answer */
+
+/* lock_ui.c: lock screen (pixel cat, clock, battery) */
+void lock_ui_init(void);
+lv_obj_t *lock_ui_screen(void);
+void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the cat */
+
+/* picker_ui.c: Claude session picker (Phase 1: placeholder) */
+void picker_ui_init(void);
+lv_obj_t *picker_ui_screen(void);
+
+/* shell.c: modes, lock and inputs (see modes.h) */
+void shell_start(void);
+void shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks */
+void shell_snapshot(modes_t *out);                  /* current state, for the panel policy */
 
 /* chime.c: non-blocking notification chime on the speaker */
 typedef enum { CHIME_REQUEST, CHIME_DONE } chime_t;

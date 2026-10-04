@@ -173,6 +173,11 @@ void claude_ui_init(void)
     bsp_display_unlock();
 }
 
+lv_obj_t *claude_ui_screen(void)
+{
+    return s_scr;
+}
+
 void claude_ui_present_request(void)
 {
     bsp_display_lock((uint32_t)-1);
