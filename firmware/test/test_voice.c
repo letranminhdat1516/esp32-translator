@@ -55,8 +55,14 @@ static void vad_caps_a_long_capture(void)
 {
     voice_vad_t v;
     voice_vad_init(&v);
-    assert(feed(&v, -30.0f, VOICE_MAX_FRAMES - 1) == VOICE_VAD_GO);
-    assert(voice_vad_step(&v, -30.0f) == VOICE_VAD_MAX);
+    /* Talking without a 1.5 s pause: 200 ms of speech, 100 ms between words */
+    voice_vad_result_t r = VOICE_VAD_GO;
+    int n = 0;
+    while (r == VOICE_VAD_GO) {
+        r = voice_vad_step(&v, n % 15 < 10 ? -30.0f : -60.0f);
+        n++;
+    }
+    assert(r == VOICE_VAD_MAX && n == VOICE_MAX_FRAMES);
 }
 
 static void vad_floor_is_clamped_after_a_near_silent_frame(void)
@@ -65,12 +71,37 @@ static void vad_floor_is_clamped_after_a_near_silent_frame(void)
     voice_vad_init(&v);
     assert(voice_vad_step(&v, -110.0f) == VOICE_VAD_GO);               /* one near-silent frame (codec start) */
     assert(v.floor_db == VOICE_FLOOR_MIN_DB);                          /* not pinned near -100 dB */
-    /* A steady hum just above VOICE_MIN_DB: the floor must catch up (and end the capture) before the 30 s cap */
+    /* It leaves the floor window after 1.5 s: a steady hum after it is room noise again, not speech */
     voice_vad_result_t r = VOICE_VAD_GO;
+    int n = 1;
     while (r == VOICE_VAD_GO) {
         r = voice_vad_step(&v, -56.0f);
+        n++;
     }
-    assert(r == VOICE_VAD_SILENCE);
+    assert(n <= VOICE_FLOOR_WINDOW_FRAMES + VOICE_SILENCE_FRAMES + 1);   /* ~3 s, not the 30 s cap */
+}
+
+static void vad_steady_noise_is_nothing(void)
+{
+    voice_vad_t v;
+    voice_vad_init(&v);
+    /* A loud room (fan, traffic) well above VOICE_MIN_DB: still nothing said after 5 s */
+    assert(feed(&v, -40.0f, VOICE_NOTHING_FRAMES - 1) == VOICE_VAD_GO);
+    assert(voice_vad_step(&v, -40.0f) == VOICE_VAD_NOTHING);
+}
+
+static void vad_speech_over_a_noisy_bed(void)
+{
+    voice_vad_t v;
+    voice_vad_init(&v);
+    assert(feed(&v, -45.0f, 25) == VOICE_VAD_GO);                      /* 0.5 s of the bed */
+    for (int i = 0; i < 4; i++) {
+        assert(feed(&v, -30.0f, 15) == VOICE_VAD_GO);                  /* 300 ms words */
+        assert(feed(&v, -45.0f, 15) == VOICE_VAD_GO);                  /* 300 ms gaps */
+    }
+    assert(v.heard);
+    /* 1.5 s after the last word (15 gap frames already passed) */
+    assert(feed(&v, -45.0f, VOICE_SILENCE_FRAMES - 15) == VOICE_VAD_SILENCE);
 }
 
 static voice_flow_t f;   /* about 0.8 KB: static, as on the board */
@@ -215,6 +246,8 @@ int main(void)
     vad_click_is_not_speech();
     vad_caps_a_long_capture();
     vad_floor_is_clamped_after_a_near_silent_frame();
+    vad_steady_noise_is_nothing();
+    vad_speech_over_a_noisy_bed();
     begin_encodes_the_start();
     command_round_trip();
     final_may_arrive_before_the_capture_callback();

@@ -40,6 +40,9 @@ static const char *TAG = "ble";
 #if !defined(CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE) || CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE < 6144
 #error "Stale sdkconfig (NimBLE host task stack < 6144): delete firmware/sdkconfig and rebuild"
 #endif
+#if !defined(CONFIG_BT_NIMBLE_MAX_CCCDS) || CONFIG_BT_NIMBLE_MAX_CCCDS < 16
+#error "Stale sdkconfig (NimBLE CCCDs < 16): delete firmware/sdkconfig and rebuild"
+#endif
 
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
                                         0x1e, 0x4c, 0x2f, 0x3b, (last), 0x00, 0xc0, 0xa7)
@@ -73,7 +76,11 @@ static uint16_t s_ctrl_handle;
 static uint16_t s_claude_req_handle;
 static uint16_t s_claude_ans_handle;
 static uint16_t s_claude_voice_handle;
-static volatile bool s_voice_on;   /* the Mac (s_mac_conn) subscribed to the voice characteristic */
+/* The connection subscribed to the voice characteristic, whatever its role: its CCCD may be written (or restored
+ * from the bond) before the answer CCCD makes it the Mac. Voice is live when it is s_mac_conn. */
+static volatile uint16_t s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
+/* One 20 ms ADPCM frame per notification: 5 header + 160 data bytes + 3 ATT */
+#define VOICE_MIN_MTU 168
 static claude_rx_t s_claude_rx;
 
 /* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
@@ -247,11 +254,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
             app_on_connection_changed(false);
         }
+        if (event->disconnect.conn.conn_handle == s_voice_conn) {
+            s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
+        }
         if (event->disconnect.conn.conn_handle == s_mac_conn) {
             s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
             s_claude_rx.len = 0;
-            s_voice_on = false;
-            app_on_claude_link(false);
+            app_on_claude_link(false);   /* also ends voice (main.c) */
         }
         start_advertising();
         break;
@@ -274,20 +283,26 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 s_mac_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
                 if (!on) {
                     s_claude_rx.len = 0;
-                    s_voice_on = false;   /* voice belongs to the Claude role */
                 }
                 ESP_LOGI(TAG, "Mac Claude link %s", on ? "on" : "off");
-                app_on_claude_link(on);
+                app_on_claude_link(on);   /* off also ends voice (main.c) */
+                if (on && s_voice_conn == event->subscribe.conn_handle) {
+                    app_on_claude_voice_link(true);   /* voice was subscribed first */
+                }
             }
         } else if (event->subscribe.attr_handle == s_claude_voice_handle) {
-            /* Only the Mac that holds the Claude role streams voice */
-            if (event->subscribe.conn_handle == s_mac_conn) {
-                bool on = event->subscribe.cur_notify;
-                if (on != s_voice_on) {
-                    s_voice_on = on;
-                    ESP_LOGI(TAG, "Mac voice %s", on ? "on" : "off");
-                    app_on_claude_voice_link(on);
-                }
+            uint16_t conn = event->subscribe.conn_handle;
+            bool on = event->subscribe.cur_notify;
+            if (on) {
+                s_voice_conn = conn;
+            } else if (s_voice_conn == conn) {
+                s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
+            }
+            /* Only the Mac that holds the Claude role streams voice; a voice CCCD seen before the answer one is
+             * kept and goes live when that one arrives */
+            if (conn == s_mac_conn) {
+                ESP_LOGI(TAG, "Mac voice %s", on ? "on" : "off");
+                app_on_claude_voice_link(on);
             }
         }
         break;
@@ -303,6 +318,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %d", event->mtu.value);
+        if (event->mtu.conn_handle == s_mac_conn && s_voice_conn == s_mac_conn) {
+            app_on_claude_voice_link(true);   /* voice waits for a full-frame MTU: Speak may appear now */
+        }
         break;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -369,9 +387,14 @@ static void hash_bytes(uint32_t *h, const void *data, size_t len)
     }
 }
 
-/* Bonded peers (the Mac, the iPhone) cache this GATT table. When a firmware update changes it (Phase 3 added the
- * voice characteristic), mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects,
- * and the peer rediscovers. Without it macOS keeps the old table and never sees the new characteristic. */
+/* Bonded peers cache this GATT table. When a firmware update changes it (Phase 3 added the voice characteristic),
+ * mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects, and the peer
+ * rediscovers. Without it macOS keeps the old table and never sees the new characteristic.
+ * The range starts at the Claude service: the translator service before it keeps its handles, and the iPhone app
+ * does not handle a services change (its characteristic references would go stale). The Mac daemon rediscovers.
+ * Known limits: the hash is stored right away, before any peer got the indication (NimBLE persists the pending
+ * indication per bonded peer, but a peer that bonds later never needs it); a change to the translator service or
+ * the GAP / GATT services would need its own range (they are not hashed here). */
 static void announce_gatt_changes(void)
 {
     uint32_t hash = 2166136261u;
@@ -388,11 +411,14 @@ static void announce_gatt_changes(void)
     }
     uint32_t stored = 0;
     if (nvs_get_u32(nvs, "gatt_hash", &stored) != ESP_OK || stored != hash) {
-        ESP_LOGI(TAG, "GATT table changed (%08lx -> %08lx): Service Changed for bonded peers", (unsigned long)stored,
-                 (unsigned long)hash);
-        ble_svc_gatt_changed(0x0001, 0xffff);
-        nvs_set_u32(nvs, "gatt_hash", hash);
-        nvs_commit(nvs);
+        uint16_t start;
+        if (ble_gatts_find_svc(&s_claude_svc_uuid.u, &start) == 0) {
+            ESP_LOGI(TAG, "GATT table changed (%08lx -> %08lx): Service Changed 0x%04x..0xffff for bonded peers",
+                     (unsigned long)stored, (unsigned long)hash, start);
+            ble_svc_gatt_changed(start, 0xffff);
+            nvs_set_u32(nvs, "gatt_hash", hash);
+            nvs_commit(nvs);
+        }
     }
     nvs_close(nvs);
 }
@@ -489,14 +515,37 @@ bool ble_link_claude_connected(void)
     return s_mac_conn != BLE_HS_CONN_HANDLE_NONE;
 }
 
-bool ble_link_send_claude_input(const uint8_t *data, size_t len)
+static int send_claude_input(const uint8_t *data, size_t len)
 {
     uint16_t conn = s_mac_conn;
     if (conn == BLE_HS_CONN_HANDLE_NONE || len == 0 || len > CLAUDE_INPUT_MAX) {
-        return false;
+        return BLE_HS_ENOTCONN;
     }
     struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
-    return om && ble_gatts_notify_custom(conn, s_claude_ans_handle, om) == 0;
+    if (om == NULL) {
+        return BLE_HS_ENOMEM;
+    }
+    return ble_gatts_notify_custom(conn, s_claude_ans_handle, om);
+}
+
+bool ble_link_send_claude_input(const uint8_t *data, size_t len)
+{
+    return send_claude_input(data, len) == 0;
+}
+
+bool ble_link_send_claude_input_retry(const uint8_t *data, size_t len)
+{
+    for (int attempt = 0; attempt < 3; attempt++) {
+        int rc = send_claude_input(data, len);
+        if (rc == 0) {
+            return true;
+        }
+        if (rc != BLE_HS_ENOMEM) {
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));   /* buffers free up as the radio drains them */
+    }
+    return false;
 }
 
 bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
@@ -506,9 +555,17 @@ bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
     return ble_link_send_claude_input(payload, sizeof(payload));
 }
 
+uint16_t ble_link_mac_mtu(void)
+{
+    uint16_t conn = s_mac_conn;
+    return conn == BLE_HS_CONN_HANDLE_NONE ? 0 : ble_att_mtu(conn);
+}
+
+/* The Mac subscribed to voice and the MTU fits a full frame per notification (the link has settled) */
 bool ble_link_voice_ready(void)
 {
-    return s_mac_conn != BLE_HS_CONN_HANDLE_NONE && s_voice_on;
+    uint16_t conn = s_mac_conn;
+    return conn != BLE_HS_CONN_HANDLE_NONE && s_voice_conn == conn && ble_att_mtu(conn) >= VOICE_MIN_MTU;
 }
 
 uint16_t ble_link_voice_payload_max(void)
@@ -523,7 +580,7 @@ bool ble_link_send_voice(const uint8_t *data, uint16_t len)
 {
     for (int attempt = 0; attempt < 5; attempt++) {
         uint16_t conn = s_mac_conn;
-        if (conn == BLE_HS_CONN_HANDLE_NONE || !s_voice_on) {
+        if (conn == BLE_HS_CONN_HANDLE_NONE || s_voice_conn != conn) {
             return false;
         }
         struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);

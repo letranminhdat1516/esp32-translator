@@ -13,18 +13,34 @@ static void copy_text(char dst[CLAUDE_TEXT_MAX + 1], const char *src)
 void voice_vad_init(voice_vad_t *v)
 {
     memset(v, 0, sizeof(*v));
-    v->floor_db = -60.0f;
+    v->floor_db = VOICE_FLOOR_MIN_DB;
 }
 
 voice_vad_result_t voice_vad_step(voice_vad_t *v, float db)
 {
-    v->frames++;
-    /* Noise floor: drops at once to quieter frames, rises slowly so speech does not lift it */
-    if (db < v->floor_db) {
-        v->floor_db = db < VOICE_FLOOR_MIN_DB ? VOICE_FLOOR_MIN_DB : db;
-    } else {
-        v->floor_db += VOICE_FLOOR_RISE_DB;
+    /* Noise floor: the quietest frame of the last 1.5 s (a sliding minimum over 5-frame blocks). Steady noise,
+     * however loud, is its own floor; speech has gaps, so the floor stays at the room level under it. */
+    int in_block = v->frames % VOICE_FLOOR_BLOCK;
+    if (in_block == 0 && v->frames > 0) {
+        v->block = (v->block + 1) % VOICE_FLOOR_BLOCKS;
     }
+    if (in_block == 0 || db < v->block_min[v->block]) {
+        v->block_min[v->block] = db;
+    }
+    v->frames++;
+    int blocks = (v->frames + VOICE_FLOOR_BLOCK - 1) / VOICE_FLOOR_BLOCK;
+    if (blocks > VOICE_FLOOR_BLOCKS) {
+        blocks = VOICE_FLOOR_BLOCKS;
+    }
+    float floor_db = v->block_min[v->block];
+    for (int i = 1; i < blocks; i++) {
+        float m = v->block_min[(v->block + VOICE_FLOOR_BLOCKS - i) % VOICE_FLOOR_BLOCKS];
+        if (m < floor_db) {
+            floor_db = m;
+        }
+    }
+    v->floor_db = floor_db < VOICE_FLOOR_MIN_DB ? VOICE_FLOOR_MIN_DB : floor_db;
+
     bool voiced = db > v->floor_db + VOICE_MARGIN_DB && db > VOICE_MIN_DB;
     v->above = voiced ? v->above + 1 : 0;
     if (v->above >= VOICE_START_FRAMES) {

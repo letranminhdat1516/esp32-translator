@@ -106,6 +106,21 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
         p.discoverCharacteristics([Self.requestChar, Self.answerChar, Self.voiceChar], for: s)
     }
 
+    /// The board's GATT table changed (Service Changed after a firmware update): our characteristic references
+    /// are stale. Drop them, report "not ready", and rediscover; the usual flow resubscribes answer, then voice.
+    func peripheral(_ p: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        guard peripheral === p, invalidatedServices.contains(where: { $0.uuid == Self.claudeService }) else { return }
+        log("Claude service changed; rediscovering")
+        request = nil
+        voice = nil
+        subscribeRetried = false
+        if subscribed {
+            subscribed = false
+            onConnectionChange?(false)
+        }
+        p.discoverServices([Self.claudeService])
+    }
+
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor s: CBService, error: Error?) {
         var answer: CBCharacteristic?
         for c in s.characteristics ?? [] {

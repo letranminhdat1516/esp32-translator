@@ -222,9 +222,10 @@ bool voice_ui_start_locked(uint8_t purpose, uint8_t question, uint32_t target)
     }
     lv_obj_set_hidden(s_box, false);
     /* The start goes out before the first packet: the audio task only streams after audio_in_voice_start */
-    if (!ble_link_voice_ready() || !ble_link_send_claude_input(out, n) || !audio_in_voice_start(id)) {
-        ESP_LOGW(TAG, "voice %lu: start not sent (voice link %d)", (unsigned long)id, ble_link_voice_ready());
-        voice_fail(&s_flow, "Mac not connected.");
+    if (!ble_link_voice_ready() || !ble_link_send_claude_input_retry(out, n) || !audio_in_voice_start(id)) {
+        ESP_LOGW(TAG, "voice %lu: start not sent (voice link %d, MTU %u)", (unsigned long)id, ble_link_voice_ready(),
+                 (unsigned)ble_link_mac_mtu());
+        voice_fail(&s_flow, ble_link_claude_connected() ? "Couldn't start — try again" : "Mac not connected.");
         on_result();
     } else {
         ESP_LOGI(TAG, "voice %lu: start (purpose %u, target %lu)", (unsigned long)id, (unsigned)purpose,
