@@ -65,6 +65,41 @@ public enum ProcessTree {
         return p.kp_eproc.e_tpgid > 0 && p.kp_eproc.e_pgid == p.kp_eproc.e_tpgid
     }
 
+    /// Processes in `pid`'s process group that descend from it and have a terminal open (Ctrl-G $EDITOR, any
+    /// child that inherited the terminal): keys typed into the pane could reach them. Children in their own session
+    /// (Claude Code's Bash tool) are not in the group; MCP servers are, but hold only pipes and /dev/null.
+    /// A member whose descriptors cannot be read counts as holding the terminal.
+    public static func ttyDescendants(of pid: Int32) -> [Int32] {
+        guard let pgid = info(pid)?.kp_eproc.e_pgid, pgid > 0 else { return [] }
+        return group(pgid).filter { $0 != pid && chain(from: $0, max: 64).contains(pid) && holdsTerminal($0) }
+    }
+
+    private static func group(_ pgid: Int32) -> [Int32] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PGRP, pgid]
+        var size = 0
+        guard sysctl(&mib, u_int(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        size += 8 * MemoryLayout<kinfo_proc>.stride                 // room for processes started meanwhile
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, u_int(mib.count), &procs, &size, nil, 0) == 0 else { return [] }
+        return procs.prefix(size / MemoryLayout<kinfo_proc>.stride).map { $0.kp_proc.p_pid }
+    }
+
+    private static func holdsTerminal(_ pid: Int32) -> Bool {
+        let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard bytes > 0 else { return true }
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / MemoryLayout<proc_fdinfo>.stride + 8)
+        let got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * MemoryLayout<proc_fdinfo>.stride))
+        guard got > 0 else { return true }
+        for fd in fds.prefix(Int(got) / MemoryLayout<proc_fdinfo>.stride) where fd.proc_fdtype == PROX_FDTYPE_VNODE {
+            var vnode = vnode_fdinfowithpath()
+            let size = Int32(MemoryLayout<vnode_fdinfowithpath>.stride)
+            guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &vnode, size) == size else { continue }
+            let path = withUnsafeBytes(of: vnode.pvip.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+            if path.hasPrefix("/dev/tty") || path.hasPrefix("/dev/pty") { return true }
+        }
+        return false
+    }
+
     private static func info(_ pid: Int32) -> kinfo_proc? {
         guard pid > 0 else { return nil }
         var info = kinfo_proc()
@@ -102,15 +137,18 @@ public struct TmuxTyper: PaneTyping {
     private let run: Runner?
     private let parentOf: @Sendable (Int32) -> Int32?
     private let isForeground: @Sendable (Int32) -> Bool
+    private let ttyDescendants: @Sendable (Int32) -> [Int32]
     private let socketIsUsers: @Sendable (String) -> Bool
     private let enterDelay: Duration
 
     public init(run: Runner?, parentOf: @escaping @Sendable (Int32) -> Int32?,
                 isForeground: @escaping @Sendable (Int32) -> Bool,
+                ttyDescendants: @escaping @Sendable (Int32) -> [Int32],
                 socketIsUsers: @escaping @Sendable (String) -> Bool, enterDelay: Duration = .milliseconds(200)) {
         self.run = run
         self.parentOf = parentOf
         self.isForeground = isForeground
+        self.ttyDescendants = ttyDescendants
         self.socketIsUsers = socketIsUsers
         self.enterDelay = enterDelay
     }
@@ -119,7 +157,8 @@ public struct TmuxTyper: PaneTyping {
     public static func system() -> TmuxTyper {
         let path = candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
         return TmuxTyper(run: path.map { processRunner(tmux: $0) }, parentOf: { ProcessTree.parent(of: $0) },
-                         isForeground: { ProcessTree.isForeground($0) }, socketIsUsers: { socketIsUsers($0) })
+                         isForeground: { ProcessTree.isForeground($0) },
+                         ttyDescendants: { ProcessTree.ttyDescendants(of: $0) }, socketIsUsers: { socketIsUsers($0) })
     }
 
     public func verify(_ t: PaneTarget) async -> String? {
@@ -137,6 +176,10 @@ public struct TmuxTyper: PaneTyping {
         }
         // Ctrl-Z leaves a shell prompt in the pane that would run the text as a command
         guard isForeground(session) else { return "Claude Code is suspended or in the background — nothing sent" }
+        // A program it runs on the terminal (Ctrl-G editor…) would take the keys instead
+        guard ttyDescendants(session).isEmpty else {
+            return "Claude is running another program in the terminal — nothing sent"
+        }
         // send-keys is copied to every synchronized pane in the window, and those are not verified
         guard f[5] == "0" else { return "Panes are synchronized — nothing sent" }
         guard f[3] == "0" else { return "The terminal is in copy mode — nothing sent" }

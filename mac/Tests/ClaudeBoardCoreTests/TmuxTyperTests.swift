@@ -31,9 +31,9 @@ private let target = PaneTarget(pane: "%3", socket: "/tmp/s", ancestors: [500, 4
 private let liveParents: @Sendable (Int32) -> Int32? = { [500: 400, 400: 300, 300: 1][$0] }
 
 private func typer(_ fake: FakeTmux, parentOf: @escaping @Sendable (Int32) -> Int32? = liveParents,
-                   foreground: Bool = true, socketIsUsers: Bool = true) -> TmuxTyper {
+                   foreground: Bool = true, others: [Int32] = [], socketIsUsers: Bool = true) -> TmuxTyper {
     TmuxTyper(run: fake.runner, parentOf: parentOf, isForeground: { _ in foreground },
-              socketIsUsers: { _ in socketIsUsers }, enterDelay: .zero)
+              ttyDescendants: { _ in others }, socketIsUsers: { _ in socketIsUsers }, enterDelay: .zero)
 }
 
 private let goodInfo = "%3\t400\t0\t0\t1\t0\n"
@@ -91,7 +91,8 @@ private let goodInfo = "%3\t400\t0\t0\t1\t0\n"
 }
 
 @Test func noTmuxOrNoTextIsRefused() async {
-    let none = TmuxTyper(run: nil, parentOf: liveParents, isForeground: { _ in true }, socketIsUsers: { _ in true })
+    let none = TmuxTyper(run: nil, parentOf: liveParents, isForeground: { _ in true }, ttyDescendants: { _ in [] },
+                         socketIsUsers: { _ in true })
     #expect(await none.type("x", into: target) == .failed("tmux not found on the Mac — nothing sent"))
     let fake = FakeTmux(info: goodInfo)
     #expect(await typer(fake).type("", into: target) == .failed("Nothing to send"))
@@ -123,16 +124,24 @@ private let goodInfo = "%3\t400\t0\t0\t1\t0\n"
     #expect(fake.sendCalls.isEmpty)
 }
 
+@Test func programRunByClaudeIsRefused() async {
+    // Ctrl-G $EDITOR (vim) or any child sharing Claude's process group and the terminal would get the keys
+    let fake = FakeTmux(info: goodInfo)
+    #expect(await typer(fake, others: [800]).type("x", into: target)
+            == .failed("Claude is running another program in the terminal — nothing sent"))
+    #expect(fake.sendCalls.isEmpty)
+}
+
 @Test func foregroundIsCheckedOnTheSessionProcess() async {
     // The chain member just below the pane process (Claude Code, 500), or the pane process itself when it is the
     // hook's direct parent
     let asked = FakeTmux(info: goodInfo)
     let seen = Locked<[Int32]>([])
     let t = TmuxTyper(run: asked.runner, parentOf: liveParents, isForeground: { seen.append($0); return true },
-                      socketIsUsers: { _ in true }, enterDelay: .zero)
+                      ttyDescendants: { seen.append(-$0); return [] }, socketIsUsers: { _ in true }, enterDelay: .zero)
     #expect(await t.verify(target) == nil)
     #expect(await t.verify(PaneTarget(pane: "%3", socket: "/tmp/s", ancestors: [400, 300])) == nil)
-    #expect(seen.value == [500, 400])
+    #expect(seen.value == [500, -500, 400, -400])
 }
 
 @Test func uncleanTextIsRefused() async {
@@ -263,7 +272,7 @@ private struct PrivateTmux {
 
     var typer: TmuxTyper {
         TmuxTyper(run: run, parentOf: { ProcessTree.parent(of: $0) }, isForeground: { ProcessTree.isForeground($0) },
-                  socketIsUsers: { TmuxTyper.socketIsUsers($0) }, enterDelay: .milliseconds(100))
+                  ttyDescendants: { ProcessTree.ttyDescendants(of: $0) }, socketIsUsers: { TmuxTyper.socketIsUsers($0) }, enterDelay: .milliseconds(100))
     }
 }
 
@@ -319,4 +328,41 @@ func realTmuxRefusesASuspendedSession() async throws {
     let screen = await t.lines(pane)
     #expect(screen.filter { $0 == "hello" }.count == 2, "\(screen)")
     #expect(!screen.contains { $0.contains("pwned") }, "\(screen)")
+}
+
+/// Starts `script` with sh inside a marked pane's shell (the inner sh plays Claude Code): its target and pid
+private func standIn(_ t: PrivateTmux, _ script: String) async throws -> (String, PaneTarget) {
+    let (pane, shPid) = try await t.start("exec /bin/sh")
+    _ = await t.run(["-S", t.sock, "send-keys", "-t", pane, "-l", "exec 2>/dev/null; PS1='$ '; sh -c '\(script)'"])
+    _ = await t.run(["-S", t.sock, "send-keys", "-t", pane, "Enter"])
+    try await Task.sleep(for: .milliseconds(500))
+    let claude = try #require(Int32(runNow("/usr/bin/pgrep", ["-P", "\(shPid)", "sh"])
+        .trimmingCharacters(in: .whitespacesAndNewlines)))
+    await t.mark(pane)
+    return (pane, PaneTarget(pane: pane, socket: t.sock, ancestors: [claude, shPid]))
+}
+
+@Test(.enabled(if: tmuxPath != nil, "tmux is not installed"))
+func realTmuxRefusesAProgramClaudeRunsInTheTerminal() async throws {
+    // Like Ctrl-G $EDITOR: a child in Claude's process group reading the terminal
+    let t = try PrivateTmux()
+    defer { t.close() }
+    let (pane, paneTarget) = try await standIn(t, "cat; true")
+    #expect(await t.typer.type("secret", into: paneTarget)
+            == .failed("Claude is running another program in the terminal — nothing sent"))
+    let screen = await t.lines(pane)
+    #expect(!screen.contains { $0.contains("secret") }, "\(screen)")
+}
+
+@Test(.enabled(if: tmuxPath != nil, "tmux is not installed"))
+func realTmuxAcceptsBackgroundHelpersOfClaude() async throws {
+    // Claude Code's Bash tool children run in their own session (setsid); MCP servers share its process group
+    // but have pipes or /dev/null, never the terminal: neither blocks voice
+    let t = try PrivateTmux()
+    defer { t.close() }
+    let (pane, paneTarget) = try await standIn(t,
+        "perl -MPOSIX -e \"setsid(); sleep 5\" & sleep 30 </dev/null >/dev/null 2>&1 & read x; echo got:$x; sleep 30")
+    #expect(await t.typer.type("hello", into: paneTarget) == .typed)
+    let screen = await t.lines(pane)
+    #expect(screen.contains("got:hello"), "\(screen)")
 }
