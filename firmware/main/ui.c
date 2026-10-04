@@ -35,6 +35,7 @@ static volatile int64_t s_last_activity_us;
 static bool s_screen_on = true;
 /* Double-tap off: stays dark (ignores taps and subtitles) until the next double-tap */
 static bool s_manual_off;
+static lv_obj_t *s_translator_scr;
 
 static void lock(void)
 {
@@ -94,6 +95,16 @@ static void on_double_tap(lv_event_t *e)
     set_screen(!s_manual_off);
 }
 
+void ui_attach_screen_gestures(lv_obj_t *screen)
+{
+    lv_obj_add_event_cb(screen, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
+}
+
+lv_obj_t *ui_translator_screen(void)
+{
+    return s_translator_scr;
+}
+
 void ui_set_level(int percent)
 {
     if (percent < 0) {
@@ -121,6 +132,12 @@ void ui_set_level(int percent)
 void ui_mark_activity(void)
 {
     s_last_activity_us = esp_timer_get_time();
+}
+
+void ui_force_screen_on(void)
+{
+    s_manual_off = false;
+    ui_mark_activity();
 }
 
 static void toast_done_cb(lv_timer_t *t)
@@ -170,6 +187,7 @@ void ui_init(void)
     s_last_activity_us = esp_timer_get_time();
     lock();
     lv_obj_t *scr = lv_screen_active();
+    s_translator_scr = scr;
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_set_style_text_color(scr, lv_color_white(), 0);
 
@@ -229,7 +247,7 @@ void ui_init(void)
     lv_obj_center(s_btn_label);
 
     lv_label_set_text(s_status, "Waiting for iPhone…");
-    lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
+    ui_attach_screen_gestures(scr);
     lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
 }

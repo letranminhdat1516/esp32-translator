@@ -56,12 +56,33 @@ void app_on_claude_link(bool connected)
         s_disconnected_since = esp_timer_get_time();
     }
     ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
+    claude_ui_set_link(connected);
     ui_mark_activity();
 }
 
+/* msg points to a static buffer overwritten by the next BLE write: consume it synchronously */
 void app_on_claude_message(const claude_msg_t *msg)
 {
-    ESP_LOGI(TAG, "claude msg kind=%d id=%lu text=\"%s\"", msg->kind, (unsigned long)msg->id, msg->text);
+    ESP_LOGI(TAG, "claude msg kind=%d id=%lu", msg->kind, (unsigned long)msg->id);
+    switch (msg->kind) {
+    case CLAUDE_PERMISSION:
+        claude_ui_on_message(msg);
+        claude_ui_show(true);        /* a request always takes over the screen */
+        ui_force_screen_on();
+        chime_play(CHIME_REQUEST);
+        break;
+    case CLAUDE_FINISHED:
+        claude_ui_on_message(msg);
+        ui_toast("Claude finished", 3000);
+        chime_play(CHIME_DONE);
+        break;
+    case CLAUDE_CANCEL:
+        claude_ui_on_message(msg);
+        break;
+    default:
+        ESP_LOGW(TAG, "ignoring unknown claude kind %d", msg->kind);
+        break;
+    }
 }
 
 static void enable_power_management(void)
@@ -81,8 +102,8 @@ static void enable_power_management(void)
 
 void app_switch_mode(void)
 {
-    /* Placeholder until the Claude companion mode is designed */
-    ui_toast("Claude mode: coming soon", 2500);
+    claude_ui_show(!claude_ui_visible());
+    ui_mark_activity();
 }
 
 void app_enter_deep_sleep(void)
@@ -123,10 +144,12 @@ void app_main(void)
     bsp_display_brightness_set(100);
     bsp_display_unlock();
     ui_init();
+    claude_ui_init();
 
     ble_link_init();
     audio_in_start();
     pmu_start();
+    chime_start();
 
     /* All mic on/off requests (from the on-screen button or the app) are handled here */
     rec_lang_t lang;

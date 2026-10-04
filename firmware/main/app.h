@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "claude_proto.h"
+#include "lvgl.h"
 
 /* Board microphone streaming state */
 typedef enum {
@@ -64,3 +65,20 @@ void ui_prepare_sleep(void);
 void ui_prepare_power_off(void);
 /* Temporarily replaces the status line (and wakes the screen) */
 void ui_toast(const char *utf8, uint32_t ms);
+/* Translator screen handle, wake override and double-tap gesture for other screens (ui.c) */
+lv_obj_t *ui_translator_screen(void);
+/* Wakes the panel and clears a double-tap screen-off (within ~250 ms) */
+void ui_force_screen_on(void);
+void ui_attach_screen_gestures(lv_obj_t *screen);
+
+/* claude_ui.c: Claude companion screen */
+void claude_ui_init(void);
+void claude_ui_show(bool show);
+bool claude_ui_visible(void);
+void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
+void claude_ui_set_link(bool connected);
+
+/* chime.c: non-blocking notification chime on the speaker */
+typedef enum { CHIME_REQUEST, CHIME_DONE } chime_t;
+void chime_start(void);
+void chime_play(chime_t kind);
