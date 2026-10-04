@@ -22,6 +22,9 @@ CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="ESP-Translator"
+# The host task runs the Claude handlers (LVGL builds of request / question pages under the display lock):
+# 4 KB is too tight. ble_link.c refuses to build with a stale sdkconfig below this.
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144
 
 # Keep the console readable: NimBLE logs every notification at INFO
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y

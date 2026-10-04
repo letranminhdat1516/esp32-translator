@@ -21,6 +21,8 @@
 #include "bsp/esp-bsp.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 
 #include "app.h"
@@ -45,7 +47,7 @@ static bool s_always_offered;            /* the pending permission carries a rul
 static bool s_touch_on = true;           /* false while the panel is dark */
 static bool s_link;
 static question_set_t s_qset;            /* pages of the question shown (or still arriving) */
-static claude_question_t s_page;         /* parse buffer: NimBLE host task only, ~0.4 KB off its stack */
+static claude_question_t s_page;         /* parse buffer: NimBLE host task only, ~0.4 KB off its 6 KB stack */
 
 /* Answer controls go live only ARM_DELAY_US after a request is shown, a page changes or the panel turns on,
  * and only for a press that began after that: a tap aimed at something else (or at a dark panel) never
@@ -351,7 +353,7 @@ void claude_ui_set_link(bool connected)
 
 bool claude_ui_on_message(const claude_msg_t *m)
 {
-    /* NimBLE host task only: static, kept off its 4 KB stack */
+    /* NimBLE host task only: static, kept off its 6 KB stack */
     static char text[CLAUDE_TEXT_MAX + 1];
     static char detail[CLAUDE_TEXT_MAX + 16];
     snprintf(text, sizeof(text), "%s", m->text);
@@ -359,10 +361,12 @@ bool claude_ui_on_message(const claude_msg_t *m)
     char *f[4];
     size_t nf = claude_split_lines(text, f, 4);
     bool show = false;
+    bool built_page = false;   /* a request or question page was (re)built: log the stack headroom */
 
     bsp_display_lock((uint32_t)-1);
     switch (m->kind) {
     case CLAUDE_PERMISSION:
+        built_page = true;
         if (s_restore_timer) {   /* the previous result was still on screen: this request replaces it */
             lv_timer_delete(s_restore_timer);
             s_restore_timer = NULL;
@@ -394,6 +398,7 @@ bool claude_ui_on_message(const claude_msg_t *m)
         }
         break;
     case CLAUDE_QUESTION:
+        built_page = true;
         if (!claude_parse_question(m, &s_page)) {
             ESP_LOGW(TAG, "ignoring bad question page for %lu", (unsigned long)m->id);
             break;
@@ -420,6 +425,10 @@ bool claude_ui_on_message(const claude_msg_t *m)
         break;
     }
     bsp_display_unlock();
+    if (built_page) {
+        /* Debug: NimBLE host task stack headroom (bytes never used) after a request / question page */
+        ESP_LOGI(TAG, "stack headroom %s: %u bytes", pcTaskGetName(NULL), (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    }
     return show;
 }
 

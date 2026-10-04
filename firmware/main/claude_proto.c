@@ -1,5 +1,6 @@
 #include "claude_proto.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -79,6 +80,9 @@ size_t claude_encode_answers(uint32_t id, const uint8_t *masks, size_t n, uint8_
 
 size_t claude_encode_mode(uint8_t mode, uint8_t out[CLAUDE_INPUT_MAX])
 {
+    if (mode > CLAUDE_BOARD_PICKER) {
+        return 0;   /* not a board mode: send nothing */
+    }
     put32(out, 0);
     out[4] = CLAUDE_INPUT_MODE;
     out[5] = mode;
@@ -115,12 +119,13 @@ size_t claude_split_lines(char *text, char **fields, size_t max)
     return n;
 }
 
-/* One decimal integer (optional sign) followed by a single space or the end of the string */
+/* One decimal integer (optional sign) followed by a single space or the end of the string; out of range fails */
 static bool take_int(const char **p, long long *out)
 {
     char *end;
+    errno = 0;
     long long v = strtoll(*p, &end, 10);
-    if (end == *p || **p == ' ') {
+    if (end == *p || **p == ' ' || errno == ERANGE) {
         return false;
     }
     if (*end == ' ') {
@@ -133,9 +138,15 @@ static bool take_int(const char **p, long long *out)
     return true;
 }
 
+/* m->text must hold its terminator within the buffer (claude_rx_feed always writes one) */
+static bool text_terminated(const claude_msg_t *m)
+{
+    return memchr(m->text, '\0', sizeof(m->text)) != NULL;
+}
+
 bool claude_parse_session(const claude_msg_t *m, claude_session_t *out)
 {
-    if (m->kind != CLAUDE_SESSION || m->id == 0) {
+    if (m->kind != CLAUDE_SESSION || m->id == 0 || !text_terminated(m)) {
         return false;
     }
     const char *nl1 = strchr(m->text, '\n');
@@ -177,7 +188,7 @@ bool claude_parse_session(const claude_msg_t *m, claude_session_t *out)
 
 bool claude_parse_question(const claude_msg_t *m, claude_question_t *q)
 {
-    if (m->kind != CLAUDE_QUESTION || m->id == 0) {
+    if (m->kind != CLAUDE_QUESTION || m->id == 0 || !text_terminated(m)) {
         return false;
     }
     memset(q, 0, sizeof(*q));

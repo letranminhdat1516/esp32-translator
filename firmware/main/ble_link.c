@@ -31,9 +31,13 @@ void ble_store_config_init(void);
 static const char *TAG = "ble";
 
 /* sdkconfig is generated once from sdkconfig.defaults and never refreshed: an old one silently keeps one
- * BLE connection and RAM-only bonds. Fail the build instead of shipping a board that cannot host the Mac. */
+ * BLE connection, RAM-only bonds and a 4 KB host task stack. Fail the build instead of shipping a board that
+ * cannot host the Mac. */
 #if !defined(CONFIG_BT_NIMBLE_MAX_CONNECTIONS) || CONFIG_BT_NIMBLE_MAX_CONNECTIONS < 2 || !defined(CONFIG_BT_NIMBLE_NVS_PERSIST)
 #error "Stale sdkconfig: delete firmware/sdkconfig and rebuild"
+#endif
+#if !defined(CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE) || CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE < 6144
+#error "Stale sdkconfig (NimBLE host task stack < 6144): delete firmware/sdkconfig and rebuild"
 #endif
 
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
@@ -136,7 +140,7 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         if (conn_handle != s_mac_conn) {
             return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* only the subscribed Mac may feed the parser */
         }
-        /* Static, not on the 4 KB host task stack: access callbacks only run in the NimBLE host task */
+        /* Static, not on the (6 KB) host task stack: access callbacks only run in the NimBLE host task */
         static uint8_t claude_buf[CLAUDE_WRITE_MAX];
         if (ble_hs_mbuf_to_flat(ctxt->om, claude_buf, sizeof(claude_buf), &len) != 0) {
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;

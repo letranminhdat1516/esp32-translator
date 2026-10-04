@@ -164,7 +164,7 @@ lv_obj_t *picker_ui_screen(void)
 
 void picker_ui_on_message(const claude_msg_t *m)
 {
-    static claude_session_t row;   /* NimBLE host task only: kept off its 4 KB stack */
+    static claude_session_t row;   /* NimBLE host task only: kept off its 6 KB stack */
     if (m->kind == CLAUDE_SESSION && !claude_parse_session(m, &row)) {
         ESP_LOGW(TAG, "ignoring bad session row %lu", (unsigned long)m->id);
         return;

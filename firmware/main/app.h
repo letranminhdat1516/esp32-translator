@@ -102,10 +102,10 @@ void question_ui_show(void);                        /* page 1 of a complete set 
 void question_ui_refresh(void);                     /* a shown page was resent: rebuild it (caller re-arms) */
 void question_ui_hide(void);                        /* safe before init */
 
-/* lock_ui.c: lock screen (pixel cat, clock, battery) */
+/* lock_ui.c: lock screen (logo, clock, battery) */
 void lock_ui_init(void);
 lv_obj_t *lock_ui_screen(void);
-void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the cat */
+void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the clock tick */
 
 /* picker_ui.c: Claude session picker; owns the session table */
 void picker_ui_init(void);

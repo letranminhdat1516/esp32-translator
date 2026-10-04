@@ -1,4 +1,4 @@
-// firmware/test/test_claude_proto.c — build: cc -Wall -Werror -I../main -o /tmp/test_claude_proto test_claude_proto.c ../main/claude_proto.c && /tmp/test_claude_proto
+// firmware/test/test_claude_proto.c — build: cc -Wall -Wextra -Werror -I../main -o /tmp/test_claude_proto test_claude_proto.c ../main/claude_proto.c && /tmp/test_claude_proto
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -239,6 +239,63 @@ static void input_encoders_match_the_mac(void)
     assert(memcmp(five, want_always, 5) == 0);
 }
 
+static void encoders_reject_bad_input(void)
+{
+    uint8_t out[CLAUDE_INPUT_MAX];
+    assert(claude_encode_mode(CLAUDE_BOARD_OTHER, out) == 6 && out[5] == 0);
+    assert(claude_encode_mode(CLAUDE_BOARD_CLAUDE, out) == 6 && out[5] == 1);
+    assert(claude_encode_mode(3, out) == 0);      /* not a board mode */
+    assert(claude_encode_mode(0xff, out) == 0);
+}
+
+static void session_rejects_overflow_and_oversized_fields(void)
+{
+    claude_session_t s;
+    const char *bad[] = {
+        "w 99999999999999999999 2 0\np\nl",            /* since overflows int64 */
+        "w -99999999999999999999 2 0\np\nl",           /* since underflows */
+        "w 1 99999999999999999999 0\np\nl",            /* updated overflows */
+        "w 1 2 99999999999999999999\np\nl",            /* flags overflow */
+        "w 1 2 00000000000000000000000000000000000000000000000000000000000000000\np\nl",  /* meta line >= 64 bytes */
+    };
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        claude_msg_t m = msg(CLAUDE_SESSION, 5, bad[i]);
+        assert(!claude_parse_session(&m, &s));
+    }
+    /* the largest int64 still fits */
+    claude_msg_t ok = msg(CLAUDE_SESSION, 5, "w 9223372036854775807 -9223372036854775808 0\np\nl");
+    assert(claude_parse_session(&ok, &s) && s.since == 9223372036854775807LL);
+}
+
+static void parsers_reject_non_terminated_text(void)
+{
+    claude_msg_t m;
+    memset(&m, 'a', sizeof m);   /* no NUL anywhere in text */
+    m.kind = CLAUDE_SESSION;
+    m.id = 5;
+    memcpy(m.text, "w 1 2 0\np\n", 10);
+    claude_session_t s;
+    assert(!claude_parse_session(&m, &s));
+    m.kind = CLAUDE_QUESTION;
+    memcpy(m.text, "0 1 0 1\np\nh\nq\nA\n", 16);
+    claude_question_t q;
+    assert(!claude_parse_question(&m, &q));
+}
+
+static void question_rejects_overflowing_numbers(void)
+{
+    const char *bad[] = {
+        "99999999999999999999 1 0 1\np\nh\nq\nA\na",
+        "0 18446744073709551617 0 1\np\nh\nq\nA\na",   /* would wrap to 1 */
+        "0 1 0 18446744073709551617\np\nh\nq\nA\na",
+    };
+    claude_question_t q;
+    for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        claude_msg_t m = msg(CLAUDE_QUESTION, 3, bad[i]);
+        assert(!claude_parse_question(&m, &q));
+    }
+}
+
 static void split_lines_keeps_the_rest_in_the_last_field(void)
 {
     char *f[4];
@@ -268,6 +325,10 @@ int main(void)
     question_rejects_bad_shapes();
     input_encoders_match_the_mac();
     split_lines_keeps_the_rest_in_the_last_field();
+    encoders_reject_bad_input();
+    session_rejects_overflow_and_oversized_fields();
+    parsers_reject_non_terminated_text();
+    question_rejects_overflowing_numbers();
     puts("claude_proto: all tests passed");
     return 0;
 }

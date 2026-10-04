@@ -148,6 +148,8 @@ static void shell_task(void *arg)
             ui_force_screen_on();
         }
         report_mode(false);   /* after every input, not only waking ones: locking changes the report too */
+        /* Debug: shell task stack headroom (bytes never used) after a screen load */
+        ESP_LOGI(TAG, "stack headroom shell: %u bytes", (unsigned)uxTaskGetStackHighWaterMark(NULL));
     }
 }
 
