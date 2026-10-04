@@ -53,8 +53,6 @@ public actor VoiceHub {
     private let maxCapture: Duration
     private let log: @Sendable (String) -> Void
     private var capture: Capture?
-    private var engineReady = false
-
     public init(engine: (any VoiceEngine)?, typer: any PaneTyping, requests: RequestQueue,
                 target: @escaping @Sendable (UInt32) async -> VoiceTarget?,
                 clock: @escaping @Sendable () -> Double = { Date().timeIntervalSince1970 },
@@ -137,10 +135,8 @@ public actor VoiceHub {
     /// Why this capture cannot be used, checked before the user speaks (Send checks again)
     private func precheck(_ purpose: VoicePurpose, _ id: UInt32) async -> String? {
         guard let engine else { return "Voice needs macOS 26 on the Mac" }
-        if !engineReady {
-            if let why = await engine.prepare() { return why }   // not cached: permission may be granted later
-            engineReady = true
-        }
+        // Asked on every capture: on the relay path the answer follows the iPhone (RoutedVoiceEngine caches the Mac's)
+        if let why = await engine.prepare() { return why }
         switch purpose {
         case .command:
             guard let t = await target(id) else { return "Session not found" }
