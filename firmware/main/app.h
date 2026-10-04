@@ -26,6 +26,8 @@ void app_on_claude_link(bool connected);
 void app_on_claude_message(const claude_msg_t *msg);
 /* Mac voice characteristic subscribed / left (NimBLE host task) */
 void app_on_claude_voice_link(bool on);
+/* iPhone notifications (ANCS) ready / gone: a link for the deep-sleep rule (NimBLE host task) */
+void app_on_phone_notices_link(bool up);
 /* audio_in.c: the board VAD detected the start of speech */
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */
@@ -59,6 +61,8 @@ uint16_t ble_link_mac_mtu(void);                    /* negotiated ATT MTU of the
 bool ble_link_voice_ready(void);
 uint16_t ble_link_voice_payload_max(void);
 bool ble_link_send_voice(const uint8_t *data, uint16_t len);
+/* The ANCS link is ready / gone (ancs_client.c, host task): relaxed connection pace while only ANCS uses it */
+void ble_link_ancs_link(uint16_t conn, bool up);
 
 /* ancs_client.c: iPhone notifications (ANCS). init before the NimBLE host starts. The rest runs in the NimBLE
  * host task: a link finished encrypting, a GATT notification arrived (true when it was ANCS), a link went away;

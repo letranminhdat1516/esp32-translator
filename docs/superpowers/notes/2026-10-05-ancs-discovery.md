@@ -42,7 +42,7 @@ Other useful warnings: `ancs: probe: request for U refused, status 0x…`, `ancs
 | CONTENT | _pending on-device_ (title / subtitle / message per kind, shortened) | row 5 details blocks; message present while locked: _pending_ |
 | PROMPTS | _pending on-device_ (pairing prompt text; notification-sharing prompt text; subscription before/after allowing: ok / refused (status)) | rows 1–2 |
 | PREVIEWS | _pending on-device_ (Show Previews setting found; content arrived while locked) | row 5 |
-| NO_APP_LINK | _pending on-device_ (link kept with the app closed: yes / no; reconnect after a board reset without the app: yes / no (seconds)) | rows 7–8 |
+| NO_APP_LINK | _pending on-device_ (Task 6 firmware: link kept with the app closed: yes / no; reconnect after a board reset without the app: yes / no (s); after an iPhone Bluetooth toggle: yes / no (s); via a Settings → Bluetooth tap: yes / no; board awake on battery with the link up: yes / no; battery drain with the app closed: % per hour) | "Without the translator app" rows 1–9 (Task 1 rows 7–8 were the preview) |
 
 Bond mismatch: if the board's NVS is erased (full flash erase, new board) while the iPhone still holds the old
 bond, encryption fails (`ble: link N: encryption failed (status …)`, no pairing prompt). Fix on the iPhone:
@@ -53,6 +53,47 @@ key.)
 After filling: if CLAUDE_APP_ID differs from `com.anthropic.claude`, change `ANCS_CLAUDE_APP_ID` in
 `firmware/main/ancs.h`. If Claude notifications carry no positive / negative actions, note it here (Task 5 still
 ships the buttons; they only appear when iOS offers actions).
+
+## Without the translator app (Phase 4 Task 6)
+
+Firmware (Task 6): on connect the board asks a **bonded** peer for encryption right away (silent re-encryption;
+this is the one request of that connection, the app's subscribe does not ask again; an unbonded peer is still only
+asked once the translator app subscribes). The scan response solicits the ANCS service (name shortened to
+"ESP-Transla" there; the GAP name stays "ESP-Translator"). While only ANCS uses the iPhone link (the app is closed,
+silent for 60 s, or not opened yet) the link runs at a relaxed pace (180–210 ms, latency 4); the translator app
+taking the audio role switches it back to 30–45 ms. Log: `ble: link N: relaxed pace (rc R)` / `fast pace (rc R)`.
+
+Deep-sleep rule: the ANCS link counts as a link only from `ancs: link N: Claude notifications from the iPhone on`
+(both ANCS subscriptions done on an encrypted link) until that link drops (`ancs: iPhone notifications off`).
+`main: iPhone notifications link up` / `down` in the log. While it is up the board does not deep-sleep on battery.
+
+**Battery effect (estimate, not measured).** Before Task 6 an iPhone with the app closed let the board deep-sleep
+3 min after the app left. Now, as long as a bonded iPhone with Share System Notifications stays in range, the board
+stays awake: screen off, CPU at 80 MHz, BLE modem sleep, but no light sleep (power management keeps it off for the
+mic I2S). Expect roughly the board's idle-awake draw, on the order of 25–40 mA, so a full 550 mAh battery lasts
+very roughly 14–20 h instead of days in deep sleep. The relaxed link pace cuts the radio's share (about 5× fewer
+connection events, latency 4) but the awake CPU dominates. Row 9 measures it. To save the battery when the board
+is not needed (e.g. travelling): hold PWR to power off, or turn off Share System Notifications for the board in
+Settings → Bluetooth → (i); the link then ends and the usual 3 min rule applies.
+
+Verification (flash first; start with the translator app open and the board paired):
+
+| # | Do | Record / expect |
+|---|---|---|
+| 1 | iPhone Settings → Bluetooth: is the board under My Devices as "ESP-Translator", Connected? (i): Share System Notifications on? | yes / no for each |
+| 2 | Swipe the translator app away; wait 1–2 min | `ble: iPhone audio off` or `ble: iPhone app silent for 60 s — audio off`, then `ble: link N: relaxed pace (rc 0)`; no `disconnected`. A Claude notification still shows on the board |
+| 3 | App still closed: press the board's RST; wait up to 2 min | iPhone reconnects by itself? `ble: connected`, `ble: link N: asking for encryption`, `encryption on`, `iPhone audio subscription restored from the bond: waiting for the app` (no `iPhone audio on`), `ancs: … ANCS at …`, `Claude notifications from the iPhone on`, `relaxed pace`, `main: iPhone notifications link up`. Seconds until reconnect. A Claude notification shows; the translator screen does not claim the iPhone is connected |
+| 4 | App still closed: iPhone Bluetooth off, wait 10 s, on; wait up to 2 min | reconnect yes / no (seconds) |
+| 5 | App still closed, board on battery (USB unplugged), link up: wait 4 min | no `entering deep sleep` |
+| 6 | Open the translator app | `translator app active on the restored link` or `iPhone audio on`, then `fast pace`; translation works as before |
+| 7 | If row 3 or 4 failed: Settings → Bluetooth → tap ESP-Translator | does that connect it (and start notifications) without the app? |
+| 8 | iPhone out of range (or Bluetooth off) for 4 min, board on battery | `iPhone notifications off`, `main: iPhone notifications link down`, deep sleep ~3 min later |
+| 9 | Battery drain: on battery, app closed, link up, screen off: note the battery % at the start and after 1 h | % per hour (100 % = 550 mAh) |
+
+Outcome for the README: rows 2–4 pass → notifications work without the translator app. Row 2 passes, 3–4 fail,
+row 7 works → after a board restart open the translator app once or tap the board in Settings → Bluetooth. Row 2
+fails → notifications need the translator app running in the background (known limitation; no iOS change in this
+phase).
 
 ## Log excerpts
 

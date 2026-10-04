@@ -386,6 +386,8 @@ static void notifications_ready(uint16_t conn)
     s_flow_control = s_link.control_val;
     flow_unlock();
     phone_ui_set_link(true);
+    ble_link_ancs_link(conn, true);
+    app_on_phone_notices_link(true);
     ESP_LOGI(TAG, "link %d: Claude notifications from the iPhone on", conn);
 }
 
@@ -400,6 +402,8 @@ void ancs_client_on_disconnect(uint16_t conn)
     s_flow_control = 0;
     flow_unlock();
     phone_ui_set_link(false);   /* a notice on screen closes at once; its action buttons are gone */
+    ble_link_ancs_link(conn, false);
+    app_on_phone_notices_link(false);
     ESP_LOGI(TAG, "iPhone notifications off");
 }
 

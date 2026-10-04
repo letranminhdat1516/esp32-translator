@@ -26,6 +26,10 @@ static QueueHandle_t s_cmd_queue;
 static volatile rec_lang_t s_recording = REC_NONE;
 static volatile bool s_connected;
 static volatile bool s_claude_link;
+/* iPhone notifications (ANCS) subscribed on an encrypted link: a link, even without the translator app. It keeps
+ * the board awake on battery while the iPhone stays near (battery note: docs/superpowers/notes/2026-10-05-ancs-discovery.md);
+ * it ends with the link (iPhone away, Bluetooth off), and the usual 3 min grace then applies. */
+static volatile bool s_notices_link;
 
 void app_request_recording(rec_lang_t lang)
 {
@@ -56,7 +60,7 @@ void app_on_connection_changed(bool connected)
 void app_on_claude_link(bool connected)
 {
     s_claude_link = connected;
-    if (!connected && !s_connected) {
+    if (!connected && !s_connected && !s_notices_link) {
         s_disconnected_since = esp_timer_get_time();
     }
     ESP_LOGI(TAG, "Claude link %s", connected ? "up" : "down");
@@ -79,6 +83,16 @@ void app_on_claude_voice_link(bool on)
     bsp_display_lock((uint32_t)-1);
     claude_ui_refresh_session_locked();   /* Speak appears or goes */
     bsp_display_unlock();
+}
+
+/* NimBLE host task: the iPhone's notification link is ready / gone */
+void app_on_phone_notices_link(bool up)
+{
+    s_notices_link = up;
+    if (!up && !s_connected && !s_claude_link) {
+        s_disconnected_since = esp_timer_get_time();
+    }
+    ESP_LOGI(TAG, "iPhone notifications link %s", up ? "up" : "down");
 }
 
 /* msg points to a static buffer overwritten by the next BLE write: consume it synchronously */
@@ -191,7 +205,7 @@ void app_main(void)
     rec_lang_t lang;
     while (true) {
         if (xQueueReceive(s_cmd_queue, &lang, pdMS_TO_TICKS(1000)) != pdTRUE) {
-            if (!s_connected && !s_claude_link && s_disconnected_since != 0) {
+            if (!s_connected && !s_claude_link && !s_notices_link && s_disconnected_since != 0) {
                 /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
                  * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;

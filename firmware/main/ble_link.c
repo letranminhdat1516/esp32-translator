@@ -32,6 +32,7 @@ void ble_store_config_init(void);
 
 #include "app.h"
 #include "claude_proto.h"
+#include "ancs.h"
 #include "clock.h"
 #include "phone_idle.h"
 
@@ -111,6 +112,13 @@ static struct ble_npl_callout s_phone_idle_timer;
 static uint16_t s_enc_asked_conn = BLE_HS_CONN_HANDLE_NONE;
 static int s_connections;
 static uint8_t s_own_addr_type;
+/* The link carrying iPhone notifications (ancs_client.c), or none */
+static volatile uint16_t s_ancs_conn = BLE_HS_CONN_HANDLE_NONE;
+static const ble_uuid128_t s_ancs_sol_uuid = BLE_UUID128_INIT(ANCS_UUID_SVC);
+/* A pace change refused because another parameter update was still running (e.g. ANCS ready while the fast update
+ * of the connect is in flight): sent again once that update completes (BLE_GAP_EVENT_CONN_UPDATE), once */
+static uint16_t s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
+static bool s_pace_retry_fast;
 
 static char s_text_buf[TEXT_MAX + 1];
 static size_t s_text_len;
@@ -130,6 +138,48 @@ static void request_encryption(uint16_t conn)
     ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
 }
 
+/* Fast while audio may stream (30-45 ms, as before). Relaxed while only ANCS uses the iPhone link: 180-210 ms,
+ * latency 4 (the board may sleep through 4 events: a notification waits at most ~1 s), within Apple's rules
+ * (interval max x (latency + 1) <= 2 s, x 3 < supervision timeout 5 s). */
+static void set_pace(uint16_t conn, bool fast)
+{
+    struct ble_gap_upd_params p = fast ? (struct ble_gap_upd_params){ .itvl_min = 24, .itvl_max = 36, .latency = 0,
+                                                                      .supervision_timeout = 400 }
+                                       : (struct ble_gap_upd_params){ .itvl_min = 144, .itvl_max = 168, .latency = 4,
+                                                                      .supervision_timeout = 500 };
+    int rc = ble_gap_update_params(conn, &p);
+    ESP_LOGI(TAG, "link %d: %s pace (rc %d)", conn, fast ? "fast" : "relaxed", rc);
+    if (rc == BLE_HS_EALREADY) {
+        s_pace_retry_conn = conn;
+        s_pace_retry_fast = fast;
+    } else if (conn == s_pace_retry_conn) {
+        s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;   /* this request supersedes the waiting one */
+    }
+}
+
+/* The peer of conn has a bond with the board (its keys are stored). Needs the peer's identity address at connect:
+ * NimBLE loads the bonded IRKs into the controller's resolving list, so an iPhone's RPA resolves. If it did not,
+ * this is false and encryption waits for the translator app (or iOS encrypts the bonded link itself). */
+static bool peer_bonded(uint16_t conn)
+{
+    static struct ble_store_value_sec value;   /* host task: off the stack */
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) != 0) {
+        return false;
+    }
+    struct ble_store_key_sec key = { 0 };
+    key.peer_addr = desc.peer_id_addr;
+    return ble_store_read_peer_sec(&key, &value) == 0;
+}
+
+void ble_link_ancs_link(uint16_t conn, bool up)
+{
+    s_ancs_conn = up ? conn : BLE_HS_CONN_HANDLE_NONE;
+    if (up && conn != s_phone_conn) {
+        set_pace(conn, false);   /* the translator app is not streaming on this link */
+    }
+}
+
 /* The translator app subscribed to audio on conn: it becomes the iPhone audio link */
 static void phone_audio_on(uint16_t conn)
 {
@@ -147,14 +197,22 @@ static void phone_audio_on(uint16_t conn)
     s_phone_last_write_us = esp_timer_get_time();
     ble_npl_callout_reset(&s_phone_idle_timer, ble_npl_time_ms_to_ticks32(PHONE_IDLE_TIMEOUT_MS));
     ESP_LOGI(TAG, "iPhone audio on");
+    if (conn == s_ancs_conn) {
+        set_pace(conn, true);   /* audio needs the fast pace again */
+    }
     app_on_connection_changed(true);
     request_encryption(conn);   /* the translator app: ANCS needs it */
 }
 
-/* The iPhone audio role ends (unsubscribe, disconnect, silent app): stop streaming */
-static void phone_audio_off(void)
+/* The iPhone audio role ends (unsubscribe, disconnect, silent app): stop streaming. A link that stays up and
+ * carries ANCS goes to the relaxed pace (link_up false: the link is already gone). */
+static void phone_audio_off(bool link_up)
 {
+    uint16_t conn = s_phone_conn;
     s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+    if (link_up && conn != BLE_HS_CONN_HANDLE_NONE && conn == s_ancs_conn) {
+        set_pace(conn, false);   /* ANCS alone does not need the audio pace */
+    }
     ble_npl_callout_stop(&s_phone_idle_timer);
     app_on_connection_changed(false);
 }
@@ -175,7 +233,7 @@ static void on_phone_idle_check(struct ble_npl_event *ev)
         return;
     }
     ESP_LOGI(TAG, "iPhone app silent for %d s — audio off", (int)(PHONE_IDLE_TIMEOUT_US / 1000000));
-    phone_audio_off();
+    phone_audio_off(true);
     s_audio_pending_conn = conn;
 }
 
@@ -340,16 +398,16 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         s_connections++;
         ESP_LOGI(TAG, "connected (%d link%s)", s_connections, s_connections > 1 ? "s" : "");
-        /* 2M PHY + a connection interval that fits real-time audio without waking the radio too often */
+        /* 2M PHY + a connection interval that fits real-time audio (30 ms: two 20 ms packets per event) */
         ble_gap_set_prefered_le_phy(event->connect.conn_handle, BLE_GAP_LE_PHY_2M_MASK,
                                     BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_CODED_ANY);
-        struct ble_gap_upd_params params = {
-            .itvl_min = 24,   /* 30 ms: two 20 ms audio packets per event, half the radio wake-ups of 15 ms */
-            .itvl_max = 36,   /* 45 ms */
-            .latency = 0,
-            .supervision_timeout = 400,
-        };
-        ble_gap_update_params(event->connect.conn_handle, &params);
+        set_pace(event->connect.conn_handle, true);
+        if (peer_bonded(event->connect.conn_handle)) {
+            /* A bonded iPhone may connect without the translator app (iOS holding the link for ANCS): encrypt
+             * now so notifications start; silent for a bonded peer (also harmless for the Mac). This is the one
+             * request of this connection (request_encryption): the app's subscribe later does not ask again. */
+            request_encryption(event->connect.conn_handle);
+        }
         if (s_connections < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
             start_advertising();   /* keep the second slot open (iPhone + Mac) */
         }
@@ -361,7 +419,10 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         ESP_LOGI(TAG, "disconnected, reason 0x%x", event->disconnect.reason);
         if (event->disconnect.conn.conn_handle == s_phone_conn) {
-            phone_audio_off();
+            phone_audio_off(false);
+        }
+        if (event->disconnect.conn.conn_handle == s_pace_retry_conn) {
+            s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
         }
         if (event->disconnect.conn.conn_handle == s_enc_asked_conn) {
             s_enc_asked_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -400,7 +461,7 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 }
                 if (conn == s_phone_conn) {
                     ESP_LOGI(TAG, "iPhone audio off");
-                    phone_audio_off();
+                    phone_audio_off(true);
                 }
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
@@ -443,6 +504,14 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         return BLE_GAP_REPEAT_PAIRING_RETRY;
     }
+
+    case BLE_GAP_EVENT_CONN_UPDATE:
+        if (event->conn_update.conn_handle == s_pace_retry_conn) {
+            uint16_t conn = s_pace_retry_conn;
+            s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
+            set_pace(conn, s_pace_retry_fast);   /* still busy: it waits for the next completed update again */
+        }
+        break;
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %d", event->mtu.value);
@@ -509,12 +578,21 @@ static void start_advertising(void)
         return;
     }
 
+    /* Scan response: ANCS service solicitation (iOS lists the board as an accessory that wants notifications and
+     * may connect it without an app) + the name, shortened to fit 31 bytes (18 + 2 + 11). The full name stays
+     * the GAP device name. */
     const char *name = ble_svc_gap_device_name();
+    size_t name_len = strlen(name);
     struct ble_hs_adv_fields rsp = { 0 };
+    rsp.sol_uuids128 = &s_ancs_sol_uuid;
+    rsp.sol_num_uuids128 = 1;
     rsp.name = (const uint8_t *)name;
-    rsp.name_len = strlen(name);
-    rsp.name_is_complete = 1;
-    ble_gap_adv_rsp_set_fields(&rsp);
+    rsp.name_len = name_len > 11 ? 11 : name_len;
+    rsp.name_is_complete = name_len <= 11;
+    rc = ble_gap_adv_rsp_set_fields(&rsp);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "scan response rc=%d", rc);
+    }
 
     struct ble_gap_adv_params adv = { 0 };
     adv.conn_mode = BLE_GAP_CONN_MODE_UND;
