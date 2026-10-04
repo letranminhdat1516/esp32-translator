@@ -1,7 +1,7 @@
 /*
  * Lock screen. Black and empty while the panel is off; a tap shows the face for 5 s:
  *   top    : clock (HH:MM, "--:--" until the iPhone or the Mac sent the time)
- *   middle : pixel cat (tools/gen_cat.py), animated only while the face is visible
+ *   middle : static logo (tools/gen_logo.py)
  *   bottom : battery
  * Single tap → MODES_EV_TAP_1 (face), double tap → MODES_EV_TAP_2 (unlock); shell.c decides.
  */
@@ -12,25 +12,20 @@
 #include "lvgl.h"
 
 #include "app.h"
-#include "cat_frames.h"
+#include "logo_img.h"
 #include "clock.h"
 
 LV_FONT_DECLARE(font_vi_22);
 LV_FONT_DECLARE(font_vi_36);
 
-#define CAT_FRAME_MS 200
-#define CAT_SCALE    512   /* LVGL scale units (256 = x1): 96 px art drawn at 192 px */
-/* The art (all frames, tail included) spans grid columns 3..26 of 32, one column left of centre;
- * one grid column is 3 px in the image, 6 px on screen at x2. */
-#define CAT_X_OFFSET 6
+#define TICK_MS 1000   /* clock refresh while the face is visible */
 
 static lv_obj_t *s_scr;
 static lv_obj_t *s_face;
 static lv_obj_t *s_clock;
-static lv_obj_t *s_cat;
+static lv_obj_t *s_logo;
 static lv_obj_t *s_battery;
-static lv_timer_t *s_anim;
-static int s_step;
+static lv_timer_t *s_tick;
 static bool s_face_on;
 static char s_clock_text[6];
 
@@ -71,10 +66,8 @@ static void refresh_battery(void)
     lv_label_set_text(s_battery, text);
 }
 
-static void anim_cb(lv_timer_t *t)
+static void tick_cb(lv_timer_t *t)
 {
-    s_step = (s_step + 1) % cat_sequence_len;
-    lv_image_set_src(s_cat, cat_frames[cat_sequence[s_step]]);
     refresh_clock();
 }
 
@@ -85,14 +78,12 @@ void lock_ui_set_face(bool visible)
     }
     s_face_on = visible;
     if (visible) {
-        s_step = 0;
-        lv_image_set_src(s_cat, cat_frames[cat_sequence[0]]);
         refresh_clock();
         refresh_battery();
         lv_obj_set_hidden(s_face, false);
-        lv_timer_resume(s_anim);
+        lv_timer_resume(s_tick);
     } else {
-        lv_timer_pause(s_anim);
+        lv_timer_pause(s_tick);
         lv_obj_set_hidden(s_face, true);
     }
 }
@@ -132,16 +123,14 @@ void lock_ui_init(void)
     memcpy(s_clock_text, "--:--", 6);
     lv_label_set_text(s_clock, s_clock_text);
 
-    s_cat = lv_image_create(s_face);
-    lv_image_set_src(s_cat, cat_frames[0]);
-    lv_image_set_scale(s_cat, CAT_SCALE);
-    lv_image_set_antialias(s_cat, false);   /* nearest neighbour: crisp pixels */
-    lv_obj_set_clickable(s_cat, false);
-    lv_obj_align(s_cat, LV_ALIGN_CENTER, CAT_X_OFFSET, 10);
+    s_logo = lv_image_create(s_face);
+    lv_image_set_src(s_logo, &logo_img);
+    lv_obj_set_clickable(s_logo, false);
+    lv_obj_align(s_logo, LV_ALIGN_CENTER, 0, 4);
 
     s_battery = make_label(&font_vi_22, 0xc8c8c8, LV_ALIGN_BOTTOM_MID, -72);
 
-    s_anim = lv_timer_create(anim_cb, CAT_FRAME_MS, NULL);
-    lv_timer_pause(s_anim);
+    s_tick = lv_timer_create(tick_cb, TICK_MS, NULL);
+    lv_timer_pause(s_tick);
     bsp_display_unlock();
 }
