@@ -231,6 +231,7 @@ private func tag(_ m: BoardMessage) -> String {
     let question = await sent.questionIds()[0]
     #expect(await !q.setOther(id: question, question: 2, text: "x"))     // only 2 questions
     #expect(await !q.setOther(id: question, question: 0, text: ""))      // nothing spoken
+    #expect(await !q.setOther(id: question, question: 0, text: " \n\t "))  // only whitespace
     #expect(await q.setOther(id: question, question: 1, text: "Durian"))
     await q.handle(.answers(id: question, masks: [0b1, 0x80]))
     #expect(await p == .deny)
@@ -247,6 +248,7 @@ private func tag(_ m: BoardMessage) -> String {
     let first = await sent.permissionIds()[0]
     #expect(await !q.denyWithReason(id: first &+ 999, message: "no"))
     #expect(await !q.denyWithReason(id: first, message: ""))
+    #expect(await !q.denyWithReason(id: first, message: "  \n "))     // only whitespace
     let notice = BoardMessage.voice(id: 9, .done("Denied with your reason"))
     #expect(await q.denyWithReason(id: first, message: "dùng pnpm thay vì npm", notice: notice))
     #expect(await a == .denyWithReason("dùng pnpm thay vì npm"))

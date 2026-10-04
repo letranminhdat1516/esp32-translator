@@ -131,17 +131,18 @@ public actor RequestQueue {
 
     /// Stores the spoken Other answer for question `question` of the question request on the board. It becomes
     /// part of the answer only if the board's answers tick it (bit 7). A later call replaces the text.
+    /// Empty or whitespace-only text is refused (the caller cleans it with VoiceText.forTyping first).
     public func setOther(id: UInt32, question: Int, text: String) -> Bool {
-        guard !text.isEmpty, let head = queue.first, head.id == id,
+        guard !text.allSatisfy(\.isWhitespace), let head = queue.first, head.id == id,
               case .question(let options, _) = head.shape, options.indices.contains(question) else { return false }
         queue[0].others[question] = text
         return true
     }
 
     /// Denies the permission request on the board with the spoken reason. `notice` goes to the board right after
-    /// the decision, before the next request is shown.
+    /// the decision, before the next request is shown. Empty or whitespace-only reasons are refused.
     public func denyWithReason(id: UInt32, message: String, notice: BoardMessage? = nil) -> Bool {
-        guard !message.isEmpty, let head = queue.first, head.id == id, case .permission = head.shape else { return false }
+        guard !message.allSatisfy(\.isWhitespace), let head = queue.first, head.id == id, case .permission = head.shape else { return false }
         finish(id, with: .denyWithReason(message), cancelOnBoard: false, notice: notice)
         return true
     }
