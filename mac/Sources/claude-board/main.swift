@@ -16,6 +16,16 @@ if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--transcribe
     }
 }
 
+// Pairing for the iPhone relay: claude-board --pair [--new-secret] (no board, no socket)
+if CommandLine.arguments.count >= 2 && CommandLine.arguments[1] == "--pair" {
+    let rest = Array(CommandLine.arguments.dropFirst(2))
+    guard rest.isEmpty || rest == ["--new-secret"] else {
+        print("usage: claude-board --pair [--new-secret]")
+        exit(1)
+    }
+    exit(runPair(newSecret: rest == ["--new-secret"]))
+}
+
 let board = BoardLink()
 let requests = RequestQueue(send: { board.send($0) })
 let hub = SessionHub(sessionHooks: HookSchema.sessionHooks,

@@ -1,6 +1,6 @@
 #!/bin/bash
 # mac/install.sh — build and install the Claude board bridge for the current user.
-# Test overrides: BIN, CLAUDE_SETTINGS, LOCAL_BIN, CLAUDE_BOARD_SKIP_LAUNCHD=1
+# Test overrides: BIN, CLAUDE_SETTINGS, LOCAL_BIN, CLAUDE_BOARD_SKIP_LAUNCHD=1, CLAUDE_BOARD_SKIP_PAIR=1
 set -euo pipefail
 cd "$(dirname "$0")"
 swift build -c release
@@ -30,6 +30,12 @@ python3 claude_settings.py link-cb "$BIN/cb" "${LOCAL_BIN:-$HOME/.local/bin}"
 
 # Settings first: an invalid settings.json aborts before the daemon starts.
 python3 claude_settings.py install "$SETTINGS" "$BIN/claude-board-hook"
+
+# iPhone relay: the pairing secret (0600) and the QR code the app scans once. Needs Tailscale (installed by you,
+# see README "Away from the Mac"); never fatal.
+if [ "${CLAUDE_BOARD_SKIP_PAIR:-0}" != 1 ]; then
+  "$BIN/claude-board" --pair || echo "iPhone relay not set up (see README: Away from the Mac)."
+fi
 
 if [ "${CLAUDE_BOARD_SKIP_LAUNCHD:-0}" != 1 ]; then
   PLIST="$HOME/Library/LaunchAgents/dev.cicca.claude-board.plist"
