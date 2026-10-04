@@ -246,6 +246,8 @@ void claude_ui_on_message(const claude_msg_t *m)
             lv_label_set_text(s_detail, second ? second : "");
         }
         break;
+    case CLAUDE_TIME:   /* main.c sets the clock; nothing to show */
+        break;
     }
     bsp_display_unlock();
 }

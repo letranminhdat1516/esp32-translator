@@ -4,7 +4,8 @@
  * Service  A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A
  *   audio   ...0002  notify  : [seq u16][predictor i16][index u8][ADPCM...] (16 kHz mono)
  *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
- *                              kind 0 = subtitle (large), kind 1 = status line
+ *                              kind 0 = subtitle (large), kind 1 = status line,
+ *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect)
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on
  */
 #include <string.h>
@@ -25,6 +26,7 @@ void ble_store_config_init(void);
 
 #include "app.h"
 #include "claude_proto.h"
+#include "clock.h"
 
 static const char *TAG = "ble";
 
@@ -52,6 +54,7 @@ static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
 #define TEXT_FLAG_LAST  0x02
 #define TEXT_KIND_MAIN   0
 #define TEXT_KIND_STATUS 1
+#define TEXT_KIND_TIME   2
 #define TEXT_MAX         1024
 /* One Claude request write: the Mac chunks to ATT MTU - 3, but a long (prepared) write can carry up to 512 */
 #define CLAUDE_WRITE_MAX 512
@@ -94,7 +97,9 @@ static void handle_text_write(const uint8_t *data, uint16_t len)
 
     if (flags & TEXT_FLAG_LAST) {
         s_text_buf[s_text_len] = '\0';
-        if (kind == TEXT_KIND_STATUS) {
+        if (kind == TEXT_KIND_TIME) {
+            clock_sync_text(s_text_buf);
+        } else if (kind == TEXT_KIND_STATUS) {
             ui_show_status(s_text_buf);
         } else {
             ui_show_text(s_text_buf);

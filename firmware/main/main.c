@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 
 #include "app.h"
+#include "clock.h"
 
 static const char *TAG = "main";
 
@@ -88,6 +89,9 @@ void app_on_claude_message(const claude_msg_t *msg)
         break;
     case CLAUDE_CANCEL:
         claude_ui_on_message(msg);
+        break;
+    case CLAUDE_TIME:
+        clock_sync_text(msg->text);
         break;
     default:
         ESP_LOGW(TAG, "ignoring unknown claude kind %d", msg->kind);

@@ -5,7 +5,8 @@
 
 #define CLAUDE_TEXT_MAX 400
 
-typedef enum { CLAUDE_PERMISSION = 0, CLAUDE_FINISHED = 1, CLAUDE_CANCEL = 2 } claude_kind_t;
+/* CLAUDE_TIME: id 0, text "<unix seconds> <UTC offset minutes>" (see clock.h), sent by the Mac on connect */
+typedef enum { CLAUDE_PERMISSION = 0, CLAUDE_FINISHED = 1, CLAUDE_CANCEL = 2, CLAUDE_TIME = 3 } claude_kind_t;
 
 typedef struct {
     claude_kind_t kind;

@@ -79,6 +79,17 @@ static void answer_encoding(void)
     assert(memcmp(out, want, 5) == 0);
 }
 
+static void time_message_parses_as_text(void)
+{
+    claude_rx_t rx = { 0 };
+    claude_msg_t m;
+    const char *text = "1759555200 -330";
+    uint8_t c[32] = { 0x03, 3, 0, 0, 0, 0 };
+    memcpy(c + 6, text, strlen(text));
+    assert(claude_rx_feed(&rx, c, 6 + strlen(text), &m));
+    assert(m.kind == CLAUDE_TIME && m.id == 0 && strcmp(m.text, text) == 0);
+}
+
 int main(void)
 {
     single_chunk_permission();
@@ -87,6 +98,7 @@ int main(void)
     cancel_clears_pending();
     overflow_is_truncated_not_crashing();
     answer_encoding();
+    time_message_parses_as_text();
     puts("claude_proto: all tests passed");
     return 0;
 }
