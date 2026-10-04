@@ -62,6 +62,14 @@ private let twoQuestions: [String: JSONValue] = [
     #expect(AskQuestion.parse(["questions": .array([q("Q?", 0)])]) == nil)                        // no options
     #expect(AskQuestion.parse(["questions": .array([q("Q?", 2, label: "  ")])]) == nil)          // empty label
     #expect(AskQuestion.parse(["questions": .array([q("Same?", 2), q("Same?", 2)])]) == nil)     // answers keyed by text
+    #expect(AskQuestion.parse(["questions": .array([q("Q?", 2, label: "\n\t")])]) == nil)       // blank after oneLine
+    #expect(AskQuestion.parse(["questions": .array([q("Q?", 2, label: "\u{2028}")])]) == nil)
+    #expect(AskQuestion.parse(["questions": .array([q("  \n", 2)])]) == nil)                     // blank question
+    #expect(AskQuestion.parse(["questions": .array([q("", 2)])]) == nil)
+    let dup = JSONValue.object(["question": .string("Q?"), "options": .array(["A", "B", "A"].map { .object(["label": .string($0)]) })])
+    #expect(AskQuestion.parse(["questions": .array([dup])]) == nil)                              // duplicate label
+    let dup2 = JSONValue.object(["question": .string("Q?"), "options": .array(["A", "A\n"].map { .object(["label": .string($0)]) })])
+    #expect(AskQuestion.parse(["questions": .array([dup2])]) == nil)                             // same after normalising
 }
 
 // MARK: Encoding

@@ -23,21 +23,27 @@ public struct AskQuestion: Equatable, Sendable {
         self.multiSelect = multiSelect
     }
 
+    /// Blank as the board shows it: after control characters become spaces, only whitespace is left.
+    private static func blank(_ s: String) -> Bool {
+        Utf8.oneLine(s).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// The questions in an AskUserQuestion tool_input, or nil when the board cannot show them (then Claude
-    /// asks in the terminal): no questions, more than 4 questions, 0 or more than 4 options, an empty label,
-    /// or two questions with the same text (answers are keyed by the question text).
+    /// asks in the terminal): no questions, more than 4 questions, 0 or more than 4 options, a label that is blank or
+    /// repeated within its question, a blank question text, or two questions with the same text (answers are keyed by the question text).
     public static func parse(_ input: [String: JSONValue]) -> [AskQuestion]? {
         guard let list = input["questions"]?.array, (1...maxQuestions).contains(list.count) else { return nil }
         var out: [AskQuestion] = []
         for item in list {
-            guard let o = item.object, let question = o["question"]?.string,
+            guard let o = item.object, let question = o["question"]?.string, !blank(question),
                   let opts = o["options"]?.array, (1...maxOptions).contains(opts.count) else { return nil }
             var options: [AskOption] = []
             for opt in opts {
                 guard let oo = opt.object, let label = oo["label"]?.string,
-                      !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                      !blank(label) else { return nil }
                 options.append(AskOption(label: label, description: oo["description"]?.string ?? ""))
             }
+            guard Set(options.map { Utf8.oneLine($0.label).trimmingCharacters(in: .whitespaces) }).count == options.count else { return nil }
             out.append(AskQuestion(question: question, header: o["header"]?.string ?? "", options: options,
                                    multiSelect: o["multiSelect"]?.bool ?? false))
         }

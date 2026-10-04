@@ -55,17 +55,17 @@ private func makeProcessor(ready: Bool, timeout: Duration = .seconds(90)) -> (Ho
     #expect(board.sent.isEmpty)
 }
 
-@Test(arguments: [Decision.allow, Decision.deny])
-func permissionRoundTrip(_ decision: Decision) async {
+@Test(arguments: [BoardChoice.allow, BoardChoice.deny])
+func permissionRoundTrip(_ choice: BoardChoice) async {
     let (p, board) = makeProcessor(ready: true)
     let conn = FakeConn()
     let done = Task { await p.process(permissionLine, conn) }
     try? await Task.sleep(for: .milliseconds(50))
     #expect(board.sent == [.permission(id: board.permissionIds[0], project: "dự-án", tool: "Bash", summary: "npm test")])
     #expect(conn.replies.isEmpty)
-    await p.requests.handle(Answer(id: board.permissionIds[0], decision: decision))
+    await p.requests.handle(.choice(id: board.permissionIds[0], choice))
     await done.value
-    #expect(conn.replies == [BridgeReply(decision: decision == .allow ? "allow" : "deny")])
+    #expect(conn.replies == [BridgeReply(decision: choice == .allow ? "allow" : "deny")])
 }
 
 @Test func hookDisconnectCancelsBoardRequest() async {
@@ -80,7 +80,7 @@ func permissionRoundTrip(_ decision: Decision) async {
     #expect(board.sent.last == .cancel(id: id))
     #expect(conn.replies == [BridgeReply(decision: nil)])   // never a decision
     // A late tap for the cancelled request is ignored
-    await p.requests.handle(Answer(id: id, decision: .allow))
+    await p.requests.handle(.choice(id: id, .allow))
     #expect(conn.replies.count == 1)
 }
 

@@ -44,8 +44,13 @@ public struct HookProcessor: Sendable {
             // If the hook goes away (user answered in the terminal), cancel the board request.
             conn.onPeerGone { ask.cancel() }
             let d = await ask.value
-            log("\(project) \(e.toolName ?? "") → \(d.map { $0 == .allow ? "allow" : "deny" } ?? "fall through")")
-            conn.reply(BridgeReply(decision: d.map { $0 == .allow ? "allow" : "deny" }))
+            let decision: String? = switch d {
+            case .allow?: "allow"
+            case .deny?: "deny"
+            default: nil
+            }
+            log("\(project) \(e.toolName ?? "") → \(decision ?? "fall through")")
+            conn.reply(BridgeReply(decision: decision))
         case "Stop", "Notification":
             if board.isReady {
                 let text = e.name == "Stop" ? Summary.lastLine(e) : "Claude is waiting for you"

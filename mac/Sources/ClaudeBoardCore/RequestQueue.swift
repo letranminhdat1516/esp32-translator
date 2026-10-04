@@ -1,10 +1,47 @@
 import Foundation
 
+/// What the board answered for the request it showed.
+public enum BoardResponse: Equatable, Sendable {
+    case allow, deny, alwaysAllow
+    /// One bitmask per question: bit i = option i chosen
+    case answers([UInt8])
+}
+
+/// The answers a request accepts.
+public enum RequestShape: Equatable, Sendable {
+    case permission(alwaysOffered: Bool)
+    /// options[q] = option count of question q; multi[q] = several options may be chosen
+    case question(options: [Int], multi: [Bool])
+
+    /// The response a board input stands for, or nil when it does not fit this request.
+    public func accept(_ input: BoardInput) -> BoardResponse? {
+        switch (self, input) {
+        case (.permission(let always), .choice(_, let c)):
+            switch c {
+            case .allow: return .allow
+            case .deny: return .deny
+            case .alwaysAllow: return always ? .alwaysAllow : nil
+            }
+        case (.question(let options, let multi), .answers(_, let masks)):
+            guard masks.count == options.count, multi.count == options.count else { return nil }
+            for (i, m) in masks.enumerated() {
+                guard (1...8).contains(options[i]) else { return nil }
+                let valid = UInt8(truncatingIfNeeded: (1 << options[i]) - 1)
+                guard m != 0, m & ~valid == 0, multi[i] || m.nonzeroBitCount == 1 else { return nil }
+            }
+            return .answers(masks)
+        default:
+            return nil
+        }
+    }
+}
+
 public actor RequestQueue {
     private struct Pending {
         let id: UInt32
-        let message: BoardMessage
-        var continuation: CheckedContinuation<Decision?, Never>?
+        let messages: [BoardMessage]
+        let shape: RequestShape
+        var continuation: CheckedContinuation<BoardResponse?, Never>?
     }
 
     private let outbox: AsyncStream<BoardMessage>.Continuation   // single FIFO so board traffic never reorders
@@ -23,7 +60,7 @@ public actor RequestQueue {
 
     deinit { outbox.finish() }
 
-    /// Ids are never 0: the board uses 0 as "no pending request".
+    /// Ids are never 0: the board uses 0 as "no pending request" and for its own events.
     private func allocateId() -> UInt32 {
         if nextId == 0 { nextId = 1 }
         let id = nextId
@@ -33,9 +70,11 @@ public actor RequestQueue {
 
     func seedNextId(_ value: UInt32) { nextId = value }
 
-    public func ask(project: String, tool: String, summary: String) async -> Decision? {
+    /// Shows a request on the board (when it reaches the head of the queue) and waits for its answer.
+    /// nil = timeout, cancellation (the hook went away) or the board disconnected: never a decision.
+    public func ask(shape: RequestShape, messages build: @Sendable (UInt32) -> [BoardMessage]) async -> BoardResponse? {
         let id = allocateId()
-        let message = BoardMessage.permission(id: id, project: project, tool: tool, summary: summary)
+        let messages = build(id)
         let timer = Task { [timeout] in
             try? await Task.sleep(for: timeout)
             if !Task.isCancelled { await self.finish(id, with: nil, cancelOnBoard: true) }
@@ -43,17 +82,35 @@ public actor RequestQueue {
         defer { timer.cancel() }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { c in
-                queue.append(Pending(id: id, message: message, continuation: c))
-                if queue.count == 1 { outbox.yield(message) }
+                queue.append(Pending(id: id, messages: messages, shape: shape, continuation: c))
+                if queue.count == 1 { show(messages) }
             }
         } onCancel: {
             Task { await self.finish(id, with: nil, cancelOnBoard: true) }
         }
     }
 
-    public func handle(_ answer: Answer) {
-        guard queue.first?.id == answer.id else { return }      // only the request shown on the board
-        finish(answer.id, with: answer.decision, cancelOnBoard: false)
+    /// A permission request without "Always allow".
+    public func ask(project: String, tool: String, summary: String) async -> BoardResponse? {
+        await ask(shape: .permission(alwaysOffered: false)) { id in
+            [.permission(id: id, project: project, tool: tool, summary: summary)]
+        }
+    }
+
+    /// Only the request shown on the board can be answered, and only with an answer of its shape.
+    public func handle(_ input: BoardInput) {
+        let id: UInt32
+        switch input {
+        case .choice(let i, _), .answers(let i, _): id = i
+        case .mode, .focus: return
+        }
+        guard let head = queue.first, head.id == id, let response = head.shape.accept(input) else { return }
+        finish(id, with: response, cancelOnBoard: false)
+    }
+
+    /// Non-request traffic (session rows): same FIFO, so it never overtakes a request or a cancel.
+    public func post(_ message: BoardMessage) {
+        outbox.yield(message)
     }
 
     public func boardDisconnected() {
@@ -66,14 +123,18 @@ public actor RequestQueue {
         outbox.yield(.finished(id: allocateId(), project: project, line: line))
     }
 
-    private func finish(_ id: UInt32, with decision: Decision?, cancelOnBoard: Bool) {
+    private func show(_ messages: [BoardMessage]) {
+        for m in messages { outbox.yield(m) }
+    }
+
+    private func finish(_ id: UInt32, with response: BoardResponse?, cancelOnBoard: Bool) {
         guard let index = queue.firstIndex(where: { $0.id == id }) else { return }
         let wasShown = index == 0
         let p = queue.remove(at: index)
-        p.continuation?.resume(returning: decision)
+        p.continuation?.resume(returning: response)
         if wasShown {
             if cancelOnBoard { outbox.yield(.cancel(id: id)) }
-            if let next = queue.first { outbox.yield(next.message) }
+            if let next = queue.first { show(next.messages) }
         }
     }
 }

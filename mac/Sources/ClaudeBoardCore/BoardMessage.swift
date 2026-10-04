@@ -2,21 +2,6 @@ import Foundation
 
 public enum Decision: UInt8, Sendable { case allow = 1, deny = 2 }
 
-public struct Answer: Equatable, Sendable {
-    public let id: UInt32
-    public let decision: Decision
-
-    public init(id: UInt32, decision: Decision) { self.id = id; self.decision = decision }
-
-    /// [id u32 LE][decision u8]
-    public static func decode(_ d: Data) -> Answer? {
-        let b = [UInt8](d)
-        guard b.count == 5, let decision = Decision(rawValue: b[4]) else { return nil }
-        let id = UInt32(b[0]) | UInt32(b[1]) << 8 | UInt32(b[2]) << 16 | UInt32(b[3]) << 24
-        return Answer(id: id, decision: decision)
-    }
-}
-
 public enum BoardMessage: Equatable, Sendable {
     /// alwaysRule: caption of the rule "Always allow" would add; nil = the button is not offered
     case permission(id: UInt32, project: String, tool: String, summary: String, alwaysRule: String? = nil)

@@ -13,7 +13,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     static let requestChar = CBUUID(string: "A7C00011-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let answerChar = CBUUID(string: "A7C00012-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
 
-    var onAnswer: (@Sendable (Answer) -> Void)?
+    var onInput: (@Sendable (BoardInput) -> Void)?
     var onConnectionChange: (@Sendable (Bool) -> Void)?
 
     private let queue = DispatchQueue(label: "claude-board.ble")
@@ -151,7 +151,7 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
-        if c.uuid == Self.answerChar, let v = c.value, let a = Answer.decode(v) { onAnswer?(a) }
+        if c.uuid == Self.answerChar, let v = c.value, let input = BoardInput.decode(v) { onInput?(input) }
     }
 }
 

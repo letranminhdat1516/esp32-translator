@@ -77,9 +77,3 @@ private func reassemble(_ chunks: [Data]) -> Data? {
     #expect(reassemble(chunks) == data)
 }
 
-@Test func decodesAnswer() {
-    let a = Answer.decode(Data([0x04, 0x03, 0x02, 0x01, 1]))
-    #expect(a?.id == 0x01020304 && a?.decision == .allow)
-    #expect(Answer.decode(Data([1, 2, 3])) == nil)
-    #expect(Answer.decode(Data([1, 0, 0, 0, 9])) == nil)
-}
