@@ -94,3 +94,10 @@ import Testing
     #expect(d.decode(Data([9, 0, 0, 0, 0, 0x07])) == [11, 13])   // after reset: no gap fill
     #expect(d.decode(Data([1, 2, 3])) == [])                     // shorter than a header: nothing
 }
+
+@Test func forTypingDropsEveryFormatCharacter() {
+    // Cf: zero-width space/non-joiner/joiner, word joiner, BOM, Arabic letter mark, soft hyphen — invisible on
+    // the board, so never typed
+    #expect(VoiceText.forTyping("a\u{200B}b\u{200C}c\u{200D}d\u{2060}e\u{FEFF}f\u{061C}g\u{00AD}h") == "abcdefgh")
+    #expect(VoiceText.forTyping("\u{FEFF}/clear") == "clear")                // a BOM never hides a slash command
+}

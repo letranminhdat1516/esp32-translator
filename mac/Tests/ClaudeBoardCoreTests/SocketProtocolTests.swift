@@ -52,7 +52,12 @@ func readRequest(_ fd: Int32) {
     while poll(&p, 1, 2000) > 0, read(fd, &b, 1) == 1, b != 0x0a {}
 }
 
-func send(_ fd: Int32, _ s: String) { _ = Array(s.utf8).withUnsafeBytes { write(fd, $0.baseAddress, $0.count) } }
+/// Fake daemons keep writing after the hook side gave up: EPIPE, never a SIGPIPE that kills the test process
+func send(_ fd: Int32, _ s: String) {
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+    _ = Array(s.utf8).withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+}
 
 /// Holds the connection open without replying until the client goes away (max 3 s).
 func holdOpen(_ fd: Int32) {

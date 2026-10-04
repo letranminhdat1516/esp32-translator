@@ -46,3 +46,19 @@ public struct SessionRow: Equatable, Sendable {
         return a.handle > b.handle
     }
 }
+
+/// What a voice command needs to know about a session (VoiceHub)
+public struct VoiceTarget: Equatable, Sendable {
+    public let sessionId: String
+    public let project: String
+    public let state: SessionState
+    /// nil: the session never reported a tmux pane with its socket and ancestry ("Open with cb for voice")
+    public let pane: PaneTarget?
+
+    public init(sessionId: String, project: String, state: SessionState, pane: PaneTarget?) {
+        self.sessionId = sessionId
+        self.project = project
+        self.state = state
+        self.pane = pane
+    }
+}

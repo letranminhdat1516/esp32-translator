@@ -21,6 +21,15 @@ public struct SessionTracker: Sendable {
         var lastLine: String
         var tmuxPane: String?
         var unseen: Bool
+        /// Raw $TMUX and the hook's ancestry, from the last event that carried a pane
+        var tmuxEnv: String? = nil
+        var ancestors: [Int32] = []
+
+        var paneTarget: PaneTarget? {
+            guard let pane = tmuxPane, let env = tmuxEnv, let socket = TmuxSocket.path(fromTMUX: env),
+                  !ancestors.isEmpty else { return nil }
+            return PaneTarget(pane: pane, socket: socket, ancestors: ancestors)
+        }
     }
 
     /// SessionStart / SessionEnd hooks are installed (hook spike). Informational: a session ends after 2 h
@@ -37,7 +46,11 @@ public struct SessionTracker: Sendable {
         guard !e.sessionId.isEmpty else { return .none }
         var s = sessions[e.sessionId] ?? newSession(now: now)
         if !e.cwd.isEmpty { s.project = Summary.project(cwd: e.cwd) }
-        if let pane = e.tmuxPane, !pane.isEmpty { s.tmuxPane = pane }
+        if let pane = e.tmuxPane, !pane.isEmpty {
+            s.tmuxPane = pane
+            s.tmuxEnv = e.tmuxSocket
+            s.ancestors = e.hookAncestors
+        }
         s.updated = now
         if focusedId.map({ sessions[$0] == nil }) ?? true { focusedId = e.sessionId }
         var effect = TrackerEffect.none
@@ -115,7 +128,7 @@ public struct SessionTracker: Sendable {
         let all = sessions.map { id, s in
             SessionRow(handle: s.handle, state: s.state, since: s.since, updated: s.updated,
                        focused: id == focusedId, unseen: s.unseen && id != focusedId,
-                       project: s.project, lastLine: s.lastLine)
+                       project: s.project, lastLine: s.lastLine, voice: s.paneTarget != nil)
         }.sorted(by: SessionRow.boardOrder)
         var top = Array(all.prefix(Self.visibleMax))
         if let f = all.first(where: \.focused), !top.contains(f), !top.isEmpty {
@@ -126,6 +139,11 @@ public struct SessionTracker: Sendable {
     }
 
     public func tmuxPane(sessionId: String) -> String? { sessions[sessionId]?.tmuxPane }
+
+    public func voiceTarget(handle: UInt32) -> VoiceTarget? {
+        guard let (id, s) = sessions.first(where: { $0.value.handle == handle }) else { return nil }
+        return VoiceTarget(sessionId: id, project: s.project, state: s.state, pane: s.paneTarget)
+    }
 
     private mutating func newSession(now: Int64) -> Session {
         let handle = nextHandle

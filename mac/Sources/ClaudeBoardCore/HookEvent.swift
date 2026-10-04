@@ -45,6 +45,8 @@ public struct HookEvent: Sendable {
     /// Added by claude-board-hook from its environment (HookEnvelope): the session's tmux pane and socket
     public var tmuxPane: String? = nil
     public var tmuxSocket: String? = nil
+    /// The hook's parent process and its parents, nearest first (only sent with a tmux pane)
+    public var hookAncestors: [Int32] = []
 
     private struct Raw: Decodable {
         let hook_event_name: String
@@ -58,6 +60,7 @@ public struct HookEvent: Sendable {
         let permission_suggestions: JSONValue?
         let claude_board_tmux_pane: String?
         let claude_board_tmux: String?
+        let claude_board_pids: [Int32]?
     }
 
     public static func parse(_ data: Data) throws -> HookEvent {
@@ -67,6 +70,6 @@ public struct HookEvent: Sendable {
                          notificationType: r.notification_type,
                          lastAssistantMessage: r.last_assistant_message, transcriptPath: r.transcript_path,
                          permissionSuggestions: r.permission_suggestions,
-                         tmuxPane: r.claude_board_tmux_pane, tmuxSocket: r.claude_board_tmux)
+                         tmuxPane: r.claude_board_tmux_pane, tmuxSocket: r.claude_board_tmux, hookAncestors: r.claude_board_pids ?? [])
     }
 }

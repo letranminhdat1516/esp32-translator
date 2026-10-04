@@ -42,6 +42,7 @@ public actor SessionHub {
     public var focusedSessionId: String? { tracker.focusedId }
 
     public func tmuxPane(sessionId: String) -> String? { tracker.tmuxPane(sessionId: sessionId) }
+    public func voiceTarget(handle: UInt32) -> VoiceTarget? { tracker.voiceTarget(handle: handle) }
 
     public func record(_ e: HookEvent) async {
         if case .focusedDone(let project, let line) = tracker.record(e, now: clock()) {

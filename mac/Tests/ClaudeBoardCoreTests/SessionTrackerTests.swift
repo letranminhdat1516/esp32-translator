@@ -159,3 +159,23 @@ func hookEvent(_ name: String, sid: String = "s1", cwd: String = "/x/alpha", ext
     t.record(hookEvent("Stop", sid: "b"), now: 2)
     #expect(Set(t.rows().map(\.handle)) == [UInt32.max, 1])
 }
+
+private let paneExtra = #","claude_board_tmux_pane":"%4","claude_board_tmux":"/private/tmp/tmux-501/default,93688,0","claude_board_pids":[700,600]"#
+
+@Test func voiceTargetNeedsPaneSocketAndAncestry() {
+    var t = SessionTracker(sessionHooks: true)
+    t.record(hookEvent("UserPromptSubmit", extra: paneExtra), now: 1)
+    t.record(hookEvent("UserPromptSubmit", sid: "s2", cwd: "/x/beta", extra: #","claude_board_tmux_pane":"%5""#), now: 2)
+    let rows = t.rows()
+    let alpha = rows.first { $0.project == "alpha" }!
+    let beta = rows.first { $0.project == "beta" }!
+    #expect(alpha.voice && !beta.voice)
+    #expect(t.voiceTarget(handle: alpha.handle) == VoiceTarget(
+        sessionId: "s1", project: "alpha", state: .working,
+        pane: PaneTarget(pane: "%4", socket: "/private/tmp/tmux-501/default", ancestors: [700, 600])))
+    #expect(t.voiceTarget(handle: beta.handle)?.pane == nil)
+    #expect(t.voiceTarget(handle: 999) == nil)
+    t.record(hookEvent("Stop"), now: 3)                        // an event without tmux keeps the target
+    #expect(t.voiceTarget(handle: alpha.handle)?.pane?.pane == "%4")
+    #expect(t.voiceTarget(handle: alpha.handle)?.state == .idle)
+}

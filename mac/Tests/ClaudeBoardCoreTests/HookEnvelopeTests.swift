@@ -72,3 +72,12 @@ private func object(_ d: Data) -> [String: Any] {
     let enc = String(data: try JSONEncoder().encode(BridgeReply(decision: nil)), encoding: .utf8)
     #expect(enc == "{}")
 }
+
+@Test func envelopeAddsTheAncestorChainOnlyWithAPane() throws {
+    let raw = Data(#"{"hook_event_name":"Stop","session_id":"s","cwd":"/p"}"#.utf8)
+    let out = HookEnvelope.augment(raw, environment: ["TMUX_PANE": "%3", "TMUX": "/tmp/t,1,0"], ancestors: [700, 600])
+    #expect(try HookEvent.parse(out).hookAncestors == [700, 600])
+    let bare = HookEnvelope.augment(raw, environment: [:], ancestors: [700])
+    #expect(object(bare)["claude_board_pids"] == nil)
+    #expect(try HookEvent.parse(bare).hookAncestors == [])
+}
