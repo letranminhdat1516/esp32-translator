@@ -56,6 +56,28 @@ let bashRequest = """
     #expect(BoardMessage.chunks(Data([1]), maxChunk: 20).first?.first == 0x03)
 }
 
+/// Joins chunk payloads the way the board does (flags bit0 = first, bit1 = last).
+private func reassemble(_ chunks: [Data]) -> Data? {
+    var out = Data()
+    for (i, c) in chunks.enumerated() {
+        guard let flags = c.first else { return nil }
+        if (flags & 0x01 != 0) != (i == 0) || (flags & 0x02 != 0) != (i == chunks.count - 1) { return nil }
+        out.append(c.dropFirst())
+    }
+    return out
+}
+
+@Test func longNonAsciiPermissionChunksFitAttMtu() {
+    let summary = String(repeating: "Đường dẫn tiếng Việt 🚀🧪 ", count: 40)
+    let message = BoardMessage.permission(id: 0x01020304, project: "dự-án-🎯", tool: "Bash", summary: summary)
+    let data = message.encode()
+    #expect(data.count > 1000)
+    let chunks = BoardMessage.chunks(data, maxChunk: 244)   // ATT MTU 247 - 3
+    #expect(chunks.count > 1)
+    #expect(chunks.allSatisfy { $0.count <= 244 })
+    #expect(reassemble(chunks) == data)
+}
+
 @Test func decodesAnswer() {
     let a = Answer.decode(Data([0x04, 0x03, 0x02, 0x01, 1]))
     #expect(a?.id == 0x01020304 && a?.decision == .allow)

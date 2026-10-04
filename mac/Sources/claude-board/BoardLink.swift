@@ -35,7 +35,9 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
     func send(_ message: BoardMessage) {
         queue.async { [self] in
             guard let peripheral, let request, subscribed else { return }
-            let size = peripheral.maximumWriteValueLength(for: .withResponse)
+            // Chunk to ATT MTU - 3 (the without-response limit) even though we write with response: the
+            // with-response limit is 512 (long writes), larger than the board accepts in one write.
+            let size = peripheral.maximumWriteValueLength(for: .withoutResponse)
             for chunk in BoardMessage.chunks(message.encode(), maxChunk: size) {
                 peripheral.writeValue(chunk, for: request, type: .withResponse)
             }
@@ -152,3 +154,5 @@ final class BoardLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate,
         if c.uuid == Self.answerChar, let v = c.value, let a = Answer.decode(v) { onAnswer?(a) }
     }
 }
+
+extension BoardLink: BoardLinking {}

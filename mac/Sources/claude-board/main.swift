@@ -9,6 +9,7 @@ let board = BoardLink()
 let requests = RequestQueue(send: { board.send($0) })
 board.onAnswer = { a in Task { await requests.handle(a) } }
 board.onConnectionChange = { up in if !up { Task { await requests.boardDisconnected() } } }
+let processor = HookProcessor(board: board, requests: requests, log: log)
 
 // Socket: ~/.claude-board/sock, owner-only
 let path = BridgeSocket.path
@@ -34,7 +35,7 @@ func handle(_ conn: NWConnection) {
             if buffer.data.count > maxLineBytes { conn.cancel(); return }   // oversized: drop, no reply
             if let nl = buffer.data.firstIndex(of: 0x0a) {
                 let line = buffer.data[buffer.data.startIndex..<nl]
-                Task { await process(Data(line), conn) }
+                Task { await processor.process(Data(line), NWHookConnection(conn: conn)) }
             } else if !done && error == nil {
                 receive()
             } else {
@@ -45,42 +46,27 @@ func handle(_ conn: NWConnection) {
     receive()
 }
 
-func process(_ line: Data, _ conn: NWConnection) async {
-    guard let e = try? HookEvent.parse(line) else { conn.cancel(); return }
-    let project = Summary.project(cwd: e.cwd)
-    switch e.name {
-    case "PermissionRequest":
-        guard board.isReady else { reply(nil, conn); return }
-        // If the hook goes away (user answered in the terminal), cancel the board request
-        let ask = Task { await requests.ask(project: project, tool: e.toolName ?? "Tool", summary: Summary.permission(e)) }
-        // A peer close only surfaces through a pending receive; the hook sends nothing after its line,
-        // so any completion (EOF, error, or stray byte) means it is gone: cancel the ask. Harmless after the reply.
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in
-            ask.cancel()
-        }
-        conn.stateUpdateHandler = { state in
-            if case .cancelled = state { ask.cancel() }
-            if case .failed = state { ask.cancel() }
-        }
-        let d = await ask.value
-        log("\(project) \(e.toolName ?? "") → \(d.map { $0 == .allow ? "allow" : "deny" } ?? "fall through")")
-        reply(d, conn)
-    case "Stop", "Notification":
-        if board.isReady {
-            let text = e.name == "Stop" ? Summary.lastLine(e) : "Claude is waiting for you"
-            await requests.notifyFinished(project: project, line: text)
-        }
-        conn.cancel()
-    default:
-        conn.cancel()
-    }
-}
+/// NWConnection as seen by the core request handling.
+struct NWHookConnection: HookConnection {
+    let conn: NWConnection
 
-func reply(_ d: Decision?, _ conn: NWConnection) {
-    let r = BridgeReply(decision: d.map { $0 == .allow ? "allow" : "deny" })
-    var data = (try? JSONEncoder().encode(r)) ?? Data("{}".utf8)
-    data.append(0x0a)
-    conn.send(content: data, completion: .contentProcessed { _ in conn.cancel() })
+    func onPeerGone(_ handler: @escaping @Sendable () -> Void) {
+        // A peer close only surfaces through a pending receive; the hook sends nothing after its line,
+        // so any completion (EOF, error, or stray byte) means it is gone.
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 1) { _, _, _, _ in handler() }
+        conn.stateUpdateHandler = { state in
+            if case .cancelled = state { handler() }
+            if case .failed = state { handler() }
+        }
+    }
+
+    func reply(_ reply: BridgeReply) {
+        var data = (try? JSONEncoder().encode(reply)) ?? Data("{}".utf8)
+        data.append(0x0a)
+        conn.send(content: data, completion: .contentProcessed { [conn] _ in conn.cancel() })
+    }
+
+    func close() { conn.cancel() }
 }
 
 listener.newConnectionHandler = handle
