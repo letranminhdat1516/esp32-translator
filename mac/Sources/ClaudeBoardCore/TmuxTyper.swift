@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The tmux pane a session runs in, as its hooks reported it.
 public struct PaneTarget: Equatable, Sendable {
@@ -212,30 +213,85 @@ public struct TmuxTyper: PaneTyping {
         text.hasSuffix(";") ? String(text.dropLast()) + "\\;" : text
     }
 
-    /// Runs tmux without a shell (arguments are never interpreted); kills it after 5 s (status `timedOut`)
-    public static func processRunner(tmux: String) -> Runner {
-        { args in
+    /// The environment tmux runs with: `base` (the daemon's) with a UTF-8 character type. launchd gives the daemon no
+    /// LANG/LC_*, and tmux then prints the tabs of `infoFormat` as "_" and may mangle non-ASCII text.
+    static func utf8Environment(_ base: [String: String]) -> [String: String] {
+        var env = base
+        env["LC_CTYPE"] = "UTF-8"
+        // LC_ALL would override LC_CTYPE
+        if let all = env["LC_ALL"], !all.uppercased().replacingOccurrences(of: "-", with: "").contains("UTF8") {
+            env.removeValue(forKey: "LC_ALL")
+        }
+        return env
+    }
+
+    /// Runs tmux without a shell (arguments are never interpreted), always in UTF-8 mode (`-u` and LC_CTYPE, whatever
+    /// the daemon's locale); kills it after 5 s (status `timedOut`)
+    public static func processRunner(tmux: String,
+                                     environment: [String: String] = ProcessInfo.processInfo.environment) -> Runner {
+        let env = utf8Environment(environment)
+        return { args in
             await withCheckedContinuation { (c: CheckedContinuation<(status: Int32, output: String), Never>) in
-                let p = Process()
-                p.executableURL = URL(fileURLWithPath: tmux)
-                p.arguments = args
-                let out = Pipe()
-                p.standardOutput = out
-                p.standardError = FileHandle.nullDevice
-                p.terminationHandler = { proc in
-                    let data = out.fileHandleForReading.readDataToEndOfFile()
-                    let status = proc.terminationReason == .uncaughtSignal ? timedOut : proc.terminationStatus
-                    c.resume(returning: (status, String(decoding: data, as: UTF8.self)))
-                }
-                do {
-                    try p.run()
-                } catch {
-                    c.resume(returning: (-1, ""))
-                    return
-                }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 5) { if p.isRunning { p.terminate() } }
+                DispatchQueue.global().async { c.resume(returning: spawn(tmux, ["-u"] + args, environment: env)) }
             }
         }
+    }
+
+    /// posix_spawn, not Foundation's Process: Process passes arguments in the file system representation, which
+    /// decomposes accented letters (NFD), so "Viết" would reach the pane as "Vie\u{302}\u{301}t".
+    /// Blocks until tmux exits; stdin and stderr are /dev/null, stdout is returned.
+    static func spawn(_ path: String, _ args: [String], environment: [String: String],
+                      timeout: TimeInterval = 5) -> (status: Int32, output: String) {
+        var fds: [Int32] = [-1, -1]
+        guard pipe(&fds) == 0 else { return (-1, "") }
+        var actions: posix_spawn_file_actions_t?
+        posix_spawn_file_actions_init(&actions)
+        defer { posix_spawn_file_actions_destroy(&actions) }
+        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+        posix_spawn_file_actions_adddup2(&actions, fds[1], 1)
+        posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0)
+        var attr: posix_spawnattr_t?
+        posix_spawnattr_init(&attr)
+        defer { posix_spawnattr_destroy(&attr) }
+        // Only 0, 1 and 2 reach tmux (it never inherits the daemon's sockets); like Process, every signal is
+        // unblocked and default (a tmux server started here passes both on to its panes: Ctrl-Z must still stop)
+        var noSignals = sigset_t()
+        sigemptyset(&noSignals)
+        var allSignals = sigset_t()
+        sigfillset(&allSignals)
+        posix_spawnattr_setsigmask(&attr, &noSignals)
+        posix_spawnattr_setsigdefault(&attr, &allSignals)
+        posix_spawnattr_setflags(&attr, Int16(POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF))
+        let argv: [UnsafeMutablePointer<CChar>?] = ([path] + args).map { strdup($0) } + [nil]
+        let envp: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer { (argv + envp).forEach { free($0) } }
+        var pid: pid_t = 0
+        let spawned = posix_spawn(&pid, path, &actions, &attr, argv, envp)
+        close(fds[1])
+        guard spawned == 0 else { close(fds[0]); return (-1, "") }
+
+        // The kill never hits a reused pid: tmux is reaped only after `exited` is set (waitid WNOWAIT below)
+        let child = pid
+        let exited = OSAllocatedUnfairLock(initialState: false)
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+            exited.withLock { if !$0 { kill(child, SIGTERM) } }
+        }
+        var output = Data()
+        var chunk = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let n = read(fds[0], &chunk, chunk.count)
+            if n > 0 { output.append(contentsOf: chunk[0..<n]); continue }
+            if n < 0 && errno == EINTR { continue }
+            break
+        }
+        close(fds[0])
+        var info = siginfo_t()
+        while waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT) != 0 && errno == EINTR {}
+        exited.withLock { $0 = true }
+        var status: Int32 = 0
+        while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
+        let signalled = status & 0x7f != 0
+        return (signalled ? timedOut : (status >> 8) & 0xff, String(decoding: output, as: UTF8.self))
     }
 
     /// A Unix socket owned by this user (never type into another user's tmux server)

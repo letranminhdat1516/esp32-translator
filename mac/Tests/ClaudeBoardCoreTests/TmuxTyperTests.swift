@@ -243,7 +243,10 @@ private struct PrivateTmux {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("cbt-\(UInt32.random(in: 1...UInt32.max))")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         sock = dir.appendingPathComponent("s").path
-        run = TmuxTyper.processRunner(tmux: tmux)
+        // The user's terminal: a UTF-8 locale (the server is started from here, like a cb session)
+        var env = ProcessInfo.processInfo.environment
+        env["LC_CTYPE"] = "UTF-8"
+        run = TmuxTyper.processRunner(tmux: tmux, environment: env)
     }
 
     func close() {
@@ -270,7 +273,9 @@ private struct PrivateTmux {
         return await run(["-S", sock, "capture-pane", "-p", "-t", pane]).output.components(separatedBy: "\n")
     }
 
-    var typer: TmuxTyper {
+    var typer: TmuxTyper { typer(run) }
+
+    func typer(_ run: @escaping TmuxTyper.Runner) -> TmuxTyper {
         TmuxTyper(run: run, parentOf: { ProcessTree.parent(of: $0) }, isForeground: { ProcessTree.isForeground($0) },
                   ttyDescendants: { ProcessTree.ttyDescendants(of: $0) }, socketIsUsers: { TmuxTyper.socketIsUsers($0) }, enterDelay: .milliseconds(100))
     }
@@ -289,6 +294,33 @@ func realTmuxTypesOnlyIntoAMarkedPane() async throws {
     // The tty echoes the typed line, then cat prints it once Enter arrives: exactly two copies, one Enter
     let screen = await t.lines(pane)
     #expect(screen.filter { $0 == text }.count == 2, "\(screen)")
+}
+
+/// The daemon under launchd: no LANG, LC_ALL or LC_CTYPE (the rest of the environment is kept)
+private let launchdEnvironment = ProcessInfo.processInfo.environment.filter { key, _ in
+    key != "LANG" && !key.hasPrefix("LC_")
+}
+
+@Test(.enabled(if: tmuxPath != nil, "tmux is not installed"))
+func realTmuxVerifiesAndTypesVietnameseWithoutALocale() async throws {
+    // Without a UTF-8 locale tmux printed the tab separators of the pane check as "_" ("%0_44732"), so every
+    // voice command was refused as "The tmux pane is gone"
+    let t = try PrivateTmux()
+    defer { t.close() }
+    let received = t.dir.appendingPathComponent("received.txt")
+    let (pane, pid) = try await t.start("exec tee '\(received.path)'")
+    await t.mark(pane)
+    let typer = t.typer(TmuxTyper.processRunner(tmux: t.tmux, environment: launchdEnvironment))
+    let paneTarget = PaneTarget(pane: pane, socket: t.sock, ancestors: [pid])
+    #expect(await typer.verify(paneTarget) == nil)
+    let text = "Viết một bài thơ về con mèo"
+    #expect(await typer.type(text, into: paneTarget) == .typed)
+    // On screen (capture-pane): the tty echo, then tee's copy. tmux renders combining marks decomposed (NFD), so
+    // the screen is compared as text (canonical equivalence); the bytes the program read are compared exactly.
+    let screen = await t.lines(pane)
+    #expect(screen.filter { $0 == text }.count == 2, "\(screen)")
+    let bytes = try Data(contentsOf: received)
+    #expect(bytes == Data((text + "\n").utf8), "\(String(decoding: bytes, as: UTF8.self))")
 }
 
 @Test(.enabled(if: tmuxPath != nil, "tmux is not installed"))
@@ -425,4 +457,26 @@ func realTmuxAcceptsBackgroundHelpersOfClaude() async throws {
         let problem = await typer.verify(PaneTarget(pane: pane, socket: sock, ancestors: [claudePid, shellPid]))
         #expect(problem == nil, Comment(rawValue: problem ?? ""))
     }
+}
+
+@Test func spawnPassesArgumentsAndEnvironmentUnchanged() {
+    // Foundation's Process would decompose "ế" (NFD) on the way to the child
+    let text = "Viết một bài thơ về con mèo"
+    let echoed = TmuxTyper.spawn("/bin/echo", [text], environment: [:])
+    #expect(echoed.status == 0)
+    #expect(Data(echoed.output.utf8) == Data((text + "\n").utf8))
+    let env = TmuxTyper.spawn("/usr/bin/env", [], environment: TmuxTyper.utf8Environment(["LC_ALL": "C", "KEEP": "1"]))
+    #expect(Set(env.output.split(separator: "\n").map(String.init)) == ["LC_CTYPE=UTF-8", "KEEP=1"])
+    #expect(TmuxTyper.utf8Environment(["LC_ALL": "en_US.UTF-8"])["LC_ALL"] == "en_US.UTF-8")
+    #expect(TmuxTyper.spawn("/bin/sh", ["-c", "exit 3"], environment: [:]).status == 3)
+    #expect(TmuxTyper.spawn("/nonexistent/tmux", [], environment: [:]).status == -1)
+}
+
+@Test func spawnKillsAHungTmux() async {
+    let start = Date()
+    let status = await withCheckedContinuation { c in
+        DispatchQueue.global().async { c.resume(returning: TmuxTyper.spawn("/bin/sleep", ["10"], environment: [:], timeout: 0.3).status) }
+    }
+    #expect(status == TmuxTyper.timedOut)
+    #expect(Date().timeIntervalSince(start) < 3)
 }
