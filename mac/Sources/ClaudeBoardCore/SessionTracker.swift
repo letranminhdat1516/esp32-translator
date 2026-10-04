@@ -23,8 +23,8 @@ public struct SessionTracker: Sendable {
         var unseen: Bool
     }
 
-    /// SessionStart / SessionEnd hooks are installed (hook spike). Without them a session ends after 2 h
-    /// without events.
+    /// SessionStart / SessionEnd hooks are installed (hook spike). Informational: a session ends after 2 h
+    /// without events either way, since a crashed or killed Claude Code never sends SessionEnd.
     public let sessionHooks: Bool
     private(set) var sessions: [String: Session] = [:]
     public private(set) var focusedId: String?
@@ -95,13 +95,19 @@ public struct SessionTracker: Sendable {
         for (id, s) in sessions {
             if s.state == .ended {
                 if now - s.since >= Self.endedKeepSeconds { sessions[id] = nil }
-            } else if !sessionHooks && now - s.updated >= Self.idleEndSeconds {
+            } else if now - s.updated >= Self.idleEndSeconds {
                 var ended = s
                 Self.set(&ended, .ended, now)
                 sessions[id] = ended
             }
         }
-        if let f = focusedId, sessions[f] == nil { focusedId = nil }
+        if let f = focusedId, sessions[f] == nil {
+            // The focused session left: focus the most recently updated one that remains (nil when none)
+            focusedId = sessions.max { a, b in
+                (a.value.updated, a.value.handle) < (b.value.updated, b.value.handle)
+            }?.key
+            if let id = focusedId { sessions[id]?.unseen = false }
+        }
     }
 
     /// At most `visibleMax` rows in board order; the focused session is always one of them.

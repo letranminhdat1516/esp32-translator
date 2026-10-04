@@ -136,9 +136,9 @@ The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>
 and the last line of Claude's reply; the title reads "Claude · N new" while other sessions have finished unseen.
 A session is working after you submit a prompt, needs you on a permission request (or a permission / elicitation
 notification), and is idle after a turn ends, on start, or on `idle_prompt`; `SessionEnd` ends it. Sessions that
-never send `SessionEnd` (a crashed or killed terminal, or an interrupted turn, which sends no `Stop`) end
-on their own only if the session hooks are not installed (after 2 h without events); otherwise they stay until
-the next event, so an old row can linger. Session updates reach the board only while it shows the Claude screen
+never send `SessionEnd` (a crashed or killed terminal, or an interrupted turn, which sends no `Stop`) end on
+their own after 2 h without events and leave the list 10 minutes later, like any ended session; when the focused
+session leaves, the most recently updated remaining session becomes the focused one. Session updates reach the board only while it shows the Claude screen
 or the picker (battery); requests, cancels and the focused session's "done" arrive in any mode.
 
 **Questions.** When Claude asks a multiple-choice question (`AskUserQuestion`), the board shows one page per

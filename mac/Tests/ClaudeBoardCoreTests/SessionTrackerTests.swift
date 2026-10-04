@@ -105,20 +105,42 @@ func hookEvent(_ name: String, sid: String = "s1", cwd: String = "/x/alpha", ext
     #expect(t.rows().isEmpty && t.focusedId == nil)
 }
 
-@Test func idleFallbackEndsSilentSessionsOnlyWithoutSessionHooks() {
-    var with = SessionTracker(sessionHooks: true)
-    with.record(hookEvent("Stop"), now: 0)
-    with.expire(now: 3 * 3600)
-    #expect(with.rows().first?.state == .idle)
+@Test func silentSessionsEndAfterTwoHoursWithOrWithoutSessionHooks() {
+    // A crashed or killed Claude Code never sends SessionEnd: the 2 h fallback applies with session hooks too
+    for hooks in [true, false] {
+        var t = SessionTracker(sessionHooks: hooks)
+        t.record(hookEvent("Stop"), now: 0)
+        t.expire(now: 7199)
+        #expect(t.rows().first?.state == .idle)
+        t.expire(now: 7200)
+        #expect(t.rows().first?.state == .ended && t.rows().first?.since == 7200)
+        t.expire(now: 7200 + 600)
+        #expect(t.rows().isEmpty && t.focusedId == nil)
+    }
+}
 
-    var without = SessionTracker(sessionHooks: false)
-    without.record(hookEvent("Stop"), now: 0)
-    without.expire(now: 7199)
-    #expect(without.rows().first?.state == .idle)
-    without.expire(now: 7200)
-    #expect(without.rows().first?.state == .ended && without.rows().first?.since == 7200)
-    without.expire(now: 7200 + 600)
-    #expect(without.rows().isEmpty)
+@Test func aWorkingSessionThatGoesSilentAlsoEnds() {
+    var t = SessionTracker(sessionHooks: true)
+    t.record(hookEvent("UserPromptSubmit"), now: 0)
+    t.record(hookEvent("PermissionRequest", sid: "s2", extra: #","tool_name":"Bash""#), now: 0)
+    t.expire(now: 7200)
+    #expect(t.rows().allSatisfy { $0.state == .ended })
+}
+
+@Test func droppingTheFocusedSessionRefocusesTheMostRecentlyUpdatedOne() {
+    var t = SessionTracker(sessionHooks: true)
+    t.record(hookEvent("SessionEnd"), now: 1000)                                   // s1 focused, ended
+    t.record(hookEvent("UserPromptSubmit", sid: "s2", cwd: "/x/beta"), now: 1100)
+    t.record(hookEvent("Stop", sid: "s3", cwd: "/x/gamma"), now: 1200)            // unseen, most recent
+    t.record(hookEvent("Stop", sid: "s2", cwd: "/x/beta"), now: 1150)
+    #expect(t.focusedId == "s1")
+    t.expire(now: 1000 + 600)                                                       // s1 dropped
+    #expect(t.focusedId == "s3")
+    let rows = t.rows()
+    #expect(rows.count == 2)
+    #expect(rows.first { $0.project == "gamma" }?.focused == true)
+    #expect(rows.first { $0.project == "gamma" }?.unseen == false)
+    #expect(rows.first { $0.project == "beta" }?.focused == false)
 }
 
 @Test func keepsTheTmuxPaneAndIgnoresEventsWithoutSession() {
