@@ -16,7 +16,10 @@ enum VietnameseFixup {
     /// The text given to the VI→EN translator: loanwords fixed, vocatives dropped, service phrases and a
     /// few idioms put in plain Vietnamese. Never shown.
     static func forTranslation(_ text: String) -> String {
-        tidy(apply(translationRules, to: apply(loanwordRules, to: text)), original: text)
+        let fixed = apply(loanwordRules, to: text)
+        let rewritten = tidy(apply(translationRules, to: fixed), original: text)
+        // Only vocatives ("Ông ơi, ông bà ơi"): keep them rather than translate nothing
+        return rewritten.contains(where: \.isLetter) ? rewritten : fixed
     }
 
     // MARK: Rules
@@ -24,12 +27,18 @@ enum VietnameseFixup {
     private struct Rule {
         let regex: NSRegularExpression
         let template: String
+        /// The rule applies only when the whole text also matches this (context, e.g. talk about a price)
+        let context: NSRegularExpression?
 
-        init(_ pattern: String, _ template: String) {
+        /// `atClauseStart`: the match must begin the text or follow , . ! ? (the template gets the
+        /// punctuation back as $1)
+        init(_ pattern: String, _ template: String, atClauseStart: Bool = false, context: String? = nil) {
             // Whole words only: no letter or digit may touch the match
-            let bounded = "(?<![\\p{L}\\p{N}])(?:\(pattern))(?![\\p{L}\\p{N}])"
+            let start = atClauseStart ? "(^|[,.!?])\\s*" : "(?<![\\p{L}\\p{N}])"
+            let bounded = "\(start)(?:\(pattern))(?![\\p{L}\\p{N}])"
             regex = try! NSRegularExpression(pattern: bounded, options: [.caseInsensitive])
             self.template = template
+            self.context = context.map { try! NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
         }
     }
 
@@ -39,34 +48,43 @@ enum VietnameseFixup {
         Rule("(?<=xe )gram", "Grab"),
         Rule("hoa phay|hoa pha(?! lê)|oai phai|quai phai|wai phai|wi fi|wifi", "Wi-Fi"),
         Rule("(?<=mật khẩu )(?:khoai tây|phai)", "Wi-Fi"),
-        Rule("(?<=(?:qua|bằng|trên|dùng|có|gửi|nhắn|gọi) )giữa lo(?! (?:lắng|âu|sợ|ngại|xa|liệu|nghĩ))|zalo lo|da lô|za lô|gia lô", "Zalo"),
-        Rule("china com|(?:c|phi) nga (?:co|to|tho)|c call|syria tho|xin ga po|xing ga po|sing ga po|singapo", "Singapore"),
+        Rule("(?<=(?:qua|bằng|trên|dùng|có|gửi|nhắn|gọi) )giữa lo(?! (?:lắng|âu|sợ|ngại|xa|liệu|nghĩ))|zalo lo", "Zalo"),
+        Rule("china com|(?:c|phi) nga (?:co|to|tho)|(?<=ở )c call|syria tho|xin ga po|xing ga po|sing ga po|singapo", "Singapore"),
         Rule("phây búc|phây bút|phê búc|phết búc|face book", "Facebook"),
         Rule("i meo|i-meo|e mail|e-mail|ê meo", "email"),
         Rule("ô kê|ô-kê|oke|okê|okey", "OK"),
-        // "ở" heard as "ngở" after a nasal ending ("ngở" is not a Vietnamese word)
-        Rule("ngở", "ở"),
+        // "ở" heard as "ngở" after a nasal ending ("ngở" is not a Vietnamese word; "ngở ngàng" is a
+        // misspelled "ngỡ ngàng")
+        Rule("ngở(?! ngàng)", "ở"),
     ]
 
     private static let pronoun = "em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím"
-    /// A number is a price only with a scale word or three digits ("hai cái" is a count)
-    private static let priceScale = "trăm|nghìn|ngàn|triệu|rưỡi|chục|k|đồng|\\d+[.,]\\d{3}|\\d{3,}"
+    /// Kinship vocatives, pairs first ("ông bà ơi")
+    private static let vocative = "ông bà|cô chú|anh chị|cô bác|chú bác|\(pronoun)"
+    /// A number is a price only with a scale word or three digits ("hai cái" is a count), not a year
+    private static let priceScale = "trăm|nghìn|ngàn|triệu|rưỡi|chục|k|đồng|\\d+[.,]\\d{3}|(?!(?:19|20)\\d\\d(?!\\d))\\d{3,}"
+    /// …and ends the phrase ("hai trăm cái bánh" counts cakes)
+    private static let phraseEnd = "(?=\\s*(?:thôi|nhé|nha|đi|ạ|à|[,.!?]|$))"
     private static let numberWord = "\\d[\\d.,]*|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín|mười|mươi|mốt|trăm|nghìn|ngàn|triệu|rưỡi|chục|k"
 
     private static let translationRules: [Rule] = [
-        // Vocatives: "em ơi", "anh ơi"… anywhere, and a bare "ơi" (not "trời ơi", "mẹ ơi": those are exclamations)
-        Rule("(?:\(pronoun)) ơi[,!.]?", ""),
-        Rule("(?<![\\p{L}] )ơi[,!.]?", ""),
-        // Asking for the bill
-        Rule("tính tiền(?: (?:đi|nhé|nha|ạ|giùm|dùm|với|cho (?:\(pronoun)|tôi|mình)))*(?=\\s*(?:[,.!?]|$))", "cho tôi thanh toán"),
+        // Vocatives at the start or end of a clause: "em ơi", "anh ơi", "ông bà ơi", a bare "ơi" (not
+        // "trời ơi", "mẹ ơi": exclamations; not "anh ơi là anh")
+        Rule("(?:\(vocative)) ơi(?! là)[,!.]?", "$1", atClauseStart: true),
+        Rule("ơi[,!.]?", "$1", atClauseStart: true),
+        Rule("(?:\(vocative)) ơi(?=\\s*(?:[,.!?]|$))", ""),
+        // Asking for the bill: a bare "tính tiền" (not "anh tính tiền đi", "để em tính tiền")
+        Rule("tính tiền(?: (?:đi|nhé|nha|ạ|với|(?:giùm|dùm|giúp|cho) (?:\(pronoun)|tôi|mình)|giùm|dùm))*(?=\\s*(?:[,.!?]|$))",
+             "$1 cho tôi thanh toán", atClauseStart: true),
         // A seller's "em lấy anh 250 nghìn" is a price, not "I marry you"
-        Rule("lấy(?= (?:\(pronoun))(?: (?:\(numberWord)))*? (?:\(priceScale))(?![\\p{L}\\p{N}]))", "tính"),
+        Rule("lấy(?= (?:\(pronoun))(?: (?:\(numberWord)))*? (?:\(priceScale))(?: (?:\(numberWord)))*\(phraseEnd))", "tính"),
         // "hai trăm rưỡi" = 250
         Rule("trăm rưỡi", "trăm năm mươi"),
         Rule("(?:nghìn|ngàn) rưỡi", "nghìn năm trăm"),
         Rule("triệu rưỡi", "triệu năm trăm nghìn"),
-        // Southern "mắc" = expensive (but not "mắc kẹt", "mắc mưa"…)
-        Rule("mắc(?= (?:quá|vậy|thế|ghê|lắm))", "đắt"),
+        // Southern "mắc" = expensive, when the talk is about a price (not "mắc kẹt", "mắc lắm" = busy)
+        Rule("mắc(?= (?:quá|ghê|vậy|thế))", "đắt",
+             context: "giá|tiền|bớt|đắt|rẻ|mua|bán|nghìn|ngàn|triệu|đồng|\\d"),
         // Bargaining: "bớt chút đi" = a small discount (not "bớt đường" = less sugar)
         Rule("bớt (?:cho (?:\(pronoun)|tôi|mình) )?(?:một )?(?:chút xíu|chút|tí|ít)(?=\\s*(?:đi|nha|nhé|được không|[,.!?]|$))", "giảm giá chút"),
         // Idioms the translator takes literally
@@ -79,6 +97,7 @@ enum VietnameseFixup {
         var s = text.precomposedStringWithCanonicalMapping
         for rule in rules {
             let range = NSRange(s.startIndex..., in: s)
+            if let context = rule.context, context.firstMatch(in: s, range: range) == nil { continue }
             s = rule.regex.stringByReplacingMatches(in: s, range: range, withTemplate: rule.template)
         }
         return s

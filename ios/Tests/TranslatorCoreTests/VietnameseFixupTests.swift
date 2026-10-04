@@ -53,6 +53,11 @@ import Testing
         // Vocative at the end, and loanwords before translation
         ("Cho em hai ly trà đá nhé chị ơi", "Cho em hai ly trà đá nhé"),
         ("mật khẩu hoa phay là gì vậy anh ơi", "mật khẩu Wi-Fi là gì vậy"),
+        ("Chị ơi, tính tiền giùm em", "Cho tôi thanh toán"),
+        ("Mắc quá, giá này bớt chút đi", "Đắt quá, giá này giảm giá chút đi"),
+        // Vocatives only: keep them (otherwise nothing is left to translate)
+        ("Ông ơi, ông bà ơi", "Ông ơi, ông bà ơi"),
+        ("Bà ơi bà ở đâu?", "Bà ở đâu?"),
     ])
     func forTranslation(spoken: String, translated: String) {
         #expect(VietnameseFixup.forTranslation(spoken) == translated)
@@ -67,6 +72,32 @@ import Testing
         "Trời ơi, đẹp quá!",
         "Mẹ ơi, con về rồi.",
         "Ông bà ấy sống ở quê.",
+        // Review I5
+        "Để em tính tiền nha.",
+        "Anh tính tiền đi.",
+        "Chị tính tiền giúp em được không?",
+        "Em lấy anh năm 1990.",
+        "Anh ấy lấy chị năm 2015.",
+        "Dạo này anh mắc lắm.",
+        "Hôm nay tôi mắc quá, mai nói chuyện nhé.",
+        "Anh ơi là anh!",
+        "Ngở ngàng quá trời.",
+        "Tôi mua da lô cho con.",
+        "Cô ấy đi gia lô về.",
+        "Gọi C call cho anh nhé.",
+        "Tính tiền thuê nhà tháng này chưa?",
+        "Mẹ mắc mưa ngoài đường.",
+        "Tôi lấy anh ấy năm 2010.",
+        "Anh lấy em hai trăm cái bánh nhé.",
+        "Bớt nói lại đi.",
+        "Chúng ta ở giữa lòng thành phố.",
+        "Nó lo lắng quá.",
+        "Ăn quả này đi em.",
+        "Uống nước đi.",
+        "Đi đâu đó?",
+        "Đừng để quên điện thoại.",
+        "Cho tôi hỏi tiền phòng bao nhiêu.",
+        "Anh ấy là người Singapore.",
     ])
     func forTranslationLeavesOtherSentences(_ text: String) {
         #expect(VietnameseFixup.forTranslation(text) == text)
