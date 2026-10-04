@@ -1,1 +1,15 @@
-print("todo")
+// Claude Code hook: forwards the event to the claude-board daemon.
+// PermissionRequest: prints the board's decision, or nothing (Claude shows its normal prompt).
+import ClaudeBoardCore
+import Foundation
+
+let input = FileHandle.standardInput.readDataToEndOfFile()
+guard let event = try? HookEvent.parse(input) else { exit(0) }
+
+let isPermission = event.name == "PermissionRequest"
+let reply = bridgeRoundTrip(event: input, waitForReply: isPermission, timeout: 92)
+
+if isPermission, let raw = reply?.decision, let decision = raw == "allow" ? Decision.allow : raw == "deny" ? .deny : nil {
+    print(HookOutput.json(for: decision))
+}
+exit(0)
