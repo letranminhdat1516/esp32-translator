@@ -272,3 +272,17 @@ size_t claude_encode_voice(uint32_t voice, uint8_t code, uint8_t out[CLAUDE_INPU
     out[4] = code;
     return 5;
 }
+
+int claude_parse_hello(const claude_msg_t *m)
+{
+    if (m->kind != CLAUDE_LINK || m->id != 0) {
+        return CLAUDE_HELLO_NONE;
+    }
+    if (strcmp(m->text, "mac") == 0) {
+        return CLAUDE_HELLO_MAC;
+    }
+    if (strcmp(m->text, "relay") == 0) {
+        return CLAUDE_HELLO_RELAY;
+    }
+    return CLAUDE_HELLO_NONE;
+}

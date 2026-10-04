@@ -379,6 +379,32 @@ static void voice_encoders_refuse_bad_input(void)
     assert(claude_encode_voice(9, 0x34, out) == 0);
 }
 
+static void hello_parses(void)
+{
+    /* Shared vector with the Swift side (BoardHello.mac / .relay), one chunk each */
+    claude_rx_t rx = { 0 };
+    claude_msg_t m;
+    uint8_t mac[] = { 0x03, 9, 0, 0, 0, 0, 'm', 'a', 'c' };
+    assert(claude_rx_feed(&rx, mac, sizeof mac, &m) && m.kind == CLAUDE_LINK);
+    assert(claude_parse_hello(&m) == CLAUDE_HELLO_MAC);
+    uint8_t relay[] = { 0x03, 9, 0, 0, 0, 0, 'r', 'e', 'l', 'a', 'y' };
+    assert(claude_rx_feed(&rx, relay, sizeof relay, &m));
+    assert(claude_parse_hello(&m) == CLAUDE_HELLO_RELAY);
+
+    claude_msg_t bad = { .kind = CLAUDE_LINK, .id = 0 };
+    const char *texts[] = { "Mac", "relay\n", "", "mac ", "macrelay" };
+    for (size_t i = 0; i < sizeof texts / sizeof texts[0]; i++) {
+        snprintf(bad.text, sizeof bad.text, "%s", texts[i]);
+        assert(claude_parse_hello(&bad) == CLAUDE_HELLO_NONE);
+    }
+    snprintf(bad.text, sizeof bad.text, "mac");
+    bad.id = 1;
+    assert(claude_parse_hello(&bad) == CLAUDE_HELLO_NONE);           /* id must be 0 */
+    bad.id = 0;
+    bad.kind = CLAUDE_FINISHED;
+    assert(claude_parse_hello(&bad) == CLAUDE_HELLO_NONE);           /* only kind 9 */
+}
+
 int main(void)
 {
     single_chunk_permission();
@@ -404,6 +430,7 @@ int main(void)
     voice_message_parses();
     voice_encoders_match_the_mac();
     voice_encoders_refuse_bad_input();
+    hello_parses();
     puts("claude_proto: all tests passed");
     return 0;
 }

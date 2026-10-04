@@ -1,8 +1,8 @@
 /*
  * Claude companion wire format (Mac daemon <-> board), pure C, host-tested in firmware/test/test_claude_proto.c.
  *
- * Mac -> board (request characteristic): BLE writes [flags u8][payload], flags bit0 = first, bit1 = last;
- * payload [kind u8][id u32 LE][UTF-8 text, at most CLAUDE_TEXT_MAX bytes]:
+ * Mac or iPhone relay -> board (request characteristic): BLE writes [flags u8][payload], flags bit0 = first,
+ * bit1 = last; payload [kind u8][id u32 LE][UTF-8 text, at most CLAUDE_TEXT_MAX bytes]:
  *   0 permission      id = request  "project\ntool\nsummary[\nrule]"  (rule line <=> Always allow offered)
  *   1 finished        fresh id      "project\nlast line"               (focused session only)
  *   2 cancel          id = request  ""                                 (a permission or a whole question set)
@@ -12,6 +12,7 @@
  *   6 sessions clear  id 0          ""                                 (first message of every full sync)
  *   7 question page   id = request  "<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) x nopt"
  *   8 voice           id = voice id    "<p|f|x|k>\ntext"   partial / final (what Send types) / error / done
+ *   9 link hello      id 0          "mac" | "relay"  (once per subscriber, before anything else; claude_link.h)
  *
  * Board -> Mac (answer characteristic, notify, at most CLAUDE_INPUT_MAX bytes):
  *   [id u32 LE][1|2|3]                   allow / deny / always allow
@@ -41,6 +42,7 @@ typedef enum {
     CLAUDE_SESSIONS_CLEAR = 6,
     CLAUDE_QUESTION = 7,
     CLAUDE_VOICE = 8,
+    CLAUDE_LINK = 9,
 } claude_kind_t;
 
 typedef struct {
@@ -148,3 +150,9 @@ size_t claude_encode_voice_start(uint32_t voice, uint8_t purpose, uint8_t questi
                                  uint8_t out[CLAUDE_INPUT_MAX]);
 /* code CLAUDE_INPUT_VOICE_STOP / CANCEL / SEND: 5 bytes, or 0 when refused */
 size_t claude_encode_voice(uint32_t voice, uint8_t code, uint8_t out[CLAUDE_INPUT_MAX]);
+
+/* Link hello (kind 9): who is subscribing. Anything but exactly "mac" / "relay" with id 0 is NONE. */
+#define CLAUDE_HELLO_NONE  0
+#define CLAUDE_HELLO_MAC   1
+#define CLAUDE_HELLO_RELAY 2
+int claude_parse_hello(const claude_msg_t *m);
