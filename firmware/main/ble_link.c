@@ -18,6 +18,10 @@
 #include "nimble/nimble_port_freertos.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
+#include "store/config/ble_store_config.h"
+
+/* Not declared in the IDF header; defined in the NimBLE config store (NVS-backed bonds) */
+void ble_store_config_init(void);
 
 #include "app.h"
 #include "claude_proto.h"
@@ -53,8 +57,8 @@ static uint16_t s_claude_ans_handle;
 static claude_rx_t s_claude_rx;
 
 /* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
-static uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
-static uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
+static volatile uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+static volatile uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
 static int s_connections;
 static uint8_t s_own_addr_type;
 
@@ -116,6 +120,9 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         handle_text_write(buf, len);
         return 0;
     } else if (attr_handle == s_claude_req_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
+        if (conn_handle != s_mac_conn) {
+            return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* only the subscribed Mac may feed the parser */
+        }
         if (ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof(buf), &len) != 0) {
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
@@ -161,13 +168,13 @@ static const struct ble_gatt_svc_def s_services[] = {
             {
                 .uuid = &s_claude_req_uuid.u,
                 .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,   /* encrypted, bonded link only */
                 .val_handle = &s_claude_req_handle,
             },
             {
                 .uuid = &s_claude_ans_uuid.u,
                 .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,   /* CCCD write needs encryption */
                 .val_handle = &s_claude_ans_handle,
             },
             { 0 },
@@ -221,14 +228,18 @@ static int gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == s_audio_handle) {
             bool on = event->subscribe.cur_notify;
-            if (on || event->subscribe.conn_handle == s_phone_conn) {
+            if (on && s_phone_conn != BLE_HS_CONN_HANDLE_NONE && s_phone_conn != event->subscribe.conn_handle) {
+                ESP_LOGW(TAG, "audio role already held, ignoring second subscriber");
+            } else if (on || event->subscribe.conn_handle == s_phone_conn) {
                 s_phone_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
                 ESP_LOGI(TAG, "iPhone audio %s", on ? "on" : "off");
                 app_on_connection_changed(on);
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
             bool on = event->subscribe.cur_notify;
-            if (on || event->subscribe.conn_handle == s_mac_conn) {
+            if (on && s_mac_conn != BLE_HS_CONN_HANDLE_NONE && s_mac_conn != event->subscribe.conn_handle) {
+                ESP_LOGW(TAG, "Claude role already held, ignoring second subscriber");
+            } else if (on || event->subscribe.conn_handle == s_mac_conn) {
                 s_mac_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
                 if (!on) {
                     s_claude_rx.len = 0;
@@ -238,6 +249,15 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             }
         }
         break;
+
+    case BLE_GAP_EVENT_REPEAT_PAIRING: {
+        /* Peer lost its key (or re-installed): drop the old bond and let it pair again */
+        struct ble_gap_conn_desc desc;
+        if (ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc) == 0) {
+            ble_store_util_delete_peer(&desc.peer_id_addr);
+        }
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %d", event->mtu.value);
@@ -306,12 +326,21 @@ void ble_link_init(void)
     ESP_ERROR_CHECK(nimble_port_init());
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
+    /* Just Works bonding (no keypad); only the Claude characteristics demand encryption */
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+    ble_hs_cfg.sm_bonding = 1;
+    ble_hs_cfg.sm_mitm = 0;
+    ble_hs_cfg.sm_sc = 1;
+    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
     ble_svc_gap_init();
     ble_svc_gatt_init();
     ESP_ERROR_CHECK(ble_gatts_count_cfg(s_services));
     ESP_ERROR_CHECK(ble_gatts_add_svcs(s_services));
 
+    ble_store_config_init();
     nimble_port_freertos_init(host_task);
 }
 
