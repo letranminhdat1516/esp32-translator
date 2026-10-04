@@ -5,7 +5,7 @@ import Testing
 actor Sent {
     var messages: [BoardMessage] = []
     func add(_ m: BoardMessage) { messages.append(m) }
-    func permissionIds() -> [UInt32] { messages.compactMap { if case .permission(let id, _, _, _) = $0 { id } else { nil } } }
+    func permissionIds() -> [UInt32] { messages.compactMap { if case .permission(let id, _, _, _, _) = $0 { id } else { nil } } }
 }
 
 @Test func answersTheWaitingHook() async {
@@ -77,10 +77,14 @@ actor Sent {
 
 private func tag(_ m: BoardMessage) -> String {
     switch m {
-    case .permission(let id, _, _, _): "perm\(id)"
+    case .permission(let id, _, _, _, _): "perm\(id)"
     case .cancel(let id): "cancel\(id)"
     case .finished(let id, _, _): "fin\(id)"
     case .time: "time"
+    case .session(let r): "row\(r.handle)"
+    case .sessionRemove(let h): "rm\(h)"
+    case .sessionsClear: "clear"
+    case .question(let id, let index, _, _, _): "q\(id).\(index)"
     }
 }
 

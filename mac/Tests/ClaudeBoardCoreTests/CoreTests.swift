@@ -67,14 +67,13 @@ private func reassemble(_ chunks: [Data]) -> Data? {
     return out
 }
 
-@Test func longNonAsciiPermissionChunksFitAttMtu() {
+@Test func longNonAsciiPermissionIsCutToTheBoardLimitAndChunks() {
     let summary = String(repeating: "Đường dẫn tiếng Việt 🚀🧪 ", count: 40)
-    let message = BoardMessage.permission(id: 0x01020304, project: "dự-án-🎯", tool: "Bash", summary: summary)
-    let data = message.encode()
-    #expect(data.count > 1000)
-    let chunks = BoardMessage.chunks(data, maxChunk: 244)   // ATT MTU 247 - 3
-    #expect(chunks.count > 1)
-    #expect(chunks.allSatisfy { $0.count <= 244 })
+    let data = BoardMessage.permission(id: 0x01020304, project: "dự-án-🎯", tool: "Bash", summary: summary).encode()
+    #expect(data.count <= 5 + BoardMessage.textMax)
+    #expect(String(data: data.dropFirst(5), encoding: .utf8) != nil)   // never cut inside a character
+    let chunks = BoardMessage.chunks(data, maxChunk: 20)              // default ATT MTU 23 - 3
+    #expect(chunks.count > 1 && chunks.allSatisfy { $0.count <= 20 })
     #expect(reassemble(chunks) == data)
 }
 

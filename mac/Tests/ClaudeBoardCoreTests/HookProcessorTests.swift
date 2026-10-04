@@ -13,7 +13,7 @@ final class FakeBoard: BoardLinking, @unchecked Sendable {
     var isReady: Bool { lock.withLock { ready } }
     func send(_ message: BoardMessage) { lock.withLock { _sent.append(message) } }
     var sent: [BoardMessage] { lock.withLock { _sent } }
-    var permissionIds: [UInt32] { sent.compactMap { if case .permission(let id, _, _, _) = $0 { id } else { nil } } }
+    var permissionIds: [UInt32] { sent.compactMap { if case .permission(let id, _, _, _, _) = $0 { id } else { nil } } }
 }
 
 /// Fake hook connection: records the reply and lets the test simulate the hook going away.
