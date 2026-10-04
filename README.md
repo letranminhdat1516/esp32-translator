@@ -130,7 +130,7 @@ bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a laun
 bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board hook entries
 ```
 
-The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` on to the daemon when Claude runs inside tmux. Hooks must be verified against the Claude Code version they run on; this was verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
+The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` on to the daemon when Claude runs inside tmux. Verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
 
 **Sessions.** The Claude screen shows the focused session: project, state with elapsed time ("Working · 12m"),
 and the last line of Claude's reply; the title reads "Claude · N new" while other sessions have finished unseen.
