@@ -45,6 +45,7 @@ Battery life has not been measured yet.
 | Path | Contents |
 |---|---|
 | `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (LVGL UI) |
+| `mac/` | Swift package: `claude-board` daemon (Unix socket + CoreBluetooth) and `claude-board-hook` (Claude Code hook), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
@@ -55,6 +56,9 @@ Battery life has not been measured yet.
 | `…0002` audio | notify | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
 | `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status |
 | `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
+| `…0010` Claude service | (service) | Claude companion mode, see below. Requires a bonded, encrypted link |
+| `…0011` Claude request | write (with response), encrypted | Mac → board: permission request / status to display |
+| `…0012` Claude answer | notify, encrypted | Board → Mac: Allow / Deny decision |
 
 ## Getting started
 
@@ -80,6 +84,29 @@ Requires Xcode 26 and an iPhone on iOS 26.
 2. Under Signing & Capabilities, set your own **Team** and a unique **Bundle Identifier**.
 3. Connect the iPhone, enable Developer Mode, then Run.
 4. On first launch, download the English ↔ Vietnamese translation models and allow microphone access. After that it works offline.
+
+## Claude companion mode
+
+The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board. When Claude finishes a turn, the board plays a done chime and shows "Claude finished" with the last line of the reply.
+
+Toggle the mode on the board with a **PWR double press**.
+
+```sh
+bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a launchd agent, adds Claude Code hooks
+bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board hook entries
+```
+
+The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds three hooks: `PermissionRequest`, `Stop` and `Notification` (`idle_prompt`).
+
+**First-time pairing.** The board's Claude service requires a bonded, encrypted link. The first time the daemon connects, macOS shows a Bluetooth pairing prompt. Accept it once.
+
+**Re-pairing.** If the board is reflashed or its NVS is erased, the old bond is invalid. Run `defaults delete claude-board boardIdentifier`, remove the board in macOS System Settings > Bluetooth, then restart the daemon and accept the pairing prompt again.
+
+**Safety rules**
+- Nothing is ever auto-approved. Only an explicit Allow on the board approves a request.
+- If the daemon is not running, the board is off or not connected, or the request times out, the hook prints nothing and exits 0, so Claude Code shows its normal terminal prompt.
+
+Daemon log: `~/.claude-board/daemon.log`.
 
 ## Tuning
 
