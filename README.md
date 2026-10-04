@@ -60,6 +60,7 @@ The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` 
 | Board | Energy VAD (adaptive noise floor, 300 ms pre-roll, 800 ms hangover) | Silence is never transmitted: no radio time, no recognition work on the phone |
 | Board | Screen off after 30 s without speech, subtitles or touch; a tap only wakes it | AMOLED power scales with lit pixels and brightness |
 | Board | Lock (PWR ×1): panel off, the 5 s lock face is a static logo | No lit pixels, clock timer paused while locked |
+| Board | The microphone and the voice characteristic are used only while a voice capture records (at most 30 s); the translator stream to the iPhone pauses during a capture | No extra radio or codec work when you are not speaking to Claude |
 | Board | Deep sleep after 3 min without an iPhone; touch screen or BOOT wakes it | Near-zero drain when you walk away |
 | Board | CPU 160 MHz with DFS down to 80 MHz, BLE modem sleep, 30–45 ms connection interval | Fewer radio and CPU wake-ups |
 | iPhone | Same VAD on the AirPods mic; recognizers only receive speech | Neural recognition runs only while someone talks |
@@ -73,9 +74,9 @@ Battery life has not been measured yet.
 
 | Path | Contents |
 |---|---|
-| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `lock_ui.c`, `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
+| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
 | `tools/` | `gen_logo.py`: generates the lock-face logo (`firmware/main/logo_img.c`) from `assets/cicca-dark.png` |
-| `mac/` | Swift package: `claude-board` daemon (Unix socket + CoreBluetooth) and `claude-board-hook` (Claude Code hook), plus install scripts |
+| `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
@@ -87,8 +88,9 @@ Battery life has not been measured yet.
 | `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect) |
 | `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
 | `…0010` Claude service | (service) | Claude companion mode, see below. Requires a bonded, encrypted link |
-| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options). See `firmware/main/claude_proto.h` |
-| `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session |
+| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options), 8 voice (id = the board's voice id; `<p\|f\|x\|k>\ntext`: `p` live transcript, `f` final transcript (exactly what Send types, at most 300 bytes, empty = nothing heard), `x` error, `k` done; the Mac only sends them for the current capture). Session flags (kind 4) also have bit2 = voice (the session runs in a `cb` tmux pane the Mac can type into). See `firmware/main/claude_proto.h` |
+| `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session; `[voice u32][0x30][purpose u8][target u32 LE]` voice capture start (voice id never 0, chosen by the board; purpose low nibble 0 = command, target = session handle; 1 = Other answer, target = request id, question index in the high nibble; 2 = deny with reason, target = request id); `[voice u32][0x31]` audio complete, `[voice u32][0x32]` cancel, `[voice u32][0x33]` send the final transcript. Bit 7 of a question mask = the spoken Other answer |
+| `…0013` Claude voice | notify, encrypted | Board → Mac, only during a voice capture: the board mic as `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono, like `…0002`. The board offers voice only once the Mac has subscribed and the ATT MTU is at least 168, so a full frame fits in one notification |
 
 ## Getting started
 
@@ -130,7 +132,7 @@ bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a laun
 bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board hook entries
 ```
 
-The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` on to the daemon when Claude runs inside tmux. Verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
+The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` (and, inside tmux, its process ancestry, so the daemon can later check that the pane still runs that session) on to the daemon. The installer also installs `cb` (see Voice commands). Verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
 
 **Sessions.** The Claude screen shows the focused session: project, state with elapsed time ("Working · 12m"),
 and the last line of Claude's reply; the title reads "Claude · N new" while other sessions have finished unseen.
@@ -146,14 +148,74 @@ question ("1/2 · project", header, question). Single choice: tap an option (rad
 tick the boxes. Long-press an option to read its description; scroll the option list or question text when it
 does not fit. Next / Send stay disabled until the page is answered; Send on the last page answers every question
 at once, and Claude receives the chosen labels (several joined with ", "). Questions with more than 4
-questions or 4 options stay in the terminal, and there is no "Other" free-text row.
+questions or 4 options stay in the terminal. While the Mac's voice link is up, every page ends with an "Other (speak)" row for a spoken free-text answer (see Voice commands).
 
 **Always allow.** When Claude Code suggests a permission rule (an `addRules` suggestion) for the request, a
 third button "Always allow" applies that rule (shown as "Rule: …"), so the same kind of call is not asked again.
 Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button. Only allow rules are offered: an `addRules` suggestion whose
 `behavior` is `deny` or `ask` (anything but `allow` or absent) never gets the button.
 
-**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again after you rebuild and reinstall. If the prompt reappears after rebuilding or reinstalling the daemon, allow it again; if you denied it, enable `claude-board` in System Settings → Privacy & Security → Bluetooth.
+**Voice commands.** Say a command to Claude Code from the board. Start Claude with `cb` instead of `claude`
+(same arguments); voice only ever types into a `cb` pane.
+
+- `cb [claude arguments]` outside tmux runs Claude in a tmux session named `<folder name>-<6 hex of a hash of the full path>`
+  (characters other than letters, digits, `_` and `-` become `_`), so two folders with the same name never share a session. If that
+  session is already running, `cb` attaches to it (arguments are ignored, with a note). It refuses to attach to a
+  session of that name that was not started by `cb`. Inside tmux it runs Claude in the current pane instead and marks
+  that pane (the mark is cleared when Claude exits). Either way the pane gets the option `@claude_board=1`.
+  Remote Control and everything else work as usual. Needs `tmux` (`brew install tmux`).
+- `mac/install.sh` copies `cb` to `~/.claude-board/bin` and links it as `~/.local/bin/cb` when that folder exists
+  (an existing `cb` there is left alone; otherwise it prints how to add the folder to `PATH`). `mac/uninstall.sh`
+  removes the link only if it points to this install.
+
+On the Claude screen tap **Speak**, say the command and stop talking. Recording ends 1.5 s after you stop, 5 s
+after the tap if you said nothing (the board then shows "Didn't catch that"), when you tap Stop, or after 30 s.
+The words appear live as you speak (the end of the sentence stays in view). Then the board shows exactly what will
+be typed: **Send** types it into the session's tmux pane and presses Enter once, **Say again** records again,
+**Cancel** drops it. Taps in the first 700 ms of each step are ignored. Transcription is Vietnamese by default
+(`VoiceConfig.localeIdentifier` in `mac/Sources/ClaudeBoardCore/VoiceHub.swift`) and runs on the Mac with the
+Speech framework's on-device dictation (`SpeechAnalyzer` + `DictationTranscriber`; the model downloads once). The
+Mac's own microphone is not used: the audio comes from the board. A capture that sits unconfirmed for 120 s
+times out ("Timed out — say it again").
+
+Speak is hidden while the Mac voice link is down or a request is on screen, and greyed out with "Open with cb for
+voice" when the focused session has no `cb` pane.
+
+Before anything is typed (when you tap Speak, and again when you tap Send) the Mac checks that
+- the pane exists, has not exited, and carries the `@claude_board` mark set by `cb`;
+- the pane's process is the session's own: it is in the process chain the hook recorded, so the pane has not been
+  taken over by another program;
+- Claude is in the terminal foreground (not suspended with Ctrl-Z, which would leave a shell prompt that runs the
+  text), and no other program it started holds the terminal (an editor opened with Ctrl-G, for example);
+- the pane is not in a synchronized-panes window (`send-keys` would reach unverified panes), and not in copy mode;
+- the session has not ended, and (at Send) is not waiting for an answer to a permission request or question in the
+  terminal, because the text would answer it.
+
+Otherwise the board says why ("Open with cb for voice", "The terminal is in copy mode — nothing sent", ...) and
+nothing is typed. The text is cleaned before the board shows it, so what you read is exactly what is typed: control
+characters and line separators become spaces, invisible format characters (zero-width spaces, BOM, soft hyphen...)
+are removed, curly quotes become plain ones, whitespace collapses, leading `!`, `/` and `#` are stripped (Claude
+Code's bash, slash-command and memory modes), and the text is cut to 300 bytes. The typing step refuses any text
+that differs from that cleaned form. It uses `tmux send-keys -l` (literal) and one Enter, and is never retried (if
+tmux times out the board warns that the text may have been typed).
+
+- **Other (speak)**: on a question page the last row, "Other (speak)", records a spoken free-text answer. Say it and
+  tap **Use**; the row then shows your words, selected (tap it to toggle it like an option; long-press to say it
+  again), and Send on the last page answers as usual. Claude receives the spoken text as the answer.
+- **Deny + why**: a permission request has a "Deny + why" button next to Allow / Deny. Say the reason and tap Send:
+  the request is denied and Claude reads "The user denied this on the board and said: <reason>". Both appear only
+  while the Mac voice link is up, and are cancelled if the request is answered in the terminal or times out.
+
+**Speech permission.** The daemon asks macOS for Speech Recognition the first time it starts (its embedded
+Info.plist carries the reason): allow it. If you denied it, the board says "Allow Speech Recognition for
+claude-board in System Settings"; enable `claude-board` in System Settings → Privacy & Security → Speech Recognition.
+Voice needs macOS 26 on the Mac. The daemon log says `voice ready (vi_VN)` or why voice is unavailable. To try
+dictation without the board: `say -v Linh -o /tmp/vi.aiff "Xin chào" && ~/.claude-board/bin/claude-board --transcribe /tmp/vi.aiff`.
+Voice was added to the Claude service, so a board with older firmware has no Speak (the daemon logs "board has no
+voice characteristic"). After flashing, the board tells bonded Macs that its Claude service changed (GATT Service
+Changed) and the daemon rediscovers it, so no re-pairing is needed.
+
+**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again (Bluetooth, and possibly Speech Recognition) after you rebuild and reinstall. If the prompt reappears after rebuilding or reinstalling the daemon, allow it again; if you denied it, enable `claude-board` in System Settings → Privacy & Security → Bluetooth.
 
 **First-time pairing.** The board's Claude service requires a bonded, encrypted link. The first time the daemon connects, macOS shows a Bluetooth pairing prompt. Accept it once.
 
@@ -161,7 +223,10 @@ Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button.
 
 **Safety rules**
 - Nothing is ever auto-approved. Only an explicit Allow / Always allow tap approves a request, and only a Send tap answers a question; taps in the first 700 ms after anything appears, and taps on a dark panel, never count.
+- Voice text is typed, stored as an answer or used as a deny reason only after an explicit Send / Use tap on the transcript shown, and typed only into a tmux pane the Mac verified for that session (see Voice commands).
 - If the daemon is not running, the board is off or not connected, or the request times out, the hook prints nothing and exits 0, so Claude Code shows its normal terminal prompt.
+
+Voice commands were verified on hardware on 2026-10-05 with Claude Code 2.1.289: a spoken command typed into a `cb` pane, an empty capture, Other (speak) and Deny + why.
 
 Daemon log: `~/.claude-board/daemon.log`.
 
