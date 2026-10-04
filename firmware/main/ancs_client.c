@@ -12,6 +12,10 @@
 #include <string.h>
 
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "host/ble_hs.h"
 
 #include "ancs.h"
@@ -246,144 +250,87 @@ static bool link_forget(uint16_t conn)
 }
 
 /* ---- notifications ---- */
-/* Task 1 discovery probe: logs every notification's app id, and the details of notifications whose app id
- * contains "claude" or "anthropic". Replaced by the notice flow (ancs.c) in Task 4. */
+/* The notice flow (ancs.c): host task, plus ancs_client_close() from the shell / LVGL task, so it is guarded by
+ * s_flow_lock. Never call phone_ui_* or chime_play (display lock, queues) with s_flow_lock held: the order is
+ * always display lock -> flow lock. */
+static ancs_flow_t s_flow;
+static SemaphoreHandle_t s_flow_lock;
+static StaticSemaphore_t s_flow_lock_buf;
+static ancs_notice_t s_snapshot;   /* host task: the notice handed to phone_ui.c, cleared right after */
 
-#define PROBE_QUEUE 8
-static uint32_t s_probe_queue[PROBE_QUEUE];
-static uint8_t s_probe_flags[PROBE_QUEUE];
-static int s_probe_n;
-static int s_probe_step;   /* 0 idle, 1 app id asked, 2 details asked */
-static uint32_t s_probe_uid;
-static uint8_t s_probe_uid_flags;
-static ancs_reply_t s_probe_reply;
-static char s_probe_text[ANCS_MESSAGE_MAX + 1];
-
-static void probe_next(void);
-
-static int on_probe_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr, void *arg)
+void ancs_client_init(void)
 {
-    if (error->status != 0) {
-        ESP_LOGW(TAG, "probe: request for %lu refused, status 0x%x", (unsigned long)s_probe_uid, error->status);
-        s_probe_step = 0;
-        probe_next();
+    s_flow_lock = xSemaphoreCreateMutexStatic(&s_flow_lock_buf);
+    ancs_flow_init(&s_flow);
+}
+
+static void flow_lock(void)
+{
+    xSemaphoreTake(s_flow_lock, portMAX_DELAY);
+}
+
+static void flow_unlock(void)
+{
+    xSemaphoreGive(s_flow_lock);
+}
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static int on_command_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr,
+                              void *arg);
+
+/* Writes the next Control Point command the flow wants (one outstanding at a time). A write that cannot start
+ * is dropped and the next one tried. */
+static void pump(void)
+{
+    for (int tries = 0; tries < ANCS_QUEUE_MAX; tries++) {
+        uint8_t cmd[ANCS_CMD_MAX];
+        flow_lock();
+        size_t n = s_link.state == LINK_READY ? ancs_flow_next(&s_flow, now_ms(), cmd) : 0;
+        flow_unlock();
+        if (n == 0) {
+            return;
+        }
+        if (ble_gattc_write_flat(s_link.conn, s_link.control_val, cmd, n, on_command_written, NULL) == 0) {
+            return;
+        }
+        flow_lock();
+        ancs_flow_on_error(&s_flow);
+        flow_unlock();
     }
+}
+
+static int on_command_written(uint16_t conn, const struct ble_gatt_error *error, struct ble_gatt_attr *attr,
+                              void *arg)
+{
+    if (error->status == 0 || conn != s_link.conn) {
+        return 0;
+    }
+    ESP_LOGW(TAG, "attribute request refused by the iPhone: status 0x%x", error->status);
+    flow_lock();
+    ancs_flow_on_error(&s_flow);
+    flow_unlock();
+    pump();
     return 0;
 }
 
-static void probe_ask(uint32_t uid, int step)
+/* s_flow_lock not held: hands a result to the screen */
+static void deliver(ancs_out_t out, uint32_t uid)
 {
-    uint8_t cmd[ANCS_CMD_MAX];
-    const uint8_t *ids = step == 1 ? ANCS_APP_ATTRS : ANCS_DETAIL_ATTRS;
-    size_t n = step == 1 ? sizeof ANCS_APP_ATTRS : sizeof ANCS_DETAIL_ATTRS;
-    size_t len = ancs_encode_get_attrs(uid, ids, n, cmd, sizeof cmd);
-    ancs_reply_start(&s_probe_reply, uid, (uint8_t)n);
-    s_probe_uid = uid;
-    s_probe_step = step;
-    int rc = ble_gattc_write_flat(s_link.conn, s_link.control_val, cmd, len, on_probe_written, NULL);
-    if (rc != 0) {
-        ESP_LOGW(TAG, "probe: write not started, rc %d", rc);
-        s_probe_step = 0;
-    }
-}
-
-static void probe_next(void)
-{
-    if (s_probe_step != 0 || s_probe_n == 0) {
-        return;
-    }
-    uint32_t uid = s_probe_queue[0];
-    s_probe_uid_flags = s_probe_flags[0];
-    s_probe_n--;
-    memmove(s_probe_queue, s_probe_queue + 1, s_probe_n * sizeof s_probe_queue[0]);
-    memmove(s_probe_flags, s_probe_flags + 1, s_probe_n);
-    probe_ask(uid, 1);
-}
-
-static bool contains_ci(const char *s, const char *word)   /* word in lower case */
-{
-    size_t n = strlen(word);
-    for (; *s; s++) {
-        size_t i = 0;
-        while (i < n && s[i] && (s[i] | 0x20) == word[i]) {
-            i++;
+    if (out == ANCS_OUT_SHOW || out == ANCS_OUT_UPDATE) {
+        phone_ui_show(&s_snapshot, out == ANCS_OUT_SHOW);
+        if (out == ANCS_OUT_SHOW && !(s_snapshot.flags & ANCS_FLAG_SILENT)) {
+            chime_play(CHIME_PHONE);
         }
-        if (i == n) {
-            return true;
-        }
+        memset(&s_snapshot, 0, sizeof(s_snapshot));
+        /* Debug: NimBLE host task stack headroom (bytes never used) after a notice */
+        ESP_LOGI(TAG, "stack headroom %s: %u bytes", pcTaskGetName(NULL), (unsigned)uxTaskGetStackHighWaterMark(NULL));
+    } else if (out == ANCS_OUT_GONE) {
+        phone_ui_gone(uid);
     }
-    return false;
-}
-
-static void probe_log_attr(const char *name, uint8_t id)
-{
-    const uint8_t *v;
-    uint16_t len;
-    if (!ancs_reply_attr(&s_probe_reply, id, &v, &len)) {
-        ESP_LOGI(TAG, "  %s: (missing)", name);
-        return;
-    }
-    ancs_clean_text(v, len, s_probe_text, sizeof s_probe_text);
-    ESP_LOGI(TAG, "  %s (%u bytes): \"%s\"", name, len, s_probe_text);
-}
-
-static void probe_on_source(const ancs_source_t *ev)
-{
-    ESP_LOGI(TAG, "source: event %u flags 0x%02x category %u count %u uid %lu", ev->event, ev->flags, ev->category,
-             ev->count, (unsigned long)ev->uid);
-    if (ev->event == ANCS_EVENT_REMOVED || (ev->flags & ANCS_FLAG_PRE_EXISTING) || s_probe_n == PROBE_QUEUE) {
-        return;
-    }
-    s_probe_queue[s_probe_n] = ev->uid;
-    s_probe_flags[s_probe_n++] = ev->flags;
-    probe_next();
-}
-
-static void probe_on_data(const uint8_t *data, uint16_t len)
-{
-    if (s_probe_step == 0) {
-        ESP_LOGW(TAG, "probe: %u stray Data Source bytes", len);
-        return;
-    }
-    ancs_reply_status_t st = ancs_reply_feed(&s_probe_reply, data, len);
-    if (st == ANCS_REPLY_MORE) {
-        return;
-    }
-    int step = s_probe_step;
-    s_probe_step = 0;
-    if (st == ANCS_REPLY_BAD) {
-        ESP_LOGW(TAG, "probe: bad reply for %lu", (unsigned long)s_probe_uid);
-    } else if (step == 1) {
-        const uint8_t *v;
-        uint16_t n;
-        s_probe_text[0] = '\0';
-        if (ancs_reply_attr(&s_probe_reply, ANCS_ATTR_APP_ID, &v, &n)) {
-            ancs_clean_text(v, n, s_probe_text, sizeof s_probe_text);
-        }
-        ESP_LOGI(TAG, "uid %lu app \"%s\"", (unsigned long)s_probe_uid, s_probe_text);
-        if (contains_ci(s_probe_text, "claude") || contains_ci(s_probe_text, "anthropic")) {
-            probe_ask(s_probe_uid, 2);
-            return;
-        }
-    } else {
-        ESP_LOGI(TAG, "uid %lu details (flags 0x%02x, positive action %s, negative action %s):",
-                 (unsigned long)s_probe_uid, s_probe_uid_flags, (s_probe_uid_flags & ANCS_FLAG_POSITIVE) ? "yes" : "no",
-                 (s_probe_uid_flags & ANCS_FLAG_NEGATIVE) ? "yes" : "no");
-        probe_log_attr("title", ANCS_ATTR_TITLE);
-        probe_log_attr("subtitle", ANCS_ATTR_SUBTITLE);
-        probe_log_attr("message", ANCS_ATTR_MESSAGE);
-        probe_log_attr("positive label", ANCS_ATTR_POSITIVE);
-        probe_log_attr("negative label", ANCS_ATTR_NEGATIVE);
-    }
-    ancs_reply_clear(&s_probe_reply);
-    probe_next();
-}
-
-static void notifications_ready(uint16_t conn)
-{
-    s_probe_n = 0;
-    s_probe_step = 0;
-    ESP_LOGI(TAG, "link %d: iPhone notifications on (discovery probe)", conn);
 }
 
 bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len)
@@ -391,28 +338,58 @@ bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, ui
     if (conn != s_link.conn || s_link.state != LINK_READY) {
         return false;
     }
+    ancs_out_t out = ANCS_OUT_NONE;
+    uint32_t uid = 0;
     if (attr == s_link.source_val) {
         ancs_source_t ev;
-        if (ancs_parse_source(data, len, &ev)) {
-            probe_on_source(&ev);
-        } else {
-            ESP_LOGW(TAG, "probe: Notification Source of %u bytes", len);
+        if (!ancs_parse_source(data, len, &ev)) {
+            return true;
         }
-        return true;
+        uid = ev.uid;
+        flow_lock();
+        out = ancs_flow_on_source(&s_flow, &ev);
+        flow_unlock();
+    } else if (attr == s_link.data_val) {
+        flow_lock();
+        out = ancs_flow_on_data(&s_flow, data, len);
+        if (out == ANCS_OUT_SHOW || out == ANCS_OUT_UPDATE) {
+            s_snapshot = s_flow.notice;
+        }
+        flow_unlock();
+    } else {
+        return false;
     }
-    if (attr == s_link.data_val) {
-        probe_on_data(data, len);
-        return true;
-    }
-    return false;
+    deliver(out, uid);
+    pump();
+    return true;
+}
+
+static void notifications_ready(uint16_t conn)
+{
+    flow_lock();
+    ancs_flow_init(&s_flow);
+    flow_unlock();
+    ESP_LOGI(TAG, "link %d: Claude notifications from the iPhone on", conn);
 }
 
 void ancs_client_on_disconnect(uint16_t conn)
 {
-    if (link_forget(conn)) {
-        s_probe_n = 0;
-        s_probe_step = 0;
-        ancs_reply_clear(&s_probe_reply);
-        ESP_LOGI(TAG, "iPhone notifications off");
+    if (!link_forget(conn)) {
+        return;
     }
+    flow_lock();
+    ancs_flow_init(&s_flow);
+    flow_unlock();
+    ESP_LOGI(TAG, "iPhone notifications off");
+}
+
+/* Shell / LVGL task (phone_ui.c, display lock held): the board closed that notice */
+void ancs_client_close(uint32_t uid)
+{
+    if (s_flow_lock == NULL) {
+        return;
+    }
+    flow_lock();
+    ancs_flow_close(&s_flow, uid);
+    flow_unlock();
 }

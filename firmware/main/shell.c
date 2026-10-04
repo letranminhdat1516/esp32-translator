@@ -116,6 +116,8 @@ static lv_obj_t *screen_obj(board_screen_t s)
         return picker_ui_screen();
     case SCREEN_LOCK:
         return lock_ui_screen();
+    case SCREEN_PHONE:
+        return phone_ui_screen();
     default:
         return ui_translator_screen();
     }

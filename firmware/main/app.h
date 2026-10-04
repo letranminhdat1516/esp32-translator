@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "claude_proto.h"
+#include "ancs.h"
 #include "lvgl.h"
 #include "modes.h"
 #include "question.h"
@@ -59,11 +60,14 @@ bool ble_link_voice_ready(void);
 uint16_t ble_link_voice_payload_max(void);
 bool ble_link_send_voice(const uint8_t *data, uint16_t len);
 
-/* ancs_client.c: iPhone notifications (ANCS), NimBLE host task: a link finished encrypting, a GATT notification
- * arrived (true when it was ANCS), a link went away */
+/* ancs_client.c: iPhone notifications (ANCS). init before the NimBLE host starts. The rest runs in the NimBLE
+ * host task: a link finished encrypting, a GATT notification arrived (true when it was ANCS), a link went away;
+ * except close (shell / LVGL task): the board closed that notice. */
+void ancs_client_init(void);
 void ancs_client_on_encrypted(uint16_t conn);
 bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len);
 void ancs_client_on_disconnect(uint16_t conn);
+void ancs_client_close(uint32_t uid);
 
 /* audio_in.c */
 void audio_in_start(void);
@@ -156,6 +160,13 @@ void picker_ui_set_touch_enabled(bool on);          /* LVGL task */
 const claude_session_t *picker_ui_focused_locked(void);
 int picker_ui_badge_locked(void);
 
+/* phone_ui.c: the iPhone notice screen (a Claude app notification) */
+void phone_ui_init(void);
+lv_obj_t *phone_ui_screen(void);
+void phone_ui_show(const ancs_notice_t *n, bool fresh);   /* NimBLE host task; takes the lock, posts MODES_EV_NOTICE */
+void phone_ui_gone(uint32_t uid);                         /* NimBLE host task: removed on the iPhone */
+void phone_ui_set_touch_enabled(bool on);                 /* LVGL task (screen timer) */
+
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);
 void shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks */
@@ -163,6 +174,6 @@ void shell_snapshot(modes_t *out);                  /* current state, for the pa
 void shell_resend_mode(void);                       /* tell the Mac the board mode again (Mac link up) */
 
 /* chime.c: non-blocking notification chime on the speaker */
-typedef enum { CHIME_REQUEST, CHIME_DONE } chime_t;
+typedef enum { CHIME_REQUEST, CHIME_DONE, CHIME_PHONE } chime_t;
 void chime_start(void);
 void chime_play(chime_t kind);

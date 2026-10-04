@@ -92,6 +92,13 @@ static claude_rx_t s_claude_rx;
 /* Two links: the iPhone (subscribed to audio) and the Mac (subscribed to Claude answers) */
 static volatile uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
 static volatile uint16_t s_mac_conn = BLE_HS_CONN_HANDLE_NONE;
+/* A bonded iPhone whose audio CCCD NimBLE restored from the bond when the link encrypted: the translator app may
+ * or may not be open (iOS keeps the link for ANCS without it). NimBLE only reports a CCCD write that changes the
+ * stored flags (ble_gatts.c ble_gatts_subscribe_event), and the restore has already set them: when the app then
+ * writes its own CCCD (setNotifyValue(true), every connect) nothing is reported. So the link waits here and
+ * becomes the iPhone audio link on the app's first write to the text or control characteristic (ESPLink writes
+ * the time and the mic state on every connect). */
+static uint16_t s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
 static int s_connections;
 static uint8_t s_own_addr_type;
 
@@ -110,6 +117,34 @@ static void request_encryption(uint16_t conn)
     }
     int rc = ble_gap_security_initiate(conn);
     ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
+}
+
+/* The translator app subscribed to audio on conn: it becomes the iPhone audio link */
+static void phone_audio_on(uint16_t conn)
+{
+    if (conn == s_audio_pending_conn) {
+        s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
+    }
+    if (s_phone_conn == conn) {
+        return;
+    }
+    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE) {
+        ESP_LOGW(TAG, "audio role already held, ignoring second subscriber");
+        return;
+    }
+    s_phone_conn = conn;
+    ESP_LOGI(TAG, "iPhone audio on");
+    app_on_connection_changed(true);
+    request_encryption(conn);   /* the translator app: ANCS needs it */
+}
+
+/* A write to the translator characteristics: on a link whose audio CCCD was only restored, the app is there */
+static void translator_write_from(uint16_t conn)
+{
+    if (conn == s_audio_pending_conn) {
+        ESP_LOGI(TAG, "translator app active on the restored link");
+        phone_audio_on(conn);
+    }
 }
 
 static void handle_text_write(const uint8_t *data, uint16_t len)
@@ -157,6 +192,7 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
             if (ble_hs_mbuf_to_flat(ctxt->om, buf, 1, &len) != 0 || len != 1 || buf[0] > REC_VI) {
                 return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
             }
+            translator_write_from(conn_handle);
             app_request_recording((rec_lang_t)buf[0]);
             return 0;
         }
@@ -164,6 +200,7 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         if (ble_hs_mbuf_to_flat(ctxt->om, buf, sizeof(buf), &len) != 0) {
             return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
         }
+        translator_write_from(conn_handle);
         handle_text_write(buf, len);
         return 0;
     } else if (attr_handle == s_claude_req_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
@@ -272,6 +309,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
             app_on_connection_changed(false);
         }
+        if (event->disconnect.conn.conn_handle == s_audio_pending_conn) {
+            s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
+        }
         if (event->disconnect.conn.conn_handle == s_voice_conn) {
             s_voice_conn = BLE_HS_CONN_HANDLE_NONE;
         }
@@ -286,20 +326,25 @@ static int gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         if (event->subscribe.attr_handle == s_audio_handle) {
+            uint16_t conn = event->subscribe.conn_handle;
             bool on = event->subscribe.cur_notify;
             if (on && event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_RESTORE) {
-                /* The iPhone is bonded now (ANCS): NimBLE restores its old audio CCCD when the link encrypts, also
-                 * when iOS connects without the translator app. Only the app's own CCCD write (every connect,
-                 * ESPLink setNotifyValue) means it is there to stream. */
-                ESP_LOGI(TAG, "iPhone audio subscription restored from the bond: waiting for the app");
-            } else if (on && s_phone_conn != BLE_HS_CONN_HANDLE_NONE && s_phone_conn != event->subscribe.conn_handle) {
-                ESP_LOGW(TAG, "audio role already held, ignoring second subscriber");
-            } else if (on || event->subscribe.conn_handle == s_phone_conn) {
-                s_phone_conn = on ? event->subscribe.conn_handle : BLE_HS_CONN_HANDLE_NONE;
-                ESP_LOGI(TAG, "iPhone audio %s", on ? "on" : "off");
-                app_on_connection_changed(on);
-                if (on) {
-                    request_encryption(event->subscribe.conn_handle);   /* the translator app: ANCS needs it */
+                /* The iPhone is bonded (ANCS): NimBLE restored its old audio CCCD as the link encrypted, also when
+                 * iOS connects without the translator app. Do not stream yet: s_audio_pending_conn. */
+                if (conn != s_phone_conn) {
+                    s_audio_pending_conn = conn;
+                    ESP_LOGI(TAG, "iPhone audio subscription restored from the bond: waiting for the app");
+                }
+            } else if (on) {
+                phone_audio_on(conn);
+            } else {
+                if (conn == s_audio_pending_conn) {
+                    s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
+                }
+                if (conn == s_phone_conn) {
+                    s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
+                    ESP_LOGI(TAG, "iPhone audio off");
+                    app_on_connection_changed(false);
                 }
             }
         } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
@@ -510,6 +555,7 @@ void ble_link_init(void)
     ESP_ERROR_CHECK(ble_gatts_add_svcs(s_services));
 
     ble_store_config_init();
+    ancs_client_init();
     nimble_port_freertos_init(host_task);
 }
 

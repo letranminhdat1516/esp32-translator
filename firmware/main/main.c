@@ -179,6 +179,7 @@ void app_main(void)
     claude_ui_init();
     lock_ui_init();
     picker_ui_init();
+    phone_ui_init();
     shell_start();   /* before BLE and the PMU: they post events */
 
     chime_start();   /* before the other audio users: the BSP audio init is not thread-safe */

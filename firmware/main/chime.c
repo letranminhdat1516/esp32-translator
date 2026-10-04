@@ -45,6 +45,9 @@ static void chime_task(void *arg)
         if (kind == CHIME_REQUEST) {
             tone(spk, 880, 120);
             tone(spk, 1320, 160);
+        } else if (kind == CHIME_PHONE) {   /* iPhone notice: a short rising pair, unlike the Mac's */
+            tone(spk, 1175, 90);
+            tone(spk, 1568, 140);
         } else {
             tone(spk, 1320, 120);
             tone(spk, 990, 160);
