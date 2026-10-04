@@ -61,6 +61,7 @@ static void set_screen(bool on)
         return;
     }
     s_screen_on = on;
+    claude_ui_set_touch_enabled(on);
     bsp_display_brightness_set(on ? 100 : 0);
     /* While dark, a tap only wakes the screen; it must not toggle the mic */
     if (on) {
@@ -75,6 +76,10 @@ static void screen_timer_cb(lv_timer_t *t)
 {
     if (s_manual_off) {
         set_screen(false);
+        return;
+    }
+    if (claude_ui_pending()) {
+        set_screen(true);   /* keep Allow/Deny visible while a request is pending */
         return;
     }
     int64_t idle_ms = (esp_timer_get_time() - s_last_activity_us) / 1000;

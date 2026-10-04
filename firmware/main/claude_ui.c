@@ -25,8 +25,8 @@ static lv_obj_t *s_title;
 static lv_obj_t *s_detail;
 static lv_obj_t *s_allow;
 static lv_obj_t *s_deny;
-static uint32_t s_pending_id;   /* 0 = none */
-static bool s_link;
+static volatile uint32_t s_pending_id;   /* 0 = none */
+static bool s_touch_on = true;           /* false while the panel is dark */
 
 static void set_buttons(bool visible)
 {
@@ -52,7 +52,8 @@ static void show_idle(const char *title, const char *detail)
 static void on_answer(lv_event_t *e)
 {
     uint8_t decision = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
-    if (s_pending_id == 0) {
+    /* A tap on a dark panel only wakes it; it must never answer blind */
+    if (s_pending_id == 0 || !s_touch_on) {
         return;
     }
     bool sent = ble_link_send_claude_answer(s_pending_id, decision);
@@ -130,7 +131,6 @@ bool claude_ui_visible(void)
 
 void claude_ui_set_link(bool connected)
 {
-    s_link = connected;
     bsp_display_lock((uint32_t)-1);
     lv_label_set_text(s_status, connected ? "Claude · Mac connected" : "Claude · Mac not connected");
     if (!connected && s_pending_id) {
@@ -177,5 +177,29 @@ void claude_ui_on_message(const claude_msg_t *m)
         }
         break;
     }
+    bsp_display_unlock();
+}
+
+/* Runs in the LVGL task (screen timer) when the panel turns on/off */
+void claude_ui_set_touch_enabled(bool on)
+{
+    s_touch_on = on;
+    if (!s_allow) {
+        return;
+    }
+    /* Not clickable: the tap falls through to the screen object and wakes the panel */
+    lv_obj_set_clickable(s_allow, on);
+    lv_obj_set_clickable(s_deny, on);
+}
+
+bool claude_ui_pending(void)
+{
+    return s_pending_id != 0;
+}
+
+void claude_ui_toggle(void)
+{
+    bsp_display_lock((uint32_t)-1);
+    lv_screen_load(lv_screen_active() == s_scr ? ui_translator_screen() : s_scr);
     bsp_display_unlock();
 }

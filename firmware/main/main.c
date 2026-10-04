@@ -102,7 +102,7 @@ static void enable_power_management(void)
 
 void app_switch_mode(void)
 {
-    claude_ui_show(!claude_ui_visible());
+    claude_ui_toggle();
     ui_mark_activity();
 }
 
@@ -146,10 +146,10 @@ void app_main(void)
     ui_init();
     claude_ui_init();
 
+    chime_start();   /* before the other audio users: the BSP audio init is not thread-safe */
     ble_link_init();
     audio_in_start();
     pmu_start();
-    chime_start();
 
     /* All mic on/off requests (from the on-screen button or the app) are handled here */
     rec_lang_t lang;

@@ -34,12 +34,7 @@ static void tone(esp_codec_dev_handle_t spk, float freq, int ms)
 
 static void chime_task(void *arg)
 {
-    esp_codec_dev_handle_t spk = bsp_audio_codec_speaker_init();
-    if (!spk) {
-        ESP_LOGW("chime", "speaker unavailable");
-        vTaskDelete(NULL);
-        return;
-    }
+    esp_codec_dev_handle_t spk = (esp_codec_dev_handle_t)arg;
     chime_t kind;
     while (xQueueReceive(s_queue, &kind, portMAX_DELAY) == pdTRUE) {
         esp_codec_dev_sample_info_t fs = { .sample_rate = RATE, .channel = 2, .bits_per_sample = 16 };
@@ -60,8 +55,14 @@ static void chime_task(void *arg)
 
 void chime_start(void)
 {
+    /* Created here, synchronously, so it cannot race the mic's BSP audio init */
+    esp_codec_dev_handle_t spk = bsp_audio_codec_speaker_init();
+    if (!spk) {
+        ESP_LOGW("chime", "speaker unavailable");
+        return;
+    }
     s_queue = xQueueCreate(4, sizeof(chime_t));
-    xTaskCreate(chime_task, "chime", 4096, NULL, 3, NULL);
+    xTaskCreate(chime_task, "chime", 4096, spk, 3, NULL);
 }
 
 void chime_play(chime_t kind)

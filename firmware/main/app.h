@@ -77,6 +77,9 @@ void claude_ui_show(bool show);
 bool claude_ui_visible(void);
 void claude_ui_on_message(const claude_msg_t *m);   /* copies the text; takes the display lock */
 void claude_ui_set_link(bool connected);
+void claude_ui_toggle(void);                        /* atomic Translator <-> Claude switch */
+void claude_ui_set_touch_enabled(bool on);          /* LVGL task: Allow/Deny ignore taps while the panel is dark */
+bool claude_ui_pending(void);                       /* a permission request awaits an answer */
 
 /* chime.c: non-blocking notification chime on the speaker */
 typedef enum { CHIME_REQUEST, CHIME_DONE } chime_t;
