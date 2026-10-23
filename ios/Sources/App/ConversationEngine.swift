@@ -26,6 +26,8 @@ final class ConversationEngine {
         var unclear = false
         /// "You say" turn number (0 for "They say" lines)
         var turn = 0
+        /// When the line started: orders both sides into one conversation
+        let at = Date()
     }
 
     enum Phase: Equatable {

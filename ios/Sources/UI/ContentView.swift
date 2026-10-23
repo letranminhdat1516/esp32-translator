@@ -1,163 +1,262 @@
 import SwiftUI
 import Translation
 
+/// "Phụ đề" style: black, text first, one blue accent (the board's) that lights only while listening.
+private enum Palette {
+    static let ground = Color.black
+    static let surface = Color(red: 0x16 / 255, green: 0x17 / 255, blue: 0x1A / 255)
+    static let text = Color(red: 0xE3 / 255, green: 0xEA / 255, blue: 0xF0 / 255)
+    static let muted = Color(red: 0x8A / 255, green: 0x91 / 255, blue: 0x9C / 255)
+    static let faint = Color(red: 0x5E / 255, green: 0x64 / 255, blue: 0x6D / 255)
+    static let accent = Color(red: 0x1E / 255, green: 0x6F / 255, blue: 0xD9 / 255)
+    static let accentLight = Color(red: 0x4C / 255, green: 0x8F / 255, blue: 0xE8 / 255)
+}
+
 struct ContentView: View {
     let engine: ConversationEngine
     let relay: RelayModel
     @State private var showRelay = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                StatusBar(engine: engine)
-                switch engine.phase {
-                case .needsTranslationModels:
-                    ModelDownloadView(engine: engine)
-                case .preparing(let message):
-                    Spacer()
-                    ProgressView(message)
-                    Spacer()
-                case .failed(let message):
-                    Spacer()
-                    ContentUnavailableView("Couldn't start", systemImage: "exclamationmark.triangle",
-                                           description: Text(message))
-                    Button("Try again") { Task { await engine.start() } }
-                        .buttonStyle(.borderedProminent)
-                    Spacer()
-                case .idle, .running:
-                    if engine.phase == .running { ListeningLine(engine: engine) }
-                    ConversationView(engine: engine)
-                }
-            }
-            .navigationTitle("Live Translator")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear", systemImage: "trash") { engine.clearHistory() }
-                        .disabled(engine.phase != .running)
-                }
+        VStack(spacing: 0) {
+            Header(engine: engine, showRelay: $showRelay)
+            switch engine.phase {
+            case .needsTranslationModels:
+                ModelDownloadView(engine: engine)
+            case .preparing(let message):
+                Spacer()
+                ProgressView(message).tint(Palette.muted).foregroundStyle(Palette.muted)
+                Spacer()
+            case .failed(let message):
+                Spacer()
+                ContentUnavailableView("Không khởi động được", systemImage: "exclamationmark.triangle",
+                                       description: Text(message))
+                Button("Thử lại") { Task { await engine.start() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+                Spacer()
+            case .idle, .running:
+                ConversationView(engine: engine)
+                ControlBar(engine: engine)
             }
         }
+        .foregroundStyle(Palette.text)
+        .background(Palette.ground.ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showRelay) { RelayView(model: relay) }
     }
 }
 
-private struct StatusBar: View {
+/// Language pair, settings, and one status line: listening · board
+private struct Header: View {
     let engine: ConversationEngine
+    @Binding var showRelay: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            Label(boardText, systemImage: "applewatch.radiowaves.left.and.right")
-                .foregroundStyle(engine.board == .ready ? .green : .secondary)
-            Spacer()
-            if engine.board == .ready {
-                Button(engine.boardMicOn ? "Board mic: on" : "Board mic: off",
-                       systemImage: engine.boardMicOn ? "mic.fill" : "mic.slash.fill") {
-                    engine.toggleBoardMic()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                HStack(spacing: 8) {
+                    Text("Tiếng Việt")
+                    Image(systemName: "arrow.left.arrow.right").foregroundStyle(Palette.muted)
+                    Text("English")
                 }
-                .buttonStyle(.bordered)
-                .tint(engine.boardMicOn ? .green : .gray)
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .background(Palette.surface, in: Capsule())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Tiếng Việt sang English")
+                Spacer()
+                Menu {
+                    Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
+                    Button("Xoá hội thoại", systemImage: "trash", role: .destructive) { engine.clearHistory() }
+                        .disabled(engine.phase != .running)
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: 44, height: 44)
+                        .background(Palette.surface, in: Circle())
+                }
+                .accessibilityLabel("Cài đặt")
             }
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(engine.listening ? Palette.accentLight : Palette.faint)
+                    .frame(width: 8, height: 8)
+                Text(engine.listening ? "Đang nghe" : "Đang chờ")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(engine.listening ? Palette.text : Palette.muted)
+                Text("· \(boardText)").foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: 13))
         }
-        .font(.footnote)
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
     private var boardText: String {
         switch engine.board {
-        case .off: "Bluetooth off"
-        case .scanning: "Searching for board…"
-        case .connecting: "Connecting…"
-        case .ready: "Board connected"
+        case .off: "Bluetooth đang tắt"
+        case .scanning: "Đang tìm board…"
+        case .connecting: "Đang kết nối…"
+        case .ready: engine.boardMicOn ? "Board đã kết nối" : "Board đã kết nối · mic tắt"
         }
     }
 }
 
-/// The AirPods mic is on only during a conversation; idle, other apps' audio plays normally
-private struct ListeningLine: View {
-    let engine: ConversationEngine
-
-    var body: some View {
-        Button {
-            engine.startConversation()
-        } label: {
-            Label(engine.listening ? "Listening" : "Idle — tap here or the board mic before you speak",
-                  systemImage: engine.listening ? "waveform" : "pause.circle")
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .disabled(engine.listening)
-        .font(.footnote)
-        .foregroundStyle(engine.listening ? .green : .secondary)
-        .padding(.horizontal)
-        .padding(.bottom, 6)
-    }
-}
-
+/// Both sides in one stream, oldest first: their lines on the left, yours on the right
 private struct ConversationView: View {
     let engine: ConversationEngine
 
+    private struct Entry: Identifiable {
+        let line: ConversationEngine.Line
+        let mine: Bool
+        var id: UUID { line.id }
+    }
+
+    private var entries: [Entry] {
+        (engine.theirLines.map { Entry(line: $0, mine: false) } +
+         engine.myLines.filter { !$0.source.isEmpty }.map { Entry(line: $0, mine: true) })
+            .sorted { $0.line.at < $1.line.at }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            Panel(title: "They say", systemImage: "person.wave.2", tint: .blue,
-                  lines: engine.theirLines, partial: engine.theirPartial)
-            Divider()
-            Panel(title: "You say → board subtitles", systemImage: "airpodspro", tint: .green,
-                  lines: engine.myLines, partial: "")
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 26) {
+                    if entries.isEmpty && engine.theirPartial.isEmpty && engine.myPartial.isEmpty {
+                        EmptyHint(listening: engine.listening)
+                    }
+                    ForEach(entries) { entry in
+                        Bubble(label: entry.mine ? "Bạn nói" : "Họ nói", source: entry.line.source,
+                               target: entry.line.target, mine: entry.mine, unclear: entry.line.unclear)
+                            .id(entry.id)
+                    }
+                    if !engine.theirPartial.isEmpty {
+                        PartialLine(text: engine.theirPartial, mine: false).id("theirPartial")
+                    }
+                    if !engine.myPartial.isEmpty {
+                        PartialLine(text: engine.myPartial, mine: true).id("myPartial")
+                    }
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+            }
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: entries.last?.line.target) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: engine.theirPartial) { proxy.scrollTo("end", anchor: .bottom) }
+            .onChange(of: engine.myPartial) { proxy.scrollTo("end", anchor: .bottom) }
         }
     }
 }
 
-private struct Panel: View {
-    let title: String
-    let systemImage: String
-    let tint: Color
-    let lines: [ConversationEngine.Line]
-    let partial: String
+private struct Bubble: View {
+    let label: String
+    let source: String
+    let target: String
+    let mine: Bool
+    let unclear: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal)
-                .padding(.top, 8)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(lines) { line in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(line.source).font(.subheadline).foregroundStyle(.secondary)
-                                Text(line.target).font(.body.weight(.medium))
-                                    .foregroundStyle(line.unclear ? .orange : .primary)
-                            }
-                            .id(line.id)
-                        }
-                        if !partial.isEmpty {
-                            Text(partial).font(.subheadline).italic().foregroundStyle(.tertiary).id("partial")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
-                    .padding(.bottom, 8)
-                }
-                .onChange(of: lines.last?.target) { scrollToEnd(proxy) }
-                .onChange(of: partial) { scrollToEnd(proxy) }
+        VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+            Text(source).font(.system(size: 14)).foregroundStyle(Palette.muted)
+            if !target.isEmpty {
+                Text(target)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(unclear ? Palette.faint : Palette.text)
             }
         }
-        .frame(maxHeight: .infinity)
+        .multilineTextAlignment(mine ? .trailing : .leading)
+        .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .accessibilityElement(children: .combine)
     }
+}
 
-    private func scrollToEnd(_ proxy: ScrollViewProxy) {
-        if !partial.isEmpty {
-            proxy.scrollTo("partial", anchor: .bottom)
-        } else if let id = lines.last?.id {
-            proxy.scrollTo(id, anchor: .bottom)
+private struct PartialLine: View {
+    let text: String
+    let mine: Bool
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 14))
+            .italic()
+            .foregroundStyle(Palette.faint)
+            .multilineTextAlignment(mine ? .trailing : .leading)
+            .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+    }
+}
+
+private struct EmptyHint: View {
+    let listening: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(listening ? "Cứ nói đi" : "Chạm \"Bắt đầu nghe\" trước khi nói")
+                .font(.system(size: 17, weight: .semibold))
+            Text("Người đối diện nói vào board, bạn nghe tiếng Việt qua AirPods. Bạn nói tiếng Việt, họ đọc phụ đề trên board.")
+                .font(.system(size: 14))
+                .foregroundStyle(Palette.muted)
+                .multilineTextAlignment(.center)
         }
+        .padding(.top, 120)
+        .padding(.horizontal, 12)
+    }
+}
+
+/// Board mic · listen · clear
+private struct ControlBar: View {
+    let engine: ConversationEngine
+
+    var body: some View {
+        HStack {
+            Button {
+                engine.toggleBoardMic()
+            } label: {
+                Image(systemName: engine.boardMicOn ? "mic" : "mic.slash")
+                    .font(.system(size: 20))
+                    .foregroundStyle(engine.boardMicOn ? Palette.text : Palette.muted)
+                    .frame(width: 52, height: 52)
+                    .background(Palette.surface, in: Circle())
+                    .overlay(Circle().strokeBorder(engine.boardMicOn ? Palette.accent : .clear, lineWidth: 2))
+            }
+            .disabled(engine.board != .ready)
+            .accessibilityLabel(engine.boardMicOn ? "Tắt mic của board" : "Bật mic của board")
+            Spacer()
+            Button {
+                engine.startConversation()
+            } label: {
+                Label(engine.listening ? "Đang nghe" : "Bắt đầu nghe",
+                      systemImage: engine.listening ? "waveform" : "mic.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 28)
+                    .frame(height: 56)
+                    .background(engine.listening ? Palette.accent : Palette.surface, in: Capsule())
+            }
+            .disabled(engine.listening || engine.phase != .running)
+            Spacer()
+            Button {
+                engine.clearHistory()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Palette.muted)
+                    .frame(width: 52, height: 52)
+                    .background(Palette.surface, in: Circle())
+            }
+            .disabled(engine.phase != .running)
+            .accessibilityLabel("Xoá hội thoại")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 }
 
@@ -170,19 +269,22 @@ private struct ModelDownloadView: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(.tint)
-            Text("English ↔ Vietnamese models needed").font(.headline)
-            Text("Download once, then translation runs entirely on device: no network needed, and faster.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary)
-            Button("Download models") {
+            Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(Palette.accentLight)
+            Text("Cần tải mô hình English ↔ Tiếng Việt").font(.system(size: 18, weight: .semibold))
+            Text("Tải một lần, sau đó dịch hoàn toàn trên máy: không cần mạng và nhanh hơn.")
+                .font(.system(size: 15))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Palette.muted)
+            Button("Tải mô hình") {
                 step = 1
                 config = .init(source: ConversationEngine.english, target: ConversationEngine.vietnamese)
             }
             .buttonStyle(.borderedProminent)
+            .tint(Palette.accent)
             .disabled(step != 0)
             Spacer()
         }
-        .padding()
+        .padding(24)
         .translationTask(config) { session in
             try? await session.prepareTranslation()
             await MainActor.run {

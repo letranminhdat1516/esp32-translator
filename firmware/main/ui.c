@@ -1,8 +1,9 @@
 /*
- * Round 466x466 screen:
- *   top    : status line (connection / listening)
+ * Round 466x466 screen ("Phụ đề" style: black, text first, one blue accent):
+ *   top    : status line: the other person's language while translating, else the connection state
  *   middle : live English subtitles for the other person (streamed by the app while you speak)
- *   bottom : board mic on/off button
+ *   bottom : round board mic button (mic icon; slashed and dimmed when off)
+ *   edge   : level ring, brighter and thicker the louder the speaker
  */
 #include <stdlib.h>
 
@@ -15,9 +16,14 @@
 LV_FONT_DECLARE(font_vi_22);
 LV_FONT_DECLARE(font_vi_36);
 
-#define COLOR_IDLE  0x2a2a2a
-#define COLOR_EN    0x1e6fd9
-#define COLOR_MUTED 0xc8c8c8
+#define COLOR_EN      0x1e6fd9
+#define COLOR_MUTED   0x8a919c
+#define COLOR_LIGHT   0xe3eaf0
+#define COLOR_OUTLINE 0x2a2d33
+#define COLOR_OFF_BG  0x16171a
+
+/* The other person's language, shown while translating (one pair for now) */
+#define THEIR_LANGUAGE "English"
 
 static lv_obj_t *s_status;
 static lv_obj_t *s_ring;
@@ -25,7 +31,10 @@ static int s_level = -1;
 static lv_obj_t *s_text_box;
 static lv_obj_t *s_text;
 static lv_obj_t *s_btn_mic;
-static lv_obj_t *s_btn_label;
+static lv_obj_t *s_mic_body;
+static lv_obj_t *s_mic_cradle;
+static lv_obj_t *s_mic_stem;
+static lv_obj_t *s_mic_slash;
 static bool s_connected;
 
 /* The AMOLED draws power per lit pixel and per brightness step: turn it off when nobody needs it */
@@ -227,6 +236,59 @@ void ui_prepare_sleep(void)
     unlock();
 }
 
+/* A mic drawn from shapes (font_vi_22 has no icon glyphs): capsule, cradle arc, stem, and a slash for "off" */
+static void build_mic_icon(lv_obj_t *btn)
+{
+    s_mic_body = lv_obj_create(btn);
+    lv_obj_remove_style_all(s_mic_body);
+    lv_obj_set_size(s_mic_body, 14, 24);
+    lv_obj_set_style_radius(s_mic_body, 7, 0);
+    lv_obj_set_style_bg_opa(s_mic_body, LV_OPA_COVER, 0);
+    lv_obj_align(s_mic_body, LV_ALIGN_CENTER, 0, -7);
+
+    s_mic_cradle = lv_arc_create(btn);
+    lv_obj_set_size(s_mic_cradle, 28, 28);
+    lv_obj_align(s_mic_cradle, LV_ALIGN_CENTER, 0, -4);
+    lv_arc_set_bg_angles(s_mic_cradle, 0, 180);
+    lv_arc_set_angles(s_mic_cradle, 0, 180);
+    lv_obj_remove_style(s_mic_cradle, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_opa(s_mic_cradle, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_mic_cradle, 3, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(s_mic_cradle, true, LV_PART_INDICATOR);
+
+    s_mic_stem = lv_obj_create(btn);
+    lv_obj_remove_style_all(s_mic_stem);
+    lv_obj_set_size(s_mic_stem, 3, 7);
+    lv_obj_set_style_bg_opa(s_mic_stem, LV_OPA_COVER, 0);
+    lv_obj_align(s_mic_stem, LV_ALIGN_CENTER, 0, 13);
+
+    static const lv_point_precise_t slash_pts[] = {{0, 0}, {30, 30}};
+    s_mic_slash = lv_line_create(btn);
+    lv_line_set_points(s_mic_slash, slash_pts, 2);
+    lv_obj_set_style_line_width(s_mic_slash, 3, 0);
+    lv_obj_set_style_line_rounded(s_mic_slash, true, 0);
+    lv_obj_center(s_mic_slash);
+
+    /* Taps on the icon go to the button */
+    lv_obj_t *parts[] = {s_mic_body, s_mic_cradle, s_mic_stem, s_mic_slash};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        lv_obj_set_clickable(parts[i], false);
+    }
+}
+
+/* On: light icon on black with an outline; off: dimmed, slashed icon on a dark fill */
+static void style_mic(bool on)
+{
+    lv_color_t icon = lv_color_hex(on ? COLOR_LIGHT : COLOR_MUTED);
+    lv_obj_set_style_bg_color(s_btn_mic, on ? lv_color_black() : lv_color_hex(COLOR_OFF_BG), 0);
+    lv_obj_set_style_border_color(s_btn_mic, lv_color_hex(on ? COLOR_EN : COLOR_OUTLINE), 0);
+    lv_obj_set_style_bg_color(s_mic_body, icon, 0);
+    lv_obj_set_style_bg_color(s_mic_stem, icon, 0);
+    lv_obj_set_style_arc_color(s_mic_cradle, icon, LV_PART_INDICATOR);
+    lv_obj_set_style_line_color(s_mic_slash, icon, 0);
+    lv_obj_set_hidden(s_mic_slash, on);
+}
+
 void ui_init(void)
 {
     s_last_activity_us = esp_timer_get_time();
@@ -278,18 +340,17 @@ void ui_init(void)
     lv_label_set_text(s_text, "Hello!\nOpen the iPhone app to connect.");
 
     s_btn_mic = lv_button_create(scr);
-    lv_obj_set_size(s_btn_mic, 170, 64);
-    lv_obj_align(s_btn_mic, LV_ALIGN_BOTTOM_MID, 0, -60);
-    lv_obj_set_style_radius(s_btn_mic, 32, 0);
-    lv_obj_set_style_bg_color(s_btn_mic, lv_color_hex(COLOR_IDLE), 0);
+    lv_obj_set_size(s_btn_mic, 72, 72);
+    lv_obj_align(s_btn_mic, LV_ALIGN_BOTTOM_MID, 0, -46);
+    lv_obj_set_style_radius(s_btn_mic, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_btn_mic, lv_color_hex(COLOR_OFF_BG), 0);
+    lv_obj_set_style_border_width(s_btn_mic, 2, 0);
+    lv_obj_set_style_border_color(s_btn_mic, lv_color_hex(COLOR_OUTLINE), 0);
     lv_obj_set_style_shadow_width(s_btn_mic, 0, 0);
+    lv_obj_set_ext_click_area(s_btn_mic, 12);
     lv_obj_add_event_cb(s_btn_mic, on_button, LV_EVENT_CLICKED, NULL);
-
-    s_btn_label = lv_label_create(s_btn_mic);
-    lv_obj_set_style_text_font(s_btn_label, &font_vi_22, 0);
-    lv_obj_set_style_text_color(s_btn_label, lv_color_white(), 0);
-    lv_label_set_text(s_btn_label, "Mic off");
-    lv_obj_center(s_btn_label);
+    build_mic_icon(s_btn_mic);
+    style_mic(false);
 
     lv_label_set_text(s_status, "Waiting for iPhone…");
     lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
@@ -302,9 +363,9 @@ static void refresh_status(rec_lang_t lang)
     if (!s_connected) {
         lv_label_set_text(s_status, "Waiting for iPhone…");
     } else if (lang != REC_NONE) {
-        lv_label_set_text(s_status, "Live translation");
+        lv_label_set_text(s_status, THEIR_LANGUAGE);
     } else {
-        lv_label_set_text(s_status, "Board mic is off");
+        lv_label_set_text(s_status, "Mic off");
     }
 }
 
@@ -319,8 +380,7 @@ void ui_set_connected(bool connected)
 void ui_set_recording(rec_lang_t lang)
 {
     lock();
-    lv_obj_set_style_bg_color(s_btn_mic, lv_color_hex(lang != REC_NONE ? COLOR_EN : COLOR_IDLE), 0);
-    lv_label_set_text(s_btn_label, lang != REC_NONE ? "Mic on" : "Mic off");
+    style_mic(lang != REC_NONE);
     refresh_status(lang);
     unlock();
 }

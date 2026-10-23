@@ -58,8 +58,10 @@ The session picker (tap the top of the Claude screen: status, project or title; 
 result or the voice overlay is shown) lists up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
 recent: a red dot needs you, yellow is working, green is idle, grey has ended (ended sessions leave after
 10 min). "· new" marks a session that finished while another one was focused. Tap a row to focus it.
-The logo is `assets/cicca-dark.png`, converted to RGB565 by `tools/gen_logo.py` (needs Pillow;
-`python3 tools/gen_logo.py` regenerates `firmware/main/logo_img.c/.h`, `--preview out.png` renders it back).
+The lock face shows the Live Translator mark (`assets/translator-mark.svg`: two half rings, blue for you and light for
+them, around a small flame), drawn by `tools/gen_logo.py` (needs Pillow). `python3 tools/gen_logo.py` regenerates
+`firmware/main/logo_img.c/.h` (RGB565) and the iOS app icon (`ios/Sources/Assets.xcassets`); `--preview out.png`
+renders the board logo back.
 
 ## Power
 
@@ -121,7 +123,7 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 |---|---|
 | `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `phone_ui.c` + `ancs_client.c` + `ancs.c` (iPhone notifications, ANCS), `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
 | `relay/` | Swift package `ClaudeRelay`, shared by the daemon and the iPhone app: relay frames, mutual HMAC handshake, pairing code (QR URL), Tailscale address check, WebSocket server and client |
-| `tools/` | `gen_logo.py`: generates the lock-face logo (`firmware/main/logo_img.c`) from `assets/cicca-dark.png` |
+| `tools/` | `gen_logo.py`: draws the Live Translator mark into the lock-face logo (`firmware/main/logo_img.c`) and the iOS app icon |
 | `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing, Tailscale relay listener) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |

@@ -1,7 +1,7 @@
 /*
  * Lock screen. Black and empty while the panel is off; a tap shows the face for 5 s:
  *   top    : clock (HH:MM, "--:--" until the iPhone or the Mac sent the time)
- *   middle : static logo (tools/gen_logo.py)
+ *   middle : the Live Translator mark (tools/gen_logo.py)
  *   bottom : battery, a gently bouncing chevron and "Vuốt lên để mở khoá"
  * Single tap or PWR x1 → the face, double tap → MODES_EV_TAP_2 (unlock); shell.c / modes.c decide.
  * Swipe up: only a drag that starts on the visible face counts. The face follows the finger, and past
@@ -278,7 +278,7 @@ void lock_ui_init(void)
     s_logo = lv_image_create(s_face);
     lv_image_set_src(s_logo, &logo_img);
     lv_obj_set_clickable(s_logo, false);
-    lv_obj_align(s_logo, LV_ALIGN_CENTER, 0, -18);
+    lv_obj_align(s_logo, LV_ALIGN_CENTER, 0, -12);
 
     s_battery = make_label(&font_vi_22, 0xc8c8c8, LV_ALIGN_BOTTOM_MID, -122);
 
