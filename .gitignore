@@ -23,3 +23,4 @@ __pycache__/
 # Board simulator
 sim/build/
 sim/*.bmp
+ios/Preview/build/
