@@ -123,6 +123,7 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 |---|---|
 | `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `phone_ui.c` + `ancs_client.c` + `ancs.c` (iPhone notifications, ANCS), `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
 | `relay/` | Swift package `ClaudeRelay`, shared by the daemon and the iPhone app: relay frames, mutual HMAC handshake, pairing code (QR URL), Tailscale address check, WebSocket server and client |
+| `sim/` | Desktop simulator of the board screen: the real `ui.c`, `lock_ui.c` and `modes.c` on LVGL + SDL2, with keys that fake the iPhone, the mic and a voice |
 | `tools/` | `gen_logo.py`: draws the Live Translator mark into the lock-face logo (`firmware/main/logo_img.c`) and the iOS app icon |
 | `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing, Tailscale relay listener) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
 | `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
@@ -172,6 +173,23 @@ idf.py -p /dev/cu.usbmodem1101 flash monitor
 > Flashing replaces the factory demo. Back it up first if you want to keep it:
 > `esptool -p <port> read-flash 0 0x2000000 backup.bin`. Restore it with `esptool write-flash 0 backup.bin`.
 > `backup/` is git-ignored because a flash dump may contain Wi-Fi credentials.
+
+### Board simulator (no board needed)
+
+Runs the translator and lock screens on the Mac in a round 466×466 window, built from the same
+`firmware/main` sources (LVGL 9.6 + SDL2; the firmware build downloads LVGL, else CMake fetches it).
+
+```sh
+brew install sdl2
+cmake -S sim -B sim/build && cmake --build sim/build -j
+sim/build/board-sim
+```
+
+The mouse is the finger (double-click = double tap, drag up on the lock face = swipe). Keys:
+`C` iPhone connect/disconnect, `M` board mic, `T` next sample subtitle, `V` fake voice (level ring),
+`K` lock (PWR ×1), `U` unlock (PWR ×2), `F` tap the lock screen, `P` screenshot (`board-N.bmp`).
+Scripted, without a window: `sim/build/board-sim --headless --do "connect;mic:on;text:Hello!;level:80;shot:out.bmp"`
+(all commands are listed at the top of `sim/sim.c`). BLE, audio, the PMU and the Claude screens are faked.
 
 ### iOS app
 

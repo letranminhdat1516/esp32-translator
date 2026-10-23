@@ -19,3 +19,7 @@ DerivedData/
 # Subagent-driven development scratch
 .superpowers/
 __pycache__/
+
+# Board simulator
+sim/build/
+sim/*.bmp
