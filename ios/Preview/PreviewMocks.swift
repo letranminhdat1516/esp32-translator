@@ -42,6 +42,7 @@ final class ConversationEngine {
     func translationModelsReady() { phase = .running }
     func toggleBoardMic() { boardMicOn.toggle() }
     func startConversation() { listening = true }
+    func stopConversation() { listening = false }
 
     func clearHistory() {
         theirLines.removeAll()

@@ -10,7 +10,8 @@ import Foundation
 /// nobody speaking (no board audio, gate closed, nothing being spoken) it ends.
 ///
 /// If the engine cannot take the mic (`startFailed`), the conversation goes back to idle and automatic
-/// events don't retry for `retryDelay`; a tap always retries.
+/// events don't retry for `retryDelay`; a tap always retries. A stop tap (`userStop`) ends the conversation and
+/// keeps it off until the next tap: board audio and translations no longer take the mic back by themselves.
 ///
 /// Pure value type, driven by `ConversationEngine`; time comes in with each event so it is unit-tested.
 struct ConversationActivity {
@@ -25,6 +26,8 @@ struct ConversationActivity {
         case ttsStart, ttsEnd
         /// A tap: the board mic turned on, or the start control in the app
         case userStart
+        /// The stop control in the app
+        case userStop
         /// The audio session was taken away for good (an interruption that should not resume)
         case stop
         /// Periodic check of the idle timeout
@@ -73,6 +76,9 @@ struct ConversationActivity {
             if state == .active { lastSpeech = now }
             return nil
         case .stop:
+            return goIdle()
+        case .userStop:
+            noAutoStartUntil = .distantFuture
             return goIdle()
         case .tick:
             guard state == .active, !gateIsOpen, !speaking,

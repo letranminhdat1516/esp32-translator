@@ -16,10 +16,11 @@ struct ContentView: View {
     let engine: ConversationEngine
     let relay: RelayModel
     @State private var showRelay = false
+    @State private var confirmClear = false
 
     var body: some View {
         VStack(spacing: 0) {
-            Header(engine: engine, showRelay: $showRelay)
+            Header(engine: engine, showRelay: $showRelay, confirmClear: $confirmClear)
             switch engine.phase {
             case .needsTranslationModels:
                 ModelDownloadView(engine: engine)
@@ -37,20 +38,30 @@ struct ContentView: View {
                 Spacer()
             case .idle, .running:
                 ConversationView(engine: engine)
-                ControlBar(engine: engine)
+                ControlBar(engine: engine, confirmClear: $confirmClear)
             }
         }
         .foregroundStyle(Palette.text)
         .background(Palette.ground.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showRelay) { RelayView(model: relay) }
+        // The trash sits next to the listen button: a stray tap must not wipe the conversation
+        .confirmationDialog("Xoá toàn bộ hội thoại?", isPresented: $confirmClear, titleVisibility: .visible) {
+            Button("Xoá", role: .destructive) { engine.clearHistory() }
+            Button("Huỷ", role: .cancel) {}
+        }
     }
+}
+
+private extension ConversationEngine {
+    var hasHistory: Bool { !theirLines.isEmpty || !myLines.isEmpty }
 }
 
 /// Language pair, settings, and one status line: listening · board
 private struct Header: View {
     let engine: ConversationEngine
     @Binding var showRelay: Bool
+    @Binding var confirmClear: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -69,8 +80,8 @@ private struct Header: View {
                 Spacer()
                 Menu {
                     Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
-                    Button("Xoá hội thoại", systemImage: "trash", role: .destructive) { engine.clearHistory() }
-                        .disabled(engine.phase != .running)
+                    Button("Xoá hội thoại", systemImage: "trash", role: .destructive) { confirmClear = true }
+                        .disabled(engine.phase != .running || !engine.hasHistory)
                 } label: {
                     Image(systemName: "gearshape")
                         .font(.system(size: 18))
@@ -209,9 +220,10 @@ private struct EmptyHint: View {
     }
 }
 
-/// Board mic · listen · clear
+/// Board mic · listen / stop · clear
 private struct ControlBar: View {
     let engine: ConversationEngine
+    @Binding var confirmClear: Bool
 
     var body: some View {
         HStack {
@@ -229,10 +241,11 @@ private struct ControlBar: View {
             .accessibilityLabel(engine.boardMicOn ? "Tắt mic của board" : "Bật mic của board")
             Spacer()
             Button {
-                engine.startConversation()
+                if engine.listening { engine.stopConversation() } else { engine.startConversation() }
             } label: {
-                Label(engine.listening ? "Đang nghe" : "Bắt đầu nghe",
-                      systemImage: engine.listening ? "waveform" : "mic.fill")
+                // The header already says "Đang nghe": the button says what a tap does
+                Label(engine.listening ? "Dừng nghe" : "Bắt đầu nghe",
+                      systemImage: engine.listening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 28)
@@ -240,11 +253,9 @@ private struct ControlBar: View {
                     .background(engine.listening ? Palette.accent : Palette.surface, in: Capsule())
             }
             .disabled(engine.phase != .running)
-            // Listening: shown solid blue, not greyed out like a disabled button, but taps do nothing
-            .allowsHitTesting(!engine.listening)
             Spacer()
             Button {
-                engine.clearHistory()
+                confirmClear = true
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 20))
@@ -252,7 +263,7 @@ private struct ControlBar: View {
                     .frame(width: 52, height: 52)
                     .background(Palette.surface, in: Circle())
             }
-            .disabled(engine.phase != .running)
+            .disabled(engine.phase != .running || !engine.hasHistory)
             .accessibilityLabel("Xoá hội thoại")
         }
         .buttonStyle(.plain)
@@ -267,6 +278,8 @@ private struct ModelDownloadView: View {
     let engine: ConversationEngine
     @State private var config: TranslationSession.Configuration?
     @State private var step = 0
+    /// The download was cancelled or failed (no network): the button retries the step that failed
+    @State private var failed = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -277,18 +290,33 @@ private struct ModelDownloadView: View {
                 .font(.system(size: 15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Palette.muted)
-            Button("Tải mô hình") {
-                step = 1
-                config = .init(source: ConversationEngine.english, target: ConversationEngine.vietnamese)
+            if failed {
+                Text("Chưa tải xong. Kiểm tra mạng rồi thử lại.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Palette.accentLight)
+            }
+            Button(failed ? "Thử lại" : "Tải mô hình") {
+                failed = false
+                if config == nil {
+                    step = 1
+                    config = .init(source: ConversationEngine.english, target: ConversationEngine.vietnamese)
+                } else {
+                    config?.invalidate()
+                }
             }
             .buttonStyle(.borderedProminent)
             .tint(Palette.accent)
-            .disabled(step != 0)
+            .disabled(step != 0 && !failed)
             Spacer()
         }
         .padding(24)
         .translationTask(config) { session in
-            try? await session.prepareTranslation()
+            do {
+                try await session.prepareTranslation()
+            } catch {
+                await MainActor.run { failed = true }
+                return
+            }
             await MainActor.run {
                 if step == 1 {
                     step = 2

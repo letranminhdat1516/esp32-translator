@@ -26,8 +26,9 @@ final class ConversationEngine {
         var unclear = false
         /// "You say" turn number (0 for "They say" lines)
         var turn = 0
-        /// When the line started: orders both sides into one conversation
-        let at = Date()
+        /// When the line was last spoken (final for theirs, last recognized words for yours): orders both sides
+        /// into one conversation, so a turn you keep talking through moves below a line they said in between
+        var at = Date()
     }
 
     enum Phase: Equatable {
@@ -203,6 +204,11 @@ final class ConversationEngine {
     /// The "tap to start" control
     func startConversation() {
         note(.userStart)
+    }
+
+    /// The same control while listening: gives the AirPods mic back until the next tap
+    func stopConversation() {
+        note(.userStop)
     }
 
     func clearHistory() {
@@ -402,8 +408,9 @@ final class ConversationEngine {
             myLines.append(Line(source: "", target: "", turn: turn.id))
             Self.trim(&myLines)
         }
-        if let index = myLines.lastIndex(where: { $0.turn == turn.id }) {
+        if let index = myLines.lastIndex(where: { $0.turn == turn.id }), myLines[index].source != turn.text {
             myLines[index].source = turn.text
+            myLines[index].at = now
         }
         // The panel shows the recognized text (loanwords fixed); the translator gets it with vocatives
         // dropped and service phrases spelled out (VietnameseFixup)

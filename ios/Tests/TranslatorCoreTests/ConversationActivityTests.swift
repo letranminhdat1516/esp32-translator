@@ -131,4 +131,23 @@ struct ConversationActivityTests {
         #expect(activity.handle(.userStart, at: at(10)) == .start)
         #expect(activity.handle(.tick, at: at(610)) == .stop)
     }
+
+    @Test func stopTapEndsItUntilTheNextTap() {
+        var activity = ConversationActivity()
+        #expect(activity.handle(.userStart, at: at(0)) == .start)
+        #expect(activity.handle(.gateOpen, at: at(1)) == nil)
+        #expect(activity.handle(.userStop, at: at(2)) == .stop)
+        #expect(activity.state == .idle)
+        // Board audio and translations don't take the mic back, even much later
+        #expect(activity.handle(.boardAudio, at: at(3)) == nil)
+        #expect(activity.handle(.ttsStart, at: at(10_000)) == nil)
+        #expect(activity.state == .idle)
+        #expect(activity.handle(.userStart, at: at(10_001)) == .start)
+    }
+
+    @Test func stopTapWhileIdleDoesNothing() {
+        var activity = ConversationActivity()
+        #expect(activity.handle(.userStop, at: at(0)) == nil)
+        #expect(activity.handle(.userStart, at: at(1)) == .start)
+    }
 }

@@ -24,3 +24,6 @@ __pycache__/
 sim/build/
 sim/*.bmp
 ios/Preview/build/
+
+# ESP-IDF tool cache (clangd index)
+firmware/.cache/
