@@ -20,6 +20,20 @@ struct PhonePreviewApp: App {
     private let relay = RelayModel()
 
     init() {
+        // --demo: start with a whole conversation on screen (both sides, an unclear line, both partials)
+        if CommandLine.arguments.contains("--demo") {
+            let e = ConversationEngine()
+            for (i, s) in sampleTheirs.enumerated() {
+                e.theirLines.append(.init(source: s.0, target: s.1, at: Date(timeIntervalSinceNow: Double(i * 2 - 10))))
+                let m = sampleMine[i]
+                e.myLines.append(.init(source: m.0, target: m.1, turn: i + 1, at: Date(timeIntervalSinceNow: Double(i * 2 - 9))))
+            }
+            e.theirLines.append(.init(source: "…the uh… later maybe…", target: "Không nghe rõ", unclear: true))
+            e.theirPartial = "So the bus leaves from"
+            e.myPartial = "Cho mình hỏi đường ra"
+            e.listening = true
+            _engine = State(initialValue: e)
+        }
         NSApplication.shared.setActivationPolicy(.regular)
         DispatchQueue.main.async { NSApplication.shared.activate() }
     }

@@ -24,6 +24,8 @@ LV_FONT_DECLARE(font_vi_36);
 
 /* The other person's language, shown while translating (one pair for now) */
 #define THEIR_LANGUAGE "English"
+/* Shown while no iPhone is connected (replaces stale subtitles on a disconnect, cleared on connect) */
+#define WELCOME_TEXT "Hello!\nOpen the iPhone app to connect."
 
 static lv_obj_t *s_status;
 static lv_obj_t *s_ring;
@@ -304,6 +306,8 @@ void ui_init(void)
     lv_obj_set_style_text_color(s_status, lv_color_hex(COLOR_MUTED), 0);
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_MODE_DOTS);
+    /* One line: dots only cut a label of fixed height; a wrapped toast would run into the subtitles */
+    lv_obj_set_height(s_status, lv_font_get_line_height(&font_vi_22));
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 48);
 
     /* Level ring: tells the speaker the board hears them (and to come closer when it is faint) */
@@ -337,7 +341,7 @@ void ui_init(void)
     lv_obj_set_style_text_color(s_text, lv_color_white(), 0);
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_line_space(s_text, 2, 0);
-    lv_label_set_text(s_text, "Hello!\nOpen the iPhone app to connect.");
+    lv_label_set_text(s_text, WELCOME_TEXT);
 
     s_btn_mic = lv_button_create(scr);
     lv_obj_set_size(s_btn_mic, 72, 72);
@@ -372,6 +376,10 @@ static void refresh_status(rec_lang_t lang)
 void ui_set_connected(bool connected)
 {
     lock();
+    if (connected != s_connected && !s_shutting_down) {   /* keep the sleep / power-off message */
+        lv_label_set_text(s_text, connected ? "" : WELCOME_TEXT);
+        lv_obj_scroll_to_y(s_text_box, 0, LV_ANIM_OFF);
+    }
     s_connected = connected;
     refresh_status(app_get_recording());
     unlock();

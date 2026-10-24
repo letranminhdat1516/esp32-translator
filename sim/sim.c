@@ -17,6 +17,8 @@
  *   sleep                    the deep-sleep message
  *   wait:<ms>                keep rendering
  *   shot:<file.bmp>          save what the screen shows (round, outside the glass dark grey)   P
+ *   tap:<x>,<y> / dtap:<x>,<y>                 a finger tap / double tap at that point
+ *   drag:<x1>,<y1>,<x2>,<y2>                   press, move in steps, release (e.g. the swipe up)
  */
 #include <math.h>
 #include <stdio.h>
@@ -45,6 +47,9 @@ static lv_obj_t *s_dark;
 static bool s_voice;
 static int s_sample;
 static int s_shots;
+/* Scripted finger (tap / dtap / drag), next to the SDL mouse */
+static lv_point_t s_finger;
+static bool s_finger_down;
 
 static const char *SAMPLES[] = {
     "Hello! Where is the nearest train station?",
@@ -147,6 +152,10 @@ rec_lang_t app_get_recording(void)
 
 void app_request_recording(rec_lang_t lang)
 {
+    if (lang != REC_NONE && !s_connected) {
+        ui_show_status("iPhone not connected");   /* main.c, when no iPhone link can be woken */
+        return;
+    }
     s_rec = lang;
     ui_set_recording(lang);
     printf("board mic %s\n", lang == REC_NONE ? "off" : "on");
@@ -198,6 +207,27 @@ static void shot(const char *path)
     printf("shot %s\n", path);
 }
 
+/* ---- scripted finger ---- */
+
+static void finger_read(lv_indev_t *indev, lv_indev_data_t *data)
+{
+    data->point = s_finger;
+    data->state = s_finger_down ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+}
+
+static void finger(int x, int y, bool down, uint32_t hold_ms)
+{
+    s_finger = (lv_point_t){x, y};
+    s_finger_down = down;
+    pump(hold_ms);
+}
+
+static void tap(int x, int y)
+{
+    finger(x, y, true, 60);
+    finger(x, y, false, 60);
+}
+
 /* ---- commands ---- */
 
 static void unescape(char *s)
@@ -244,6 +274,25 @@ static void run(char *cmd)
         shell_post(MODES_EV_PWR_2);
     } else if (!strcmp(cmd, "face")) {
         shell_post(MODES_EV_TAP_1);
+    } else if (!strcmp(cmd, "tap") && arg) {
+        int x, y;
+        if (sscanf(arg, "%d,%d", &x, &y) == 2) {
+            tap(x, y);
+        }
+    } else if (!strcmp(cmd, "dtap") && arg) {
+        int x, y;
+        if (sscanf(arg, "%d,%d", &x, &y) == 2) {
+            tap(x, y);
+            tap(x, y);
+        }
+    } else if (!strcmp(cmd, "drag") && arg) {
+        int x1, y1, x2, y2;
+        if (sscanf(arg, "%d,%d,%d,%d", &x1, &y1, &x2, &y2) == 4) {
+            for (int i = 0; i <= 10; i++) {
+                finger(x1 + (x2 - x1) * i / 10, y1 + (y2 - y1) * i / 10, true, 30);
+            }
+            finger(x2, y2, false, 60);
+        }
     } else if (!strcmp(cmd, "sleep")) {
         ui_prepare_sleep();
     } else if (!strcmp(cmd, "wait") && arg) {
@@ -371,6 +420,10 @@ int main(int argc, char **argv)
         lv_obj_set_style_border_color(bezel, lv_color_hex(BEZEL), 0);
         lv_obj_set_clickable(bezel, false);
     }
+    lv_indev_t *f = lv_indev_create();
+    lv_indev_set_type(f, LV_INDEV_TYPE_POINTER);
+    lv_indev_set_read_cb(f, finger_read);
+
     /* The dark AMOLED (brightness 0): taps still reach the screen below */
     s_dark = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_dark);

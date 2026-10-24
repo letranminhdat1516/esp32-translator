@@ -239,7 +239,9 @@ private struct ControlBar: View {
                     .frame(height: 56)
                     .background(engine.listening ? Palette.accent : Palette.surface, in: Capsule())
             }
-            .disabled(engine.listening || engine.phase != .running)
+            .disabled(engine.phase != .running)
+            // Listening: shown solid blue, not greyed out like a disabled button, but taps do nothing
+            .allowsHitTesting(!engine.listening)
             Spacer()
             Button {
                 engine.clearHistory()
