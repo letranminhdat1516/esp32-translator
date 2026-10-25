@@ -32,6 +32,7 @@
 void ble_store_config_init(void);
 
 #include "app.h"
+#include "font_store.h"
 #include "glyphs.h"
 #include "claude_proto.h"
 #include "claude_link.h"
@@ -443,7 +444,7 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
     uint16_t len = 0;
 
     if (attr_handle == s_info_handle && ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
-        uint32_t sets = BOARD_BASE_FONT_SETS;
+        uint32_t sets = BOARD_BASE_FONT_SETS | font_store_sets();
         uint8_t info[5] = { BOARD_INFO_VERSION, (uint8_t)sets, (uint8_t)(sets >> 8), (uint8_t)(sets >> 16),
                             (uint8_t)(sets >> 24) };
         return os_mbuf_append(ctxt->om, info, sizeof(info)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;

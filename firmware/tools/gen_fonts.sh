@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# Regenerates main/font_vi_22.c, main/font_vi_36.c and the range table in main/glyphs.c from ONE list.
+# Font generator for the board.
+#
+#   gen_fonts.sh [latin]   main/font_vi_22.c, main/font_vi_36.c and the range table in main/glyphs.c, all from ONE
+#                          list (default)
+#   gen_fonts.sh store     fonts/{cjk,hangul,thai}_{22,36}.bin (LVGL binfonts) and fonts/fonts.img (the image for the
+#                          'fonts' partition, see main/font_store.c); downloads the Noto sources into fonts/src (git-ignored)
+#   gen_fonts.sh all
+#
 # Needs node and python3 (uses npx lv_font_conv@1.5.3). Run from anywhere.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FW="$HERE/.."
 TTF="${TTF:-$FW/../fonts/BeVietnamPro-SemiBold.ttf}"
+MODE="${1:-latin}"
 
-# Canonical board glyph ranges "lo-hi:SETS" (FONTSET_* names from board_info.h joined by '|').
-# The Latin fonts carry the union of all of them. B8 (app) mirrors this list.
-RANGES="
+gen_latin() {
+  # Canonical board glyph ranges "lo-hi:SETS" (FONTSET_* names from board_info.h joined by '|').
+  # The Latin fonts carry the union of all of them. B8 (app) mirrors this list.
+  local RANGES="
 0x20-0x7E:FONTSET_LATIN_VI
 0xA0-0xFF:FONTSET_LATIN_VI
 0x100-0x17F:FONTSET_LATIN_EXT_A
@@ -24,9 +33,9 @@ RANGES="
 0x2018-0x201D:FONTSET_LATIN_VI
 0x2026-0x2026:FONTSET_LATIN_VI
 "
-
-# Writes the glyphs.c table and prints the lv_font_conv -r list
-R=$(python3 - "$FW/main/glyphs.c" "$RANGES" <<'PY'
+  # Writes the glyphs.c table and prints the lv_font_conv -r list
+  local R
+  R=$(python3 - "$FW/main/glyphs.c" "$RANGES" <<'PY'
 import sys
 path, spec = sys.argv[1], sys.argv[2]
 rows = [l.split(":") for l in spec.split() if l]
@@ -41,10 +50,84 @@ open(path, "w", encoding="utf-8").write(
 print(",".join(r for r, _ in rows))
 PY
 )
+  cd "$FW/main"
+  for SIZE in 22 36; do
+    npx --yes lv_font_conv@1.5.3 --font "$TTF" -r "$R" --size $SIZE --bpp 4 --format lvgl --no-compress \
+      --lv-include lvgl.h --lv-font-name "font_vi_$SIZE" -o "font_vi_$SIZE.c"
+  done
+  echo "latin ranges: $R"
+}
 
-cd "$FW/main"
-for SIZE in 22 36; do
-  npx --yes lv_font_conv@1.5.3 --font "$TTF" -r "$R" --size $SIZE --bpp 4 --format lvgl --no-compress \
-    --lv-include lvgl.h --lv-font-name "font_vi_$SIZE" -o "font_vi_$SIZE.c"
-done
-echo "ranges: $R"
+gen_store() {
+  local SRC="$FW/fonts/src" OUT="$FW/fonts"
+  local NOTO="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF"
+  mkdir -p "$SRC"
+  [ -s "$SRC/sc.otf" ] || curl -sfL -o "$SRC/sc.otf" "$NOTO/SC/NotoSansSC-Medium.otf"
+  [ -s "$SRC/kr.otf" ] || curl -sfL -o "$SRC/kr.otf" "$NOTO/KR/NotoSansKR-Medium.otf"
+  [ -s "$SRC/th.ttf" ] || curl -sfL -o "$SRC/th.ttf" "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai%5Bwdth%2Cwght%5D.ttf"
+
+  # Frequent Hanzi/Kanji: GB2312 level 1 (3755, by frequency) + JIS X 0208 level 1 kanji (2965), unique
+  local HANZI
+  HANZI=$(python3 - <<'PY'
+chars = set()
+for row in range(0xB0, 0xD8):                      # GB2312 level 1
+    for col in range(0xA1, 0xFF):
+        try:
+            chars.add(bytes([row, col]).decode("gb2312"))
+        except UnicodeDecodeError:
+            pass
+for row in range(0xB0, 0xD0):                      # JIS X 0208 level 1 (EUC-JP rows 16-47)
+    for col in range(0xA1, 0xFF):
+        try:
+            chars.add(bytes([row, col]).decode("euc_jp"))
+        except UnicodeDecodeError:
+            pass
+print("".join(sorted(chars)), end="")
+PY
+)
+  echo "hanzi/kanji: $(printf '%s' "$HANZI" | python3 -c 'import sys; print(len(sys.stdin.read()))')"
+
+  local HANGUL
+  HANGUL=$(python3 - <<'PY'
+print("".join(bytes([r, c]).decode("euc_kr") for r in range(0xB0, 0xC9) for c in range(0xA1, 0xFF)), end="")
+PY
+)
+  echo "hangul syllables: $(printf '%s' "$HANGUL" | python3 -c 'import sys; print(len(sys.stdin.read()))')"
+
+  for SIZE in 22 36; do
+    # CJK: kana, CJK + full-width punctuation, the Hanzi/Kanji above
+    npx --yes lv_font_conv@1.5.3 --font "$SRC/sc.otf" -r 0x3000-0x30FF,0xFF01-0xFF5E --symbols "$HANZI" \
+      --size $SIZE --bpp 4 --format bin --no-compress -o "$OUT/cjk_$SIZE.bin"
+    # Hangul: the 2350 syllables of KS X 1001 + compatibility jamo. All 11172 do not fit: with 24-bit flash mapping
+    # the fonts partition must end below 16 MB (0x1000000), and 11172 syllables take ~8 MB.
+    npx --yes lv_font_conv@1.5.3 --font "$SRC/kr.otf" -r 0x3131-0x318E --symbols "$HANGUL" \
+      --size $SIZE --bpp 4 --format bin --no-compress -o "$OUT/hangul_$SIZE.bin"
+    npx --yes lv_font_conv@1.5.3 --font "$SRC/th.ttf" -r 0x0E01-0x0E5B \
+      --size $SIZE --bpp 4 --format bin --no-compress -o "$OUT/thai_$SIZE.bin"
+  done
+
+  # Partition image: "FNT1", count u32, count x {set u32, px u32, offset u32, size u32} (little endian), data 4-aligned.
+  # set bits are FONTSET_* from board_info.h: CJK 4, Hangul 8, Thai 0x10.
+  python3 - "$OUT" <<'PY'
+import os, struct, sys
+out = sys.argv[1]
+items = [(4, "cjk"), (8, "hangul"), (0x10, "thai")]
+files = [(s, px, open(os.path.join(out, "%s_%d.bin" % (n, px)), "rb").read()) for s, n in items for px in (22, 36)]
+head = 8 + 16 * len(files)
+off, table, blob = (head + 3) & ~3, b"", b""
+for s, px, data in files:
+    table += struct.pack("<IIII", s, px, off + len(blob), len(data))
+    blob += data + b"\0" * (-len(data) % 4)
+img = b"FNT1" + struct.pack("<I", len(files)) + table
+img += b"\0" * (off - len(img)) + blob
+open(os.path.join(out, "fonts.img"), "wb").write(img)
+print("fonts.img: %d bytes (the fonts partition is 0x9F0000 = 10.4 MB)" % len(img))
+PY
+}
+
+case "$MODE" in
+  latin) gen_latin ;;
+  store) gen_store ;;
+  all) gen_latin; gen_store ;;
+  *) echo "usage: $0 [latin|store|all]" >&2; exit 2 ;;
+esac

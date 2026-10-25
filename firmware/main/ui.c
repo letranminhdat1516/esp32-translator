@@ -13,6 +13,7 @@
 #include "lvgl.h"
 
 #include "app.h"
+#include "font_store.h"
 #include "glyphs.h"
 
 LV_FONT_DECLARE(font_vi_22);
@@ -313,6 +314,7 @@ void ui_init(void)
 {
     s_last_activity_us = esp_timer_get_time();
     lock();
+    font_store_init();   /* script fallbacks of the subtitle fonts, when the fonts partition holds them */
     lv_obj_t *scr = lv_screen_active();
     s_translator_scr = scr;
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -320,12 +322,12 @@ void ui_init(void)
 
     s_status = lv_label_create(scr);
     lv_obj_set_width(s_status, 300);
-    lv_obj_set_style_text_font(s_status, &font_vi_22, 0);
+    lv_obj_set_style_text_font(s_status, font_store_font(22), 0);
     lv_obj_set_style_text_color(s_status, lv_color_hex(COLOR_MUTED), 0);
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_MODE_DOTS);
     /* One line: dots only cut a label of fixed height; a wrapped toast would run into the subtitles */
-    lv_obj_set_height(s_status, lv_font_get_line_height(&font_vi_22));
+    lv_obj_set_height(s_status, lv_font_get_line_height(font_store_font(22)));
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 48);
 
     /* Level ring: tells the speaker the board hears them (and to come closer when it is faint) */
@@ -354,7 +356,7 @@ void ui_init(void)
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, lv_pct(100));
     lv_label_set_long_mode(s_text, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_style_text_font(s_text, &font_vi_36, 0);
+    lv_obj_set_style_text_font(s_text, font_store_font(36), 0);
     /* The container gets the theme's dark text colour; force full white on the AMOLED */
     lv_obj_set_style_text_color(s_text, lv_color_white(), 0);
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
