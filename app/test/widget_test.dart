@@ -1,30 +1,25 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:live_translator/main.dart';
 
+import 'ui/ui_test_helpers.dart';
+
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  setUpAll(loadTestFont);
+  testWidgets('demo shell shows the conversation and toggles listening', (
+    tester,
+  ) async {
+    useIphoneSize(tester);
+    final packs = (await tester.runAsync(loadDemoPacks))!;
+    expect(packs, isNotEmpty);
+    await tester.pumpWidget(DemoApp(packs: packs, fontFamily: testFont));
+    expect(find.text('Ga tàu ở đâu vậy?'), findsOneWidget);
+    expect(find.text(packs.first.label), findsOneWidget);
+    expect(find.text('Bắt đầu nghe'), findsOneWidget);
+    await tester.tap(find.text('Bắt đầu nghe'));
     await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('Dừng nghe'), findsOneWidget);
+    await tester.tap(find.text('Dừng nghe'));
+    await tester.pump();
+    expect(find.text('Bắt đầu nghe'), findsOneWidget);
   });
 }

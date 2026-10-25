@@ -1,121 +1,203 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show AssetBundle, AssetManifest, rootBundle;
 
-void main() {
-  runApp(const MyApp());
+import 'core/model.dart';
+import 'ui/conversation_screen.dart';
+import 'ui/conversation_state.dart';
+import 'ui/glossary_screen.dart';
+import 'ui/language_sheet.dart';
+import 'ui/theme.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(DemoApp(packs: await loadDemoPacks()));
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+/// The packs the demo offers, read from `assets/languages/*.json` (no locale
+/// literals in code). The home language is the header's fixed "Tiếng Việt",
+/// so its pack is not offered as the other language.
+Future<List<LanguagePack>> loadDemoPacks([AssetBundle? bundle]) async {
+  final b = bundle ?? rootBundle;
+  final manifest = await AssetManifest.loadFromAssetBundle(b);
+  final paths = manifest
+      .listAssets()
+      .where((p) => p.startsWith('assets/languages/') && p.endsWith('.json'))
+      .toList()
+    ..sort();
+  final packs = [
+    for (final p in paths) LanguagePack.parse(await b.loadString(p)),
+  ];
+  return packs.where((p) => p.label != 'Tiếng Việt').toList();
+}
 
-  // This widget is the root of your application.
+/// Demo shell: shows the "Phụ đề" conversation screen with sample state so
+/// `flutter run` displays the design. The real controller replaces the state
+/// and the actions in Phase 2.
+class DemoApp extends StatelessWidget {
+  const DemoApp({super.key, required this.packs, this.fontFamily});
+
+  final List<LanguagePack> packs;
+
+  /// Null in the app; widget tests pass a real font (the default test font has no Vietnamese).
+  final String? fontFamily;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'Phụ đề',
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(fontFamily: fontFamily),
+      home: DemoHome(packs: packs),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class DemoHome extends StatefulWidget {
+  const DemoHome({super.key, required this.packs});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  /// Languages offered in the demo (loaded from assets/languages).
+  final List<LanguagePack> packs;
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<DemoHome> createState() => _DemoHomeState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _DemoHomeState extends State<DemoHome> {
+  static final _now = DateTime.now();
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  late var _code = widget.packs.first.code;
+  var _glossary = <Term>[const Term(id: '1', text: 'Zorvik')];
+  late ConversationUiState _state = ConversationUiState(
+    phase: UiPhase.running,
+    board: BoardState.ready,
+    languageLabel: widget.packs.first.label,
+    offeredPacks: widget.packs,
+    languageNames: {for (final p in widget.packs) p.code: p.label},
+    theirLines: [
+      UiLine(
+        id: 't1',
+        source: 'Where is the train station?',
+        target: 'Ga tàu ở đâu vậy?',
+        at: _now.subtract(const Duration(seconds: 30)),
+      ),
+      UiLine(
+        id: 't2',
+        source: 'mumble mumble',
+        target: 'lầm bầm gì đó',
+        unclear: true,
+        at: _now.subtract(const Duration(seconds: 5)),
+      ),
+    ],
+    myLines: [
+      UiLine(
+        id: 'm1',
+        source: 'Đi thẳng rồi rẽ phải nhé',
+        target: 'Go straight, then turn right.',
+        at: _now.subtract(const Duration(seconds: 15)),
+      ),
+    ],
+    theirPartial: 'and how far is it',
+  );
+
+  void _set(ConversationUiState Function(ConversationUiState s) f) =>
+      setState(() => _state = f(_state));
+
+  ConversationUiState _copy(
+    ConversationUiState s, {
+    bool? listening,
+    bool? boardMicOn,
+    List<UiLine>? theirLines,
+    List<UiLine>? myLines,
+    String? theirPartial,
+    String? languageLabel,
+  }) => ConversationUiState(
+    phase: s.phase,
+    message: s.message,
+    session: s.session,
+    board: s.board,
+    boardMicOn: boardMicOn ?? s.boardMicOn,
+    theirLines: theirLines ?? s.theirLines,
+    myLines: myLines ?? s.myLines,
+    theirPartial: theirPartial ?? s.theirPartial,
+    myPartial: s.myPartial,
+    listening: listening ?? s.listening,
+    languageLabel: languageLabel ?? s.languageLabel,
+    onlineRecognizer: s.onlineRecognizer,
+    micRoute: s.micRoute,
+    offeredPacks: s.offeredPacks,
+    languageNames: s.languageNames,
+    downloadProgress: s.downloadProgress,
+  );
+
+  void _openLanguages() {
+    showLanguageSheet(
+      context,
+      packs: widget.packs,
+      currentCode: _code,
+      onPick: (code) => _set((s) {
+        _code = code;
+        return _copy(
+          s,
+          languageLabel: widget.packs.firstWhere((p) => p.code == code).label,
+        );
+      }),
+    );
+  }
+
+  void _openGlossary() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => StatefulBuilder(
+          builder: (context, setInner) => GlossaryScreen(
+            terms: _glossary,
+            onAdd: (text) {
+              if (text.trim().isEmpty) {
+                throw const GlossaryValidationError(GlossaryMessages.empty);
+              }
+              setInner(
+                () => _glossary = [
+                  ..._glossary,
+                  Term(id: '${_glossary.length + 1}', text: text.trim()),
+                ],
+              );
+            },
+            onUpdate: (id, text) {
+              if (text.trim().isEmpty) {
+                throw const GlossaryValidationError(GlossaryMessages.empty);
+              }
+              setInner(
+                () => _glossary = [
+                  for (final t in _glossary)
+                    t.id == id ? Term(id: id, text: text.trim()) : t,
+                ],
+              );
+            },
+            onDelete: (id) =>
+                setInner(() => _glossary = [..._glossary]..removeWhere((t) => t.id == id)),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+    return ConversationScreen(
+      state: _state,
+      actions: ConversationActions(
+        toggleBoardMic: () =>
+            _set((s) => _copy(s, boardMicOn: !s.boardMicOn)),
+        startListening: () => _set((s) => _copy(s, listening: true)),
+        stopListening: () =>
+            _set((s) => _copy(s, listening: false, theirPartial: '')),
+        clearHistory: () => _set(
+          (s) => _copy(s, theirLines: [], myLines: [], theirPartial: ''),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+        openLanguages: _openLanguages,
+        openGlossary: _openGlossary,
+        onDownload: () {},
+        onRetry: () {},
+        pickLanguage: (_) {},
       ),
     );
   }
