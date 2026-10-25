@@ -126,7 +126,13 @@ Java_vn_cicca_livetranslator_engine_WhisperNative_transcribe(
         env->ExceptionClear();
         if (segment_class != nullptr) env->DeleteLocalRef(segment_class);
         jclass ise = env->FindClass("java/lang/IllegalStateException");
+        if (ise == nullptr) {
+            // FindClass left its own exception pending (NoClassDefFoundError): let that one reach Kotlin
+            LOGW("WhisperSegment binding missing and IllegalStateException not found");
+            return nullptr;
+        }
         env->ThrowNew(ise, "WhisperSegment(String, float, float) not found (R8 keep rule missing?)");
+        env->DeleteLocalRef(ise);
         return nullptr;
     }
     const int count = whisper_full_n_segments(ctx);

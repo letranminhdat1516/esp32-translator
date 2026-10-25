@@ -77,6 +77,8 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
             WhisperNative.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
         } catch (e: IllegalStateException) {
             throw EngineErrors.notReady("Whisper: ${e.message}")
+        } catch (e: LinkageError) { // a JNI lookup's own NoClassDefFoundError / NoSuchMethodError
+            throw EngineErrors.notReady("Whisper: ${e.message}")
         }
         val seconds = (SystemClock.elapsedRealtime() - started) / 1000.0
         val t = Transcript(HallucinationFilter.filter(segments), segments, audio, seconds)

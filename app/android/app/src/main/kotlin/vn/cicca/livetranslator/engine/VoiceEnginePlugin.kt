@@ -289,13 +289,13 @@ class NativeVoiceEngine(
     /** Throws `notReady` when the mic cannot start (Dart also gets audioSession(interrupted)) */
     override fun micOn(on: Boolean) {
         val s = synchronized(lock) { session } ?: return
-        s.micOn = on
         when {
             // An OS recognizer below Android 13 listens to the mic itself
             s.mine.ownsMic -> s.mine.listen(on)
-            on -> s.mic.start()
+            on -> s.mic.start() // throws notReady: micOn then stays false
             else -> s.mic.stop()
         }
+        s.micOn = on
     }
 
     override fun feedTheirAudio(pcm16le: ByteArray, sampleRate: Long) {
