@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_translator/engine/engine_api.g.dart' as api;
+
 import 'package:live_translator/core/model.dart';
 import 'package:live_translator/engine/fake_voice_engine.dart';
 import 'package:live_translator/engine/voice_engine.dart';
@@ -59,9 +61,9 @@ void main() {
 
   test('CapabilitiesMsg.toModel maps recognizer names', () {
     final msg = CapabilitiesMsg(
-      recognizers: {
-        'ja': ['whisper', 'osOnline'],
-      },
+      recognizers: [
+        RecognizerEntryMsg(language: 'ja', kinds: ['whisper', 'osOnline']),
+      ],
       translatable: ['ja', 'vi'],
       vietnameseVoice: false,
     );
@@ -75,5 +77,59 @@ void main() {
         vietnameseVoice: false,
       ),
     );
+  });
+
+  group('PlatformVoiceEngine over the real codec', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    const codec = api.VoiceEngineApi.pigeonChannelCodec;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String channel(String name) =>
+        'dev.flutter.pigeon.live_translator.VoiceEngineApi.$name';
+
+    tearDown(() {
+      for (final n in ['capabilities', 'speak']) {
+        messenger.setMockMessageHandler(channel(n), null);
+      }
+    });
+
+    test('capabilities decodes a non-empty message', () async {
+      messenger.setMockMessageHandler(
+        channel('capabilities'),
+        (_) async => codec.encodeMessage(<Object?>[
+          CapabilitiesMsg(
+            recognizers: [
+              RecognizerEntryMsg(
+                language: 'ja',
+                kinds: ['whisper', 'osOnline'],
+              ),
+            ],
+            translatable: ['ja', 'vi'],
+            vietnameseVoice: true,
+          ),
+        ]),
+      );
+      expect(
+        await PlatformVoiceEngine().capabilities(),
+        const Capabilities(
+          recognizers: {
+            'ja': [RecognizerKind.whisper, RecognizerKind.osOnline],
+          },
+          translatable: {'ja', 'vi'},
+          vietnameseVoice: true,
+        ),
+      );
+    });
+
+    test('a native error named after an EngineError arrives as it', () async {
+      messenger.setMockMessageHandler(
+        channel('speak'),
+        (_) async => codec.encodeMessage(<Object?>['notReady', 'no', null]),
+      );
+      await expectLater(
+        PlatformVoiceEngine().speak('x', 1),
+        throwsA(EngineError.notReady),
+      );
+    });
   });
 }

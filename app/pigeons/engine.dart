@@ -17,15 +17,22 @@ enum AudioRoute { headset, phoneMic }
 /// `finalText` is the "final" kind; `final` is a reserved word in Dart.
 enum MineKind { partial, finalText }
 
-/// Recognizer lists carry `RecognizerKind` names (`osOnDevice`, `whisper`,
-/// `osOnline`) because pigeon maps cannot hold enum lists.
+/// Recognizers for one language. [kinds] carries `RecognizerKind` names
+/// (`osOnDevice`, `whisper`, `osOnline`) because pigeon cannot reference the
+/// Dart-side enum.
+class RecognizerEntryMsg {
+  RecognizerEntryMsg({required this.language, required this.kinds});
+  String language;
+  List<String> kinds;
+}
+
 class CapabilitiesMsg {
   CapabilitiesMsg({
     required this.recognizers,
     required this.translatable,
     required this.vietnameseVoice,
   });
-  Map<String, List<String>> recognizers;
+  List<RecognizerEntryMsg> recognizers;
   List<String> translatable;
   bool vietnameseVoice;
 }

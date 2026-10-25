@@ -18,6 +18,7 @@ export 'engine_api.g.dart'
         MissingKind,
         MissingMsg,
         PairMsg,
+        RecognizerEntryMsg,
         TheirsMsg;
 
 /// Typed failures of the native engine. Native code reports them as a
@@ -34,9 +35,9 @@ enum EngineError implements Exception {
 extension CapabilitiesMsgModel on CapabilitiesMsg {
   Capabilities toModel() => Capabilities(
     recognizers: {
-      for (final e in recognizers.entries)
-        e.key: [
-          for (final name in e.value)
+      for (final e in recognizers)
+        e.language: [
+          for (final name in e.kinds)
             RecognizerKind.values.asNameMap()[name] ??
                 (throw FormatException('unknown recognizer "$name"')),
         ],
@@ -110,10 +111,11 @@ class PlatformVoiceEngine implements VoiceEngine, VoiceEngineEvents {
 
   @override
   Future<Capabilities> capabilities() async =>
-      (await _api.capabilities()).toModel();
+      (await _call(_api.capabilities)).toModel();
 
   @override
-  Future<List<MissingMsg>> missing(PairMsg pair) => _api.missing(pair);
+  Future<List<MissingMsg>> missing(PairMsg pair) =>
+      _call(() => _api.missing(pair));
 
   @override
   Future<void> downloadItem(MissingMsg item) =>
@@ -124,30 +126,31 @@ class PlatformVoiceEngine implements VoiceEngine, VoiceEngineEvents {
       _call(() => _api.start(pair, recognizerX, hints));
 
   @override
-  Future<void> stop() => _api.stop();
+  Future<void> stop() => _call(_api.stop);
 
   @override
-  Future<void> micOn(bool on) => _api.micOn(on);
+  Future<void> micOn(bool on) => _call(() => _api.micOn(on));
 
   @override
   Future<void> feedTheirAudio(Int16List pcm, int sampleRate) =>
-      _api.feedTheirAudio(pcm16leBytes(pcm), sampleRate);
+      _call(() => _api.feedTheirAudio(pcm16leBytes(pcm), sampleRate));
 
   @override
   Future<String> translate(String text, String from, String to) =>
       _call(() => _api.translate(text, from, to), EngineError.translateFailed);
 
   @override
-  Future<void> speak(String text, int id) => _api.speak(text, id);
+  Future<void> speak(String text, int id) => _call(() => _api.speak(text, id));
 
   @override
-  Future<void> stopSpeaking() => _api.stopSpeaking();
+  Future<void> stopSpeaking() => _call(_api.stopSpeaking);
 
   @override
-  Future<void> setHints(List<String> hints) => _api.setHints(hints);
+  Future<void> setHints(List<String> hints) =>
+      _call(() => _api.setHints(hints));
 
   @override
-  Future<void> openTtsSettings() => _api.openTtsSettings();
+  Future<void> openTtsSettings() => _call(_api.openTtsSettings);
 
   @override
   Stream<MineMsg> get mine => _mine.stream;

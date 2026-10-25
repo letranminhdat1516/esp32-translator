@@ -211,19 +211,60 @@ enum MineKind: Int, CaseIterable {
   case finalText = 1
 }
 
-/// Recognizer lists carry `RecognizerKind` names (`osOnDevice`, `whisper`,
-/// `osOnline`) because pigeon maps cannot hold enum lists.
+/// Recognizers for one language. [kinds] carries `RecognizerKind` names
+/// (`osOnDevice`, `whisper`, `osOnline`) because pigeon cannot reference the
+/// Dart-side enum.
 ///
 /// Generated class from Pigeon that represents data sent in messages.
+struct RecognizerEntryMsg: Hashable, CustomStringConvertible {
+  var language: String
+  var kinds: [String]
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> RecognizerEntryMsg? {
+    let language = pigeonVar_list[0] as! String
+    let kinds = pigeonVar_list[1] as! [String]
+
+    return RecognizerEntryMsg(
+      language: language,
+      kinds: kinds
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      language,
+      kinds,
+    ]
+  }
+  static func == (lhs: RecognizerEntryMsg, rhs: RecognizerEntryMsg) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return EngineApiPigeonInternal.deepEquals(lhs.language, rhs.language) && EngineApiPigeonInternal.deepEquals(lhs.kinds, rhs.kinds)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("RecognizerEntryMsg")
+    EngineApiPigeonInternal.deepHash(value: language, hasher: &hasher)
+    EngineApiPigeonInternal.deepHash(value: kinds, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "RecognizerEntryMsg(language: \(String(describing: language)), kinds: \(String(describing: kinds)))"
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
 struct CapabilitiesMsg: Hashable, CustomStringConvertible {
-  var recognizers: [String: [String]]
+  var recognizers: [RecognizerEntryMsg]
   var translatable: [String]
   var vietnameseVoice: Bool
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
   static func fromList(_ pigeonVar_list: [Any?]) -> CapabilitiesMsg? {
-    let recognizers = pigeonVar_list[0] as! [String: [String]]
+    let recognizers = pigeonVar_list[0] as! [RecognizerEntryMsg]
     let translatable = pigeonVar_list[1] as! [String]
     let vietnameseVoice = pigeonVar_list[2] as! Bool
 
@@ -570,18 +611,20 @@ private class EngineApiPigeonCodecReader: FlutterStandardReader {
       }
       return nil
     case 133:
-      return CapabilitiesMsg.fromList(self.readValue() as! [Any?])
+      return RecognizerEntryMsg.fromList(self.readValue() as! [Any?])
     case 134:
-      return MissingMsg.fromList(self.readValue() as! [Any?])
+      return CapabilitiesMsg.fromList(self.readValue() as! [Any?])
     case 135:
-      return PairMsg.fromList(self.readValue() as! [Any?])
+      return MissingMsg.fromList(self.readValue() as! [Any?])
     case 136:
-      return MineMsg.fromList(self.readValue() as! [Any?])
+      return PairMsg.fromList(self.readValue() as! [Any?])
     case 137:
-      return TheirsMsg.fromList(self.readValue() as! [Any?])
+      return MineMsg.fromList(self.readValue() as! [Any?])
     case 138:
-      return AudioSessionMsg.fromList(self.readValue() as! [Any?])
+      return TheirsMsg.fromList(self.readValue() as! [Any?])
     case 139:
+      return AudioSessionMsg.fromList(self.readValue() as! [Any?])
+    case 140:
       return DownloadMsg.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -603,26 +646,29 @@ private class EngineApiPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? MineKind {
       super.writeByte(132)
       super.writeValue(value.rawValue)
-    } else if let value = value as? CapabilitiesMsg {
+    } else if let value = value as? RecognizerEntryMsg {
       super.writeByte(133)
       super.writeValue(value.toList())
-    } else if let value = value as? MissingMsg {
+    } else if let value = value as? CapabilitiesMsg {
       super.writeByte(134)
       super.writeValue(value.toList())
-    } else if let value = value as? PairMsg {
+    } else if let value = value as? MissingMsg {
       super.writeByte(135)
       super.writeValue(value.toList())
-    } else if let value = value as? MineMsg {
+    } else if let value = value as? PairMsg {
       super.writeByte(136)
       super.writeValue(value.toList())
-    } else if let value = value as? TheirsMsg {
+    } else if let value = value as? MineMsg {
       super.writeByte(137)
       super.writeValue(value.toList())
-    } else if let value = value as? AudioSessionMsg {
+    } else if let value = value as? TheirsMsg {
       super.writeByte(138)
       super.writeValue(value.toList())
-    } else if let value = value as? DownloadMsg {
+    } else if let value = value as? AudioSessionMsg {
       super.writeByte(139)
+      super.writeValue(value.toList())
+    } else if let value = value as? DownloadMsg {
+      super.writeByte(140)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)

@@ -249,20 +249,62 @@ enum class MineKind(val raw: Int) {
 }
 
 /**
- * Recognizer lists carry `RecognizerKind` names (`osOnDevice`, `whisper`,
- * `osOnline`) because pigeon maps cannot hold enum lists.
+ * Recognizers for one language. [kinds] carries `RecognizerKind` names
+ * (`osOnDevice`, `whisper`, `osOnline`) because pigeon cannot reference the
+ * Dart-side enum.
  *
  * Generated class from Pigeon that represents data sent in messages.
  */
+data class RecognizerEntryMsg (
+  val language: String,
+  val kinds: List<String>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): RecognizerEntryMsg {
+      val language = pigeonVar_list[0] as String
+      val kinds = pigeonVar_list[1] as List<String>
+      return RecognizerEntryMsg(language, kinds)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      language,
+      kinds,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as RecognizerEntryMsg
+    return EngineApiPigeonUtils.deepEquals(this.language, other.language) && EngineApiPigeonUtils.deepEquals(this.kinds, other.kinds)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.language)
+    result = 31 * result + EngineApiPigeonUtils.deepHash(this.kinds)
+    return result
+  }
+  override fun toString(): String {
+    return "RecognizerEntryMsg(language=$language, kinds=$kinds)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class CapabilitiesMsg (
-  val recognizers: Map<String, List<String>>,
+  val recognizers: List<RecognizerEntryMsg>,
   val translatable: List<String>,
   val vietnameseVoice: Boolean
 )
  {
   companion object {
     fun fromList(pigeonVar_list: List<Any?>): CapabilitiesMsg {
-      val recognizers = pigeonVar_list[0] as Map<String, List<String>>
+      val recognizers = pigeonVar_list[0] as List<RecognizerEntryMsg>
       val translatable = pigeonVar_list[1] as List<String>
       val vietnameseVoice = pigeonVar_list[2] as Boolean
       return CapabilitiesMsg(recognizers, translatable, vietnameseVoice)
@@ -605,35 +647,40 @@ private open class EngineApiPigeonCodec : StandardMessageCodec() {
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          CapabilitiesMsg.fromList(it)
+          RecognizerEntryMsg.fromList(it)
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          MissingMsg.fromList(it)
+          CapabilitiesMsg.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          PairMsg.fromList(it)
+          MissingMsg.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          MineMsg.fromList(it)
+          PairMsg.fromList(it)
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          TheirsMsg.fromList(it)
+          MineMsg.fromList(it)
         }
       }
       138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          AudioSessionMsg.fromList(it)
+          TheirsMsg.fromList(it)
         }
       }
       139.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          AudioSessionMsg.fromList(it)
+        }
+      }
+      140.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           DownloadMsg.fromList(it)
         }
@@ -659,32 +706,36 @@ private open class EngineApiPigeonCodec : StandardMessageCodec() {
         stream.write(132)
         writeValue(stream, value.raw.toLong())
       }
-      is CapabilitiesMsg -> {
+      is RecognizerEntryMsg -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is MissingMsg -> {
+      is CapabilitiesMsg -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is PairMsg -> {
+      is MissingMsg -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is MineMsg -> {
+      is PairMsg -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is TheirsMsg -> {
+      is MineMsg -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is AudioSessionMsg -> {
+      is TheirsMsg -> {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is DownloadMsg -> {
+      is AudioSessionMsg -> {
         stream.write(139)
+        writeValue(stream, value.toList())
+      }
+      is DownloadMsg -> {
+        stream.write(140)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)

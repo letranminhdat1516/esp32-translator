@@ -130,8 +130,59 @@ enum MineKind {
   finalText;
 }
 
-/// Recognizer lists carry `RecognizerKind` names (`osOnDevice`, `whisper`,
-/// `osOnline`) because pigeon maps cannot hold enum lists.
+/// Recognizers for one language. [kinds] carries `RecognizerKind` names
+/// (`osOnDevice`, `whisper`, `osOnline`) because pigeon cannot reference the
+/// Dart-side enum.
+class RecognizerEntryMsg {
+  RecognizerEntryMsg({
+    required this.language,
+    required this.kinds,
+  });
+
+  String language;
+
+  List<String> kinds;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      language,
+      kinds,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static RecognizerEntryMsg decode(Object result) {
+    result as List<Object?>;
+    return RecognizerEntryMsg(
+      language: result[0]! as String,
+      kinds: (result[1]! as List<Object?>).cast<String>(),
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! RecognizerEntryMsg || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(language, other.language) && _deepEquals(kinds, other.kinds);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'RecognizerEntryMsg(language: $language, kinds: $kinds)';
+  }
+}
+
 class CapabilitiesMsg {
   CapabilitiesMsg({
     required this.recognizers,
@@ -139,7 +190,7 @@ class CapabilitiesMsg {
     required this.vietnameseVoice,
   });
 
-  Map<String, List<String>> recognizers;
+  List<RecognizerEntryMsg> recognizers;
 
   List<String> translatable;
 
@@ -159,7 +210,7 @@ class CapabilitiesMsg {
   static CapabilitiesMsg decode(Object result) {
     result as List<Object?>;
     return CapabilitiesMsg(
-      recognizers: (result[0]! as Map<Object?, Object?>).cast<String, List<String>>(),
+      recognizers: (result[0]! as List<Object?>).cast<RecognizerEntryMsg>(),
       translatable: (result[1]! as List<Object?>).cast<String>(),
       vietnameseVoice: result[2]! as bool,
     );
@@ -549,26 +600,29 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is MineKind) {
       buffer.putUint8(132);
       writeValue(buffer, value.index);
-    }    else if (value is CapabilitiesMsg) {
+    }    else if (value is RecognizerEntryMsg) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is MissingMsg) {
+    }    else if (value is CapabilitiesMsg) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is PairMsg) {
+    }    else if (value is MissingMsg) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    }    else if (value is MineMsg) {
+    }    else if (value is PairMsg) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    }    else if (value is TheirsMsg) {
+    }    else if (value is MineMsg) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    }    else if (value is AudioSessionMsg) {
+    }    else if (value is TheirsMsg) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is DownloadMsg) {
+    }    else if (value is AudioSessionMsg) {
       buffer.putUint8(139);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadMsg) {
+      buffer.putUint8(140);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -591,18 +645,20 @@ class _PigeonCodec extends StandardMessageCodec {
         final value = readValue(buffer) as int?;
         return value == null ? null : MineKind.values[value];
       case 133:
-        return CapabilitiesMsg.decode(readValue(buffer)!);
+        return RecognizerEntryMsg.decode(readValue(buffer)!);
       case 134:
-        return MissingMsg.decode(readValue(buffer)!);
+        return CapabilitiesMsg.decode(readValue(buffer)!);
       case 135:
-        return PairMsg.decode(readValue(buffer)!);
+        return MissingMsg.decode(readValue(buffer)!);
       case 136:
-        return MineMsg.decode(readValue(buffer)!);
+        return PairMsg.decode(readValue(buffer)!);
       case 137:
-        return TheirsMsg.decode(readValue(buffer)!);
+        return MineMsg.decode(readValue(buffer)!);
       case 138:
-        return AudioSessionMsg.decode(readValue(buffer)!);
+        return TheirsMsg.decode(readValue(buffer)!);
       case 139:
+        return AudioSessionMsg.decode(readValue(buffer)!);
+      case 140:
         return DownloadMsg.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
