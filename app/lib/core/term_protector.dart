@@ -8,18 +8,33 @@ import 'model.dart';
 /// placeholder stands for. Made by [TermProtector.mask].
 @immutable
 class Masked {
-  const Masked._(this.text, this._outputs, this._prefix, this._suffix);
+  const Masked._(
+    this.text,
+    this._outputs,
+    this._surfaces,
+    this._prefix,
+    this._suffix,
+  );
 
   /// The text to translate.
   final String text;
 
   /// Placeholder number -> text it turns back into.
   final Map<int, String> _outputs;
+
+  /// Placeholder number -> the form found in the source text.
+  final Map<int, String> _surfaces;
   final String _prefix;
   final String _suffix;
 
   /// No term was found: [text] is the input and nothing needs restoring.
   bool get isEmpty => _outputs.isEmpty;
+
+  /// (source form, replacement) of every placeholder; used to repair a
+  /// translation that lost its placeholders.
+  List<(String, String)> get replacements => [
+    for (final e in _outputs.entries) (_surfaces[e.key]!, e.value),
+  ];
 }
 
 /// Keeps names, brands, places and glossary terms intact through translation
@@ -89,7 +104,7 @@ class TermProtector {
         spans.add(_Span(m.start, m.end, term, m[0]!));
       }
     }
-    if (spans.isEmpty) return Masked._(s, const {}, prefix, suffix);
+    if (spans.isEmpty) return Masked._(s, const {}, const {}, prefix, suffix);
     spans.sort((a, b) => a.start.compareTo(b.start));
 
     // Numbers the text already uses ("Zorvik1" typed by the speaker) are
@@ -110,6 +125,7 @@ class TermProtector {
     // it) or per distinct spoken form.
     final numberByKey = <String, int>{};
     final outputs = <int, String>{};
+    final surfaces = <int, String>{};
     final out = StringBuffer();
     var pos = 0;
     for (final span in spans) {
@@ -118,6 +134,7 @@ class TermProtector {
       final n = numberByKey.putIfAbsent(key, () {
         final n = allocate();
         outputs[n] = fixed ?? span.matched;
+        surfaces[n] = span.matched;
         return n;
       });
       out
@@ -126,7 +143,7 @@ class TermProtector {
       pos = span.end;
     }
     out.write(s.substring(pos));
-    return Masked._(out.toString(), outputs, prefix, suffix);
+    return Masked._(out.toString(), outputs, surfaces, prefix, suffix);
   }
 
   /// Puts the terms back into [translated]. Returns null when a placeholder
