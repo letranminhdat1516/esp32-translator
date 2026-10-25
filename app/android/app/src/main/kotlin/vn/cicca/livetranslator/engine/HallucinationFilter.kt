@@ -1,5 +1,6 @@
 package vn.cicca.livetranslator.engine
 
+import androidx.annotation.Keep
 import java.text.Normalizer
 import java.util.Locale
 
@@ -7,7 +8,8 @@ import java.util.Locale
  * One Whisper segment: its text, the model's probability that it was not speech at all, and the mean
  * probability of its text tokens (how sure the decoder was of the words)
  */
-data class WhisperSegment(val text: String, val noSpeechProb: Float, val tokenProb: Float = 1f)
+@Keep // built by whisper_jni.cpp through this constructor; see proguard-rules.pro
+data class WhisperSegment @Keep constructor(val text: String, val noSpeechProb: Float, val tokenProb: Float = 1f)
 
 /**
  * Drops Whisper's hallucinations (Review Focus 5). On silence, music or noise Whisper tends to produce

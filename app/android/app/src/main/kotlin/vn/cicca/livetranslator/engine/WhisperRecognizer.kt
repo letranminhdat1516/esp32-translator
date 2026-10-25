@@ -3,14 +3,13 @@ package vn.cicca.livetranslator.engine
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.Keep
 import vn.cicca.livetranslator.BuildConfig
 import java.io.File
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.TimeUnit
 
-/** whisper.cpp through JNI (`whisper_jni.cpp`), arm64-v8a only */
+/** whisper.cpp through JNI (`whisper_jni.cpp`), arm64-v8a only. Kept for R8: see proguard-rules.pro */
+@Keep
 internal object WhisperNative {
     val loaded: Boolean = try {
         System.loadLibrary("whisper_jni")
@@ -23,6 +22,9 @@ internal object WhisperNative {
     external fun init(modelPath: String): Long
     external fun free(handle: Long)
     external fun systemInfo(): String
+    /** The Java classes the native code builds are present (false when R8 stripped them) */
+    external fun bindingsOk(): Boolean
+    /** Throws IllegalStateException when a binding is missing; null when whisper_full fails */
     external fun transcribe(handle: Long, samples: FloatArray, language: String, prompt: String?, threads: Int): Array<WhisperSegment>?
 }
 
@@ -48,6 +50,10 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
     fun load(): Boolean {
         if (handle != 0L) return true
         if (!WhisperNative.loaded || !store.verified()) return false
+        if (!WhisperNative.bindingsOk()) {
+            Log.e(TAG, "Whisper JNI bindings missing (R8?): not loading")
+            return false
+        }
         val started = SystemClock.elapsedRealtime()
         handle = WhisperNative.init(store.file.absolutePath)
         Log.i(TAG, "model ${store.spec.fileName} loaded in ${SystemClock.elapsedRealtime() - started} ms: ${WhisperNative.systemInfo()}")
@@ -67,7 +73,11 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
         }
         if (!load()) return Transcript(null, emptyList(), audio, 0.0)
         val started = SystemClock.elapsedRealtime()
-        val segments = WhisperNative.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
+        val segments = try {
+            WhisperNative.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
+        } catch (e: IllegalStateException) {
+            throw EngineErrors.notReady("Whisper: ${e.message}")
+        }
         val seconds = (SystemClock.elapsedRealtime() - started) / 1000.0
         val t = Transcript(HallucinationFilter.filter(segments), segments, audio, seconds)
         // What people said stays out of release logs: metrics only, the text in debug builds
@@ -108,7 +118,7 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
 class WhisperRecognizer(
     private val model: WhisperModel,
     private val request: RecognizerRequest,
-    private val boardPauseMs: Long = 250,
+    boardPauseMs: Long = BOARD_PAUSE_MS,
     private val maxSeconds: Int = 30,
     private val minSeconds: Double = 0.3,
 ) : UtteranceRecognizer {
@@ -116,30 +126,23 @@ class WhisperRecognizer(
     private val buffer = FloatList(WhisperModel.SAMPLE_RATE * 5)
     @Volatile private var hints = request.hints
     @Volatile private var closed = false
-    private var lastAudio = 0L
     private var utteranceStart = -1L
-    private var watcher: ScheduledExecutorService? = null
-    private var watch: ScheduledFuture<*>? = null
-
-    init {
-        if (!request.mine) {
-            watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "board-pause") }.also {
-                watch = it.scheduleWithFixedDelay({ checkPause() }, 150, 150, TimeUnit.MILLISECONDS)
-            }
-        }
-    }
+    /** The board side's utterances end when the board stops streaming */
+    private val pause: PauseWatcher? = if (request.mine) null else PauseWatcher(boardPauseMs) { endAtPause() }
 
     override fun audio(pcm: ShortArray, sampleRate: Int) {
         if (closed) return
         val samples = resample(VoiceGate.toFloats(pcm), sampleRate)
         val full: FloatArray?
+        val start: Long
         synchronized(lock) {
             if (utteranceStart < 0) utteranceStart = request.clock()
+            start = utteranceStart
             buffer.addAll(samples)
-            lastAudio = SystemClock.elapsedRealtime()
+            pause?.touch()
             full = if (buffer.size >= maxSeconds * WhisperModel.SAMPLE_RATE) take() else null
         }
-        full?.let { run(it, utteranceStart, request.clock()) }
+        full?.let { run(it, start, request.clock()) }
     }
 
     override fun endUtterance(startMs: Long, endMs: Long) {
@@ -147,11 +150,10 @@ class WhisperRecognizer(
         run(samples, startMs, endMs)
     }
 
-    private fun checkPause() {
+    private fun endAtPause() {
         val samples: FloatArray?
         val start: Long
         synchronized(lock) {
-            if (buffer.size == 0 || SystemClock.elapsedRealtime() - lastAudio < boardPauseMs) return
             start = utteranceStart
             samples = take()
         }
@@ -184,8 +186,7 @@ class WhisperRecognizer(
 
     override fun close() {
         closed = true
-        watch?.cancel(false)
-        watcher?.shutdown()
+        pause?.close()
         synchronized(lock) { buffer.clear() }
     }
 
@@ -216,7 +217,9 @@ class DeviceWhisper(context: Context, isOnline: () -> Boolean) : WhisperSupport,
 
     override fun create(request: RecognizerRequest): UtteranceRecognizer {
         // The SHA-256 check runs here, before the model is used; a bad file is deleted and reported missing
-        if (!model.load()) throw EngineErrors.notReady("speech model missing or failed its check")
+        if (!model.load()) {
+            throw EngineErrors.notReady("speech model missing, failed its check, or Whisper could not load")
+        }
         return WhisperRecognizer(model, request)
     }
 

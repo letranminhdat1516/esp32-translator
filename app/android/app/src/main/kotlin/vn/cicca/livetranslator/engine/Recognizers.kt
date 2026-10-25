@@ -1,5 +1,8 @@
 package vn.cicca.livetranslator.engine
 
+/** The board stops streaming in silence: this long without board audio ends its utterance */
+const val BOARD_PAUSE_MS = 250L
+
 /** `RecognizerKind` names as the Dart side knows them (model.dart) */
 object Kinds {
     const val OS_ON_DEVICE = "osOnDevice"

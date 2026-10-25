@@ -58,6 +58,13 @@ class VoiceEnginePlugin : FlutterPlugin, ActivityAware {
     override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
 }
 
+/** What keeps a conversation alive: the audio session (router) and the foreground service */
+interface ConversationForeground {
+    /** Throws when the service cannot start (e.g. ForegroundServiceStartNotAllowedException) */
+    fun start()
+    fun stop()
+}
+
 /** Runtime permissions, asked through the Flutter activity */
 class Permissions(private val context: Context) : PluginRegistry.RequestPermissionsResultListener {
     @Volatile var activity: Activity? = null
@@ -106,7 +113,31 @@ class NativeVoiceEngine(
     private val context: Context,
     private val events: EngineEventSink,
     private val recognizers: RecognizerCatalog = DeviceRecognizers(context),
+    foreground: ConversationForeground? = null,
 ) : VoiceEngineApi {
+    /** The audio session and the foreground service, up while a conversation runs */
+    private val foreground: ConversationForeground = foreground ?: object : ConversationForeground {
+        override fun start() {
+            VoiceService.status = { status() }
+            router.start()
+            try {
+                VoiceService.start(context)
+            } catch (e: Exception) {
+                router.stop()
+                throw e
+            }
+        }
+
+        override fun stop() {
+            router.stop()
+            VoiceService.stop(context)
+            VoiceService.status = { "idle" }
+        }
+    }
+
+    val isRunning: Boolean get() = synchronized(lock) { session != null }
+    val runningGeneration: Long? get() = synchronized(lock) { session?.pair?.generation }
+
     val permissions = Permissions(context)
     private val translator = MlKitTranslator({ context.isOnline() })
     private val speaker = Speaker(context, events)
@@ -120,6 +151,9 @@ class NativeVoiceEngine(
 
     private val lock = Any()
     private var session: Session? = null
+    /** Bumped by every start() and stop(); a start whose token is no longer current gives up */
+    private var startToken = 0L
+    private var foregroundUp = false
 
     private inner class Session(
         val pair: PairMsg,
@@ -132,6 +166,14 @@ class NativeVoiceEngine(
             override fun ended(startMs: Long, endMs: Long) = mine.endUtterance(startMs, endMs)
         }, clock = { MicCapture.since(startElapsed) })
         @Volatile var theirSamples = 0L
+        /** What Dart last asked with micOn */
+        @Volatile var micOn = false
+
+        fun close() {
+            mic.stop()
+            mine.close()
+            theirs.close()
+        }
     }
 
     override fun capabilities(): CapabilitiesMsg {
@@ -152,19 +194,58 @@ class NativeVoiceEngine(
 
     override suspend fun download(item: MissingMsg) = withContext(Dispatchers.IO) { downloads.download(item) }
 
+    /**
+     * Starts (or switches to) a conversation. Idempotent for the running pair. Starts are ordered by
+     * [startToken]: stop() and every later start() bump it, and a start that finds its token stale after
+     * a suspension closes what it built and returns. The foreground (audio session + service) is brought up
+     * once, before the session is published; if it fails nothing is left half-started, so the next
+     * start() retries. Switching pairs keeps the foreground up and carries the mic state over.
+     */
     override suspend fun start(pair: PairMsg, recognizerX: String, hints: List<String>) {
-        synchronized(lock) {
-            val current = session
+        val token = synchronized(lock) {
             // Idempotent: the same pair and generation is already running
-            if (current != null && current.pair == pair) return
+            if (session?.pair == pair) return
+            ++startToken
         }
         if (!permissions.ensure(Permissions.conversation())) {
             throw EngineErrors.notReady("microphone permission denied")
         }
-        stop()
+        if (synchronized(lock) { token != startToken }) return
+        val built = build(pair, recognizerX, hints)
+        val old: Session?
+        synchronized(lock) {
+            if (token != startToken) {
+                built.close()
+                Log.i(TAG, "start gen ${pair.generation} superseded")
+                return
+            }
+            if (!foregroundUp) {
+                try {
+                    foreground.start()
+                } catch (e: Exception) {
+                    built.close()
+                    throw EngineErrors.notReady("could not start the conversation service: ${e.message}")
+                }
+                foregroundUp = true
+            }
+            old = session
+            session = built
+        }
+        Log.i(TAG, "started ${pair.home}↔${pair.other} gen ${pair.generation} with $recognizerX")
+        if (old != null) {
+            val micWasOn = old.micOn
+            old.close()
+            if (micWasOn) {
+                try { micOn(true) } catch (e: FlutterError) { Log.w(TAG, "mic after the switch: ${e.message}") }
+            }
+        }
+    }
+
+    /** The session's recognizers (IO thread); throws `notReady` when one cannot run */
+    private suspend fun build(pair: PairMsg, recognizerX: String, hints: List<String>): Session {
         val startElapsed = SystemClock.elapsedRealtime()
         val clock = { MicCapture.since(startElapsed) }
-        val s = withContext(Dispatchers.IO) {
+        return withContext(Dispatchers.IO) {
             val generation = pair.generation
             val mineKind = recognizers.mineKind(recognizerX)
             val mine = recognizers.create(
@@ -187,26 +268,28 @@ class NativeVoiceEngine(
             Log.i(TAG, "recognizers: mine $mineKind (${pair.home}), theirs $recognizerX (${pair.other})")
             Session(pair, mine, theirs, startElapsed)
         }
-        synchronized(lock) { session = s }
-        VoiceService.status = { status() }
-        VoiceService.start(context)
-        router.start()
-        Log.i(TAG, "started ${pair.home}↔${pair.other} gen ${pair.generation} with $recognizerX")
     }
 
+    /** Idempotent; also cancels a start still in progress */
     override fun stop() {
-        val s = synchronized(lock) { session.also { session = null } } ?: return
-        s.mic.stop()
-        s.mine.close()
-        s.theirs.close()
-        router.stop()
-        VoiceService.stop(context)
-        VoiceService.status = { "idle" }
-        Log.i(TAG, "stopped")
+        val s: Session?
+        val wasUp: Boolean
+        synchronized(lock) {
+            startToken++
+            s = session
+            session = null
+            wasUp = foregroundUp
+            foregroundUp = false
+        }
+        s?.close()
+        if (wasUp) foreground.stop()
+        if (s != null || wasUp) Log.i(TAG, "stopped")
     }
 
+    /** Throws `notReady` when the mic cannot start (Dart also gets audioSession(interrupted)) */
     override fun micOn(on: Boolean) {
         val s = synchronized(lock) { session } ?: return
+        s.micOn = on
         when {
             // An OS recognizer below Android 13 listens to the mic itself
             s.mine.ownsMic -> s.mine.listen(on)

@@ -60,6 +60,26 @@ Java_vn_cicca_livetranslator_engine_WhisperNative_free(JNIEnv *, jobject, jlong 
     if (ctx != nullptr) whisper_free(ctx);
 }
 
+// True when the Java side this file builds is present (R8 may strip what only native code uses).
+// A lookup failure leaves a pending exception that would abort the next JNI call: clear it.
+JNIEXPORT jboolean JNICALL
+Java_vn_cicca_livetranslator_engine_WhisperNative_bindingsOk(JNIEnv *env, jobject) {
+    jclass segment_class = env->FindClass("vn/cicca/livetranslator/engine/WhisperSegment");
+    if (segment_class == nullptr) {
+        env->ExceptionClear();
+        LOGW("WhisperSegment class missing");
+        return JNI_FALSE;
+    }
+    jmethodID ctor = env->GetMethodID(segment_class, "<init>", "(Ljava/lang/String;FF)V");
+    env->DeleteLocalRef(segment_class);
+    if (ctor == nullptr) {
+        env->ExceptionClear();
+        LOGW("WhisperSegment(String, float, float) constructor missing");
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
+}
+
 JNIEXPORT jstring JNICALL
 Java_vn_cicca_livetranslator_engine_WhisperNative_systemInfo(JNIEnv *env, jobject) {
     return env->NewStringUTF(whisper_print_system_info());
@@ -99,7 +119,16 @@ Java_vn_cicca_livetranslator_engine_WhisperNative_transcribe(
     }
 
     jclass segment_class = env->FindClass("vn/cicca/livetranslator/engine/WhisperSegment");
-    jmethodID ctor = env->GetMethodID(segment_class, "<init>", "(Ljava/lang/String;FF)V");
+    jmethodID ctor = segment_class != nullptr
+        ? env->GetMethodID(segment_class, "<init>", "(Ljava/lang/String;FF)V") : nullptr;
+    if (ctor == nullptr) {
+        // Not an abort: clear the lookup's exception and throw one the Kotlin side handles
+        env->ExceptionClear();
+        if (segment_class != nullptr) env->DeleteLocalRef(segment_class);
+        jclass ise = env->FindClass("java/lang/IllegalStateException");
+        env->ThrowNew(ise, "WhisperSegment(String, float, float) not found (R8 keep rule missing?)");
+        return nullptr;
+    }
     const int count = whisper_full_n_segments(ctx);
     const whisper_token eot = whisper_token_eot(ctx);
     jobjectArray out = env->NewObjectArray(count, segment_class, nullptr);

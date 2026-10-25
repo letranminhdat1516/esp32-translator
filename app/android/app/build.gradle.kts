@@ -43,6 +43,9 @@ android {
         }
     }
 
+    // `-PtestBuildType=release` runs the instrumented tests against the R8-minified release build
+    testBuildType = (project.findProperty("testBuildType") as String?) ?: "debug"
+
     // BuildConfig.DEBUG: recognized text is logged in debug builds only
     buildFeatures {
         buildConfig = true
@@ -58,6 +61,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Keep rules for ML Kit's registrars and the Whisper JNI classes
+            proguardFile("proguard-rules.pro")
+            // The instrumented test APK, when built against release (-PtestBuildType=release)
+            testProguardFiles("test-proguard-rules.pro")
+            if (project.findProperty("testBuildType") == "release") proguardFile("release-under-test.pro")
         }
     }
 }

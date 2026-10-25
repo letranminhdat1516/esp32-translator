@@ -51,7 +51,6 @@ class OsRecognizer(
 
     // Fed mode
     private val writer = Executors.newSingleThreadExecutor()
-    private var pipeOut: OutputStream? = null
 
     override val ownsMic: Boolean get() = !fed
 
@@ -103,47 +102,57 @@ class OsRecognizer(
 
     // Fed mode
 
-    override fun audio(pcm: ShortArray, sampleRate: Int) {
-        if (!fed || closed) return
-        val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN)
-        bytes.asShortBuffer().put(pcm)
-        writer.execute {
-            val out = pipeOut ?: openUtterance(sampleRate) ?: return@execute
-            try {
-                out.write(bytes.array())
-            } catch (e: IOException) {
-                Log.w(TAG, "pipe write: ${e.message}")
+    /**
+     * One pipe per utterance: startListening reads it until it is closed (end of utterance or a board
+     * pause), the recognizer answers, and the next audio opens a new pipe ([FedUtterances]).
+     */
+    private val pipes = object : FedUtterances.Session {
+        override fun begin(sampleRate: Int): FedUtterances.Stream {
+            val (read, write) = ParcelFileDescriptor.createPipe()
+            val out: OutputStream = ParcelFileDescriptor.AutoCloseOutputStream(write)
+            main.post {
+                if (closed) {
+                    read.close()
+                    return@post
+                }
+                val i = intent().apply {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, read)
+                        putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
+                        putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
+                        putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, sampleRate)
+                    }
+                }
+                recognizer?.startListening(i)
+                read.close() // the recognizer holds its own duplicate
+            }
+            return object : FedUtterances.Stream {
+                override fun write(pcm: ShortArray) {
+                    val bytes = ByteBuffer.allocate(pcm.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                    bytes.asShortBuffer().put(pcm)
+                    writer.execute {
+                        try { out.write(bytes.array()) } catch (e: IOException) { Log.w(TAG, "pipe write: ${e.message}") }
+                    }
+                }
+
+                override fun close() {
+                    writer.execute { try { out.close() } catch (_: IOException) {} }
+                }
             }
         }
     }
+    private val utterances: FedUtterances? = if (fed) FedUtterances(pipes, BOARD_PAUSE_MS) else null
 
-    /** Starts a recognition reading from a new pipe (writer thread) */
-    private fun openUtterance(sampleRate: Int): OutputStream? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
-        val (read, write) = ParcelFileDescriptor.createPipe()
-        val out = ParcelFileDescriptor.AutoCloseOutputStream(write)
-        pipeOut = out
-        main.post {
-            val i = intent().apply {
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, read)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, sampleRate)
-            }
-            recognizer?.startListening(i)
-            read.close() // the recognizer holds its own duplicate
-        }
-        return out
+    override fun audio(pcm: ShortArray, sampleRate: Int) {
+        if (closed) return
+        utterances?.audio(pcm, sampleRate)
     }
 
     override fun endUtterance(startMs: Long, endMs: Long) {
         if (!fed) return
         speechStart = startMs
         speechEnd = endMs
-        writer.execute {
-            try { pipeOut?.close() } catch (_: IOException) {}
-            pipeOut = null
-        }
+        utterances?.end()
     }
 
     override fun setHints(hints: List<String>) {
@@ -152,10 +161,7 @@ class OsRecognizer(
 
     override fun close() {
         closed = true
-        writer.execute {
-            try { pipeOut?.close() } catch (_: IOException) {}
-            pipeOut = null
-        }
+        utterances?.close()
         writer.shutdown()
         main.post {
             listening = false
@@ -185,6 +191,8 @@ class OsRecognizer(
         override fun onError(error: Int) {
             Log.w(TAG, "${request.kind} ${request.language} error $error (${errorName(error)})")
             lastError = error
+            // Fed mode: this utterance is over; the next audio opens a new pipe
+            utterances?.finished()
             if (!fed && listening && !closed) {
                 // Silence and no-match are routine while listening continuously; back off on the rest
                 val routine = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
@@ -195,6 +203,7 @@ class OsRecognizer(
 
         override fun onResults(results: Bundle) {
             emit(results, final = true)
+            utterances?.finished()
             if (!fed) restart(0)
         }
 
