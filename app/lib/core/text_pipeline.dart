@@ -105,12 +105,12 @@ class TextPipeline {
       _protector.restore(translated, prepared.masked);
 
   /// Repairs a translation of the unmasked text: each protected term found as
-  /// written in the source is replaced by its fixed translation.
+  /// written in the source (whole words, same case) is replaced by its fixed translation.
   String repair(String translated, Prepared prepared) {
     var out = translated;
     for (final (surface, output) in prepared.masked.replacements) {
       if (surface == output) continue;
-      out = out.replaceAll(RegExp(RegExp.escape(surface), caseSensitive: false, unicode: true), output);
+      out = out.replaceAll(TermProtector.wholeWordRegex(surface, caseSensitive: true), output);
     }
     return out;
   }

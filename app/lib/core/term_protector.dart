@@ -12,6 +12,8 @@ class Masked {
     this.text,
     this._outputs,
     this._surfaces,
+    this._counts,
+    this._taken,
     this._prefix,
     this._suffix,
   );
@@ -24,6 +26,12 @@ class Masked {
 
   /// Placeholder number -> the form found in the source text.
   final Map<int, String> _surfaces;
+
+  /// Placeholder number -> how many times it occurs in [text].
+  final Map<int, int> _counts;
+
+  /// Numbers the source text itself already used; they are not ours.
+  final Set<int> _taken;
   final String _prefix;
   final String _suffix;
 
@@ -99,12 +107,12 @@ class TermProtector {
     final spans = <_Span>[];
     for (final (_, (candidate, term)) in indexed) {
       if (!lower.contains(candidate.toLowerCase())) continue;
-      for (final m in _regexFor(candidate).allMatches(s)) {
+      for (final m in wholeWordRegex(candidate).allMatches(s)) {
         if (spans.any((o) => m.start < o.end && o.start < m.end)) continue;
         spans.add(_Span(m.start, m.end, term, m[0]!));
       }
     }
-    if (spans.isEmpty) return Masked._(s, const {}, const {}, prefix, suffix);
+    if (spans.isEmpty) return Masked._(s, const {}, const {}, const {}, const {}, prefix, suffix);
     spans.sort((a, b) => a.start.compareTo(b.start));
 
     // Numbers the text already uses ("Zorvik1" typed by the speaker) are
@@ -126,6 +134,7 @@ class TermProtector {
     final numberByKey = <String, int>{};
     final outputs = <int, String>{};
     final surfaces = <int, String>{};
+    final counts = <int, int>{};
     final out = StringBuffer();
     var pos = 0;
     for (final span in spans) {
@@ -137,13 +146,14 @@ class TermProtector {
         surfaces[n] = span.matched;
         return n;
       });
+      counts[n] = (counts[n] ?? 0) + 1;
       out
         ..write(s.substring(pos, span.start))
         ..write('$prefix$n$suffix');
       pos = span.end;
     }
     out.write(s.substring(pos));
-    return Masked._(out.toString(), outputs, surfaces, prefix, suffix);
+    return Masked._(out.toString(), outputs, surfaces, counts, taken, prefix, suffix);
   }
 
   /// Puts the terms back into [translated]. Returns null when a placeholder
@@ -151,15 +161,23 @@ class TermProtector {
   /// and repairs fixed terms where found.
   String? restore(String translated, Masked m) {
     if (m.isEmpty) return translated;
-    final found = <int>{};
+    final found = <int, int>{};
+    var invented = false;
     final restored = translated.replaceAllMapped(_slotRegex(m._prefix, m._suffix), (match) {
       final n = int.parse(match[1]!);
       final output = m._outputs[n];
-      if (output == null) return match[0]!;
-      found.add(n);
+      if (output == null) {
+        if (!m._taken.contains(n)) invented = true;
+        return match[0]!;
+      }
+      found[n] = (found[n] ?? 0) + 1;
       return output;
     });
-    return found.length == m._outputs.length ? restored : null;
+    if (invented) return null;
+    for (final e in m._counts.entries) {
+      if (found[e.key] != e.value) return null;
+    }
+    return restored;
   }
 
   static RegExp _slotRegex(String prefix, String suffix) => RegExp(
@@ -167,7 +185,9 @@ class TermProtector {
     caseSensitive: false,
   );
 
-  static RegExp _regexFor(String candidate) {
+  /// Matches [candidate] literally, as a whole word where its edges are
+  /// letters or digits. Case-insensitive for Latin unless [caseSensitive].
+  static RegExp wholeWordRegex(String candidate, {bool? caseSensitive}) {
     final chars = candidate.characters;
     final first = chars.first;
     final last = chars.last;
@@ -179,7 +199,7 @@ class TermProtector {
         : '';
     return RegExp(
       '$before${RegExp.escape(candidate)}$after',
-      caseSensitive: _nonLatinLetter.hasMatch(candidate),
+      caseSensitive: caseSensitive ?? _nonLatinLetter.hasMatch(candidate),
       unicode: true,
     );
   }

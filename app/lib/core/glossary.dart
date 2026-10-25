@@ -269,7 +269,7 @@ class GlossaryStore {
   Future<void> _load() async {
     if (!await _file.exists()) return;
     try {
-      final decoded = jsonDecode(await _file.readAsString());
+      final decoded = jsonDecode(utf8.decode(await _file.readAsBytes()));
       if (decoded is! List) throw const FormatException('not a list');
       final loaded = <Term>[
         for (var i = 0; i < decoded.length; i++)

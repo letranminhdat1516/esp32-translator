@@ -256,6 +256,7 @@ void main() {
       ('not json', '{oops'),
       ('not a list', '{"a": 1}'),
       ('empty file', ''),
+      ('not UTF-8', null),
       ('entry of the wrong type', '[1]'),
       ('entry missing a field', '[{"id":"a"}]'),
       (
@@ -264,14 +265,22 @@ void main() {
       ),
     ]) {
       test('$name: renamed aside, empty glossary, flag set', () async {
-        file.writeAsStringSync(content);
+        if (content == null) {
+          file.writeAsBytesSync([0xff, 0xfe]);
+        } else {
+          file.writeAsStringSync(content);
+        }
         final store = await open();
         expect(store.terms, isEmpty);
         expect(store.recoveredFromCorruption, isTrue);
         expect(file.existsSync(), isFalse);
         final aside = File('${dir.path}/glossary.corrupt-20260304-050607.json');
         expect(aside.existsSync(), isTrue);
-        expect(aside.readAsStringSync(), content);
+        if (content != null) {
+          expect(aside.readAsStringSync(), content);
+        } else {
+          expect(aside.readAsBytesSync(), [0xff, 0xfe]);
+        }
         // and the store works again
         await store.add(text: 'A');
         expect((await open()).terms.single.text, 'A');

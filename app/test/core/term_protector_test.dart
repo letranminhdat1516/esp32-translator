@@ -164,9 +164,26 @@ void main() {
       expect(out, 'x Zorvik1 y');
     });
 
-    test('a translation that adds an unknown token leaves it as is', () {
-      final m = protector.mask('A', [term('A')], 'en');
-      expect(protector.restore('Zorvik1 Zorvik9', m), 'A Zorvik9');
+
+    test('one of two copies dropped returns null', () {
+      final m = protector.mask('Zalo hoặc Zalo', [term('Zalo')], 'en');
+      expect(protector.restore('Zorvik1 or Zorvik1', m), 'Zalo or Zalo');
+      expect(protector.restore('Zorvik1 or nothing', m), isNull);
+    });
+
+    test('a duplicated placeholder returns null', () {
+      final m = protector.mask('Tôi dùng Zalo', [term('Zalo')], 'en');
+      expect(protector.restore('Zorvik1 Zorvik1', m), isNull);
+    });
+
+    test('a placeholder the translator invented returns null', () {
+      final m = protector.mask('A và B', [term('A'), term('B')], 'en');
+      expect(protector.restore('Zorvik1 Zorvik2 Zorvik9', m), isNull);
+    });
+
+    test('a number that was in the source text may stay', () {
+      final m = protector.mask('Zorvik1 là Zalo', [term('Zalo')], 'en');
+      expect(protector.restore('Zorvik1 is Zorvik2', m), 'Zorvik1 is Zalo');
     });
   });
 }

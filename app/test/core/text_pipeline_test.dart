@@ -151,5 +151,15 @@ void main() {
         throwsStateError,
       );
     });
+
+    test('repair replaces whole words only', () async {
+      final p = TextPipeline(home: vi, other: en, glossary: const [
+        Term(id: 'an', text: 'An', fixed: {'en': 'Mr. An'}),
+      ]);
+      final out = await p.translate('Chào An', Direction.mine, (s) async {
+        return s.contains('Zorvik') ? 'Hello' : 'Hello An, an answer and Anna';
+      });
+      expect(out, 'Hello Mr. An, an answer and Anna');
+    });
   });
 }
