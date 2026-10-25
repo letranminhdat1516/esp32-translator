@@ -85,3 +85,14 @@ bool label_normalize(const char *in, size_t n, char *out)
     out[keep] = '\0';
     return true;
 }
+
+size_t utf8_cut_len(const char *s, size_t len, size_t max)
+{
+    size_t n = len < max ? len : max;
+    if (n < len) {
+        while (n > 0 && ((uint8_t)s[n] & 0xc0) == 0x80) {
+            n--;
+        }
+    }
+    return n;
+}

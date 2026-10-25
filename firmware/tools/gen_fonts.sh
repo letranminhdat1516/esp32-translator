@@ -5,6 +5,7 @@
 #                          list (default)
 #   gen_fonts.sh store     fonts/{cjk,hangul,thai}_{22,36}.bin (LVGL binfonts) and fonts/fonts.img (the image for the
 #                          'fonts' partition, see main/font_store.c); downloads the Noto sources into fonts/src (git-ignored)
+#   gen_fonts.sh image     pack fonts/fonts.img from the committed fonts/*.bin only (offline, nothing regenerated)
 #   gen_fonts.sh all
 #
 # Needs node and python3 (uses npx lv_font_conv@1.5.3). Run from anywhere.
@@ -58,13 +59,36 @@ PY
   echo "latin ranges: $R"
 }
 
+pack_image() {
+  local OUT="$FW/fonts"
+  # Partition image: "FNT1", count u32, count x {set u32, px u32, offset u32, size u32} (little endian), data 4-aligned.
+  # set bits are FONTSET_* from board_info.h: CJK 4, Hangul 8, Thai 0x10.
+  python3 - "$OUT" <<'PY'
+import os, struct, sys
+out = sys.argv[1]
+items = [(4, "cjk"), (8, "hangul"), (0x10, "thai")]
+files = [(s, px, open(os.path.join(out, "%s_%d.bin" % (n, px)), "rb").read()) for s, n in items for px in (22, 36)]
+head = 8 + 16 * len(files)
+off, table, blob = (head + 3) & ~3, b"", b""
+for s, px, data in files:
+    table += struct.pack("<IIII", s, px, off + len(blob), len(data))
+    blob += data + b"\0" * (-len(data) % 4)
+img = b"FNT1" + struct.pack("<I", len(files)) + table
+img += b"\0" * (off - len(img)) + blob
+open(os.path.join(out, "fonts.img"), "wb").write(img)
+print("fonts.img: %d bytes (the fonts partition is 0x9F0000 = 10.4 MB)" % len(img))
+PY
+}
+
 gen_store() {
   local SRC="$FW/fonts/src" OUT="$FW/fonts"
-  local NOTO="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF"
+  # Sources pinned to commits (same bytes as the committed .bin files were made from)
+  local NOTO="https://github.com/notofonts/noto-cjk/raw/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF"
+  local GFONTS="https://github.com/google/fonts/raw/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0"
   mkdir -p "$SRC"
   [ -s "$SRC/sc.otf" ] || curl -sfL -o "$SRC/sc.otf" "$NOTO/SC/NotoSansSC-Medium.otf"
   [ -s "$SRC/kr.otf" ] || curl -sfL -o "$SRC/kr.otf" "$NOTO/KR/NotoSansKR-Medium.otf"
-  [ -s "$SRC/th.ttf" ] || curl -sfL -o "$SRC/th.ttf" "https://github.com/google/fonts/raw/main/ofl/notosansthai/NotoSansThai%5Bwdth%2Cwght%5D.ttf"
+  [ -s "$SRC/th.ttf" ] || curl -sfL -o "$SRC/th.ttf" "$GFONTS/ofl/notosansthai/NotoSansThai%5Bwdth%2Cwght%5D.ttf"
 
   # Frequent Hanzi/Kanji: GB2312 level 1 (3755, by frequency) + JIS X 0208 level 1 kanji (2965), unique
   local HANZI
@@ -106,28 +130,13 @@ PY
       --size $SIZE --bpp 4 --format bin --no-compress -o "$OUT/thai_$SIZE.bin"
   done
 
-  # Partition image: "FNT1", count u32, count x {set u32, px u32, offset u32, size u32} (little endian), data 4-aligned.
-  # set bits are FONTSET_* from board_info.h: CJK 4, Hangul 8, Thai 0x10.
-  python3 - "$OUT" <<'PY'
-import os, struct, sys
-out = sys.argv[1]
-items = [(4, "cjk"), (8, "hangul"), (0x10, "thai")]
-files = [(s, px, open(os.path.join(out, "%s_%d.bin" % (n, px)), "rb").read()) for s, n in items for px in (22, 36)]
-head = 8 + 16 * len(files)
-off, table, blob = (head + 3) & ~3, b"", b""
-for s, px, data in files:
-    table += struct.pack("<IIII", s, px, off + len(blob), len(data))
-    blob += data + b"\0" * (-len(data) % 4)
-img = b"FNT1" + struct.pack("<I", len(files)) + table
-img += b"\0" * (off - len(img)) + blob
-open(os.path.join(out, "fonts.img"), "wb").write(img)
-print("fonts.img: %d bytes (the fonts partition is 0x9F0000 = 10.4 MB)" % len(img))
-PY
+  pack_image
 }
 
 case "$MODE" in
   latin) gen_latin ;;
   store) gen_store ;;
+  image) pack_image ;;
   all) gen_latin; gen_store ;;
-  *) echo "usage: $0 [latin|store|all]" >&2; exit 2 ;;
+  *) echo "usage: $0 [latin|store|image|all]" >&2; exit 2 ;;
 esac

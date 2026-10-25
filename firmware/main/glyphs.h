@@ -23,4 +23,7 @@ bool glyph_ok(uint32_t cp, uint32_t font_sets);
  * truncated, overlong, surrogate, above U+10FFFF). */
 bool label_normalize(const char *in, size_t n, char *out);
 
+/* Length <= max to cut s[0..len) at, never inside a UTF-8 character (s is assumed valid) */
+size_t utf8_cut_len(const char *s, size_t len, size_t max);
+
 #endif /* GLYPHS_H */

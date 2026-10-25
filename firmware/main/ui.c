@@ -7,6 +7,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "bsp/esp-bsp.h"
 #include "esp_timer.h"
@@ -25,8 +26,8 @@ LV_FONT_DECLARE(font_vi_36);
 #define COLOR_OUTLINE 0x2a2d33
 #define COLOR_OFF_BG  0x16171a
 
-/* The other person's language, shown while translating (one pair for now) */
-#define THEIR_LANGUAGE "English"
+/* Status while translating; the language label (kind 3) follows it: "Live translation · 日本語" */
+#define LIVE_STATUS "Live translation"
 /* Shown while no iPhone is connected (replaces stale subtitles on a disconnect, cleared on connect) */
 #define WELCOME_TEXT "Hello!\nOpen the iPhone app to connect."
 
@@ -47,7 +48,9 @@ static bool s_connected;
 /* Display lock held. Status line = "<status> · <label>" */
 static void status_set(const char *utf8)
 {
-    snprintf(s_status_text, sizeof(s_status_text), "%s", utf8);
+    size_t n = utf8_cut_len(utf8, strlen(utf8), sizeof(s_status_text) - 1);   /* not through a character */
+    memcpy(s_status_text, utf8, n);
+    s_status_text[n] = '\0';
     if (s_label[0]) {
         char line[sizeof(s_status_text) + LABEL_MAX + 8];
         snprintf(line, sizeof(line), "%s · %s", s_status_text, s_label);
@@ -387,7 +390,7 @@ static void refresh_status(rec_lang_t lang)
     if (!s_connected) {
         status_set("Waiting for iPhone…");
     } else if (lang != REC_NONE) {
-        status_set(THEIR_LANGUAGE);
+        status_set(LIVE_STATUS);
     } else {
         status_set("Mic off");
     }

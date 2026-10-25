@@ -75,12 +75,25 @@ static void label_clip(void)
     assert(label_normalize(ascii, 40, out) && strlen(out) == 32);
 }
 
+static void cut(void)
+{
+    const char *s = "ab\xe6\x97\xa5\xe6\x9c\xac"; /* ab日本, 8 bytes */
+    assert(utf8_cut_len(s, 8, 8) == 8);
+    assert(utf8_cut_len(s, 8, 7) == 5); /* 6 and 7 would split 本 */
+    assert(utf8_cut_len(s, 8, 5) == 5);
+    assert(utf8_cut_len(s, 8, 4) == 2); /* would split 日 */
+    assert(utf8_cut_len(s, 8, 2) == 2);
+    assert(utf8_cut_len(s, 8, 0) == 0);
+    assert(utf8_cut_len("abc", 3, 2) == 2);
+}
+
 int main(void)
 {
     no_regression();
     canonical_ranges();
     per_set();
     label_clip();
+    cut();
     puts("test_glyphs ok");
     return 0;
 }

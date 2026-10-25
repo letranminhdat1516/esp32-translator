@@ -814,14 +814,15 @@ static void hash_bytes(uint32_t *h, const void *data, size_t len)
 /* Bonded peers cache this GATT table. When a firmware update changes it (Phase 3 added the voice characteristic),
  * mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects, and the peer
  * rediscovers. Without it macOS keeps the old table and never sees the new characteristic.
- * The range starts at the Claude service: the translator service before it keeps its handles, and the iPhone app
- * does not handle a services change (its characteristic references would go stale). The Mac daemon rediscovers.
+ * The range starts at the translator service: its board info characteristic (...0005) sits before the Claude
+ * service and shifts the Claude handles, so a peer with the old cache must rediscover both.
  * Known limits: the hash is stored right away, before any peer got the indication (NimBLE persists the pending
  * indication per bonded peer, but a peer that bonds later never needs it); a change to the translator service or
  * the GAP / GATT services would need its own range (they are not hashed here). */
 static void announce_gatt_changes(void)
 {
     uint32_t hash = 2166136261u;
+    hash_bytes(&hash, "svcchg:translator", 17);   /* the announced range changed: re-announce once */
     for (const struct ble_gatt_svc_def *svc = s_services; svc->type != 0; svc++) {
         hash_bytes(&hash, svc->uuid, sizeof(ble_uuid128_t));
         for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr->uuid != NULL; chr++) {
@@ -836,14 +837,14 @@ static void announce_gatt_changes(void)
     uint32_t stored = 0;
     if (nvs_get_u32(nvs, "gatt_hash", &stored) != ESP_OK || stored != hash) {
         uint16_t start;
-        if (ble_gatts_find_svc(&s_claude_svc_uuid.u, &start) == 0) {
+        if (ble_gatts_find_svc(&s_svc_uuid.u, &start) == 0) {
             ESP_LOGI(TAG, "GATT table changed (%08lx -> %08lx): Service Changed 0x%04x..0xffff for bonded peers",
                      (unsigned long)stored, (unsigned long)hash, start);
             ble_svc_gatt_changed(start, 0xffff);
             nvs_set_u32(nvs, "gatt_hash", hash);
             nvs_commit(nvs);
         } else {
-            ESP_LOGW(TAG, "GATT table changed but the Claude service was not found: no Service Changed sent");
+            ESP_LOGW(TAG, "GATT table changed but the translator service was not found: no Service Changed sent");
         }
     }
     nvs_close(nvs);
