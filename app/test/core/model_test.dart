@@ -21,8 +21,8 @@ void main() {
       expect(p.labelLatin, 'VI');
       expect(p.script, Script.latin);
       expect(p.minConfidence, isNull);
-      expect(p.recognition, isEmpty);
-      expect(p.beforeTranslation, isEmpty);
+      expect(p.recognition, isNotEmpty);
+      expect(p.beforeTranslation, isNotEmpty);
       expect(p.terms, isEmpty);
       expect(p.hints, isEmpty);
     });
