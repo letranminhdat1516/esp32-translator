@@ -1,0 +1,14 @@
+{
+  "code": "vi",
+  "appleLocale": "vi-VN",
+  "androidLocale": "vi-VN",
+  "whisperCode": "vi",
+  "label": "Tiếng Việt",
+  "labelLatin": "VI",
+  "script": "latin",
+  "minConfidence": null,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [],
+  "hints": []
+}

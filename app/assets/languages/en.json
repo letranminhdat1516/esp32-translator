@@ -1,0 +1,14 @@
+{
+  "code": "en",
+  "appleLocale": "en-US",
+  "androidLocale": "en-US",
+  "whisperCode": "en",
+  "label": "English",
+  "labelLatin": "EN",
+  "script": "latin",
+  "minConfidence": 0.4,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [],
+  "hints": []
+}
