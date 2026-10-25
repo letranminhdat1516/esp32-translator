@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_translator/core/model.dart';
+import 'package:live_translator/engine/engine_api.g.dart' show MissingKind, MissingMsg;
 import 'package:live_translator/engine/session_machine.dart';
 import 'package:live_translator/ui/conversation_screen.dart';
 import 'package:live_translator/ui/conversation_state.dart';
@@ -18,6 +20,7 @@ class Calls {
     openGlossary: () => log.add('glossary'),
     onDownload: () => log.add('download'),
     onRetry: () => log.add('retry'),
+    pickLanguage: (c) => log.add('pick $c'),
   );
 }
 
@@ -44,6 +47,8 @@ ConversationUiState state({
   bool boardMicOn = true,
   String message = '',
   SessionState? session,
+  List<LanguagePack> offered = const [],
+  double? progress,
 }) => ConversationUiState(
   phase: phase,
   message: message,
@@ -58,6 +63,9 @@ ConversationUiState state({
   languageLabel: 'English',
   onlineRecognizer: online,
   micRoute: route,
+  offeredPacks: offered,
+  languageNames: const {'en': 'English', 'vi': 'Tiếng Việt'},
+  downloadProgress: progress,
 );
 
 Future<Calls> pump(WidgetTester tester, ConversationUiState s) async {
@@ -373,6 +381,68 @@ void main() {
     );
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(calls.log, isEmpty);
+  });
+
+  testWidgets('NeedsDownload names languages from languageNames', (t) async {
+    final calls = await pump(
+      t,
+      state(
+        phase: UiPhase.needsDownload,
+        session: NeedsDownload('en', [
+          MissingMsg(
+            kind: MissingKind.translation,
+            language: 'en',
+            from: 'en',
+            to: 'vi',
+          ),
+        ]),
+      ),
+    );
+    expect(find.text('Bản dịch English → Tiếng Việt'), findsOneWidget);
+    await t.tap(find.text('Tải về'));
+    expect(calls.log, ['download']);
+  });
+
+  testWidgets('Choosing lists offeredPacks and a tap calls pickLanguage', (
+    t,
+  ) async {
+    final calls = await pump(
+      t,
+      state(
+        phase: UiPhase.needsDownload,
+        session: const Choosing(),
+        offered: [
+          LanguagePack(
+            code: 'ja',
+            appleLocale: 'x',
+            androidLocale: 'x',
+            whisperCode: 'ja',
+            label: '日本語',
+            labelLatin: 'Japanese',
+            script: Script.cjk,
+          ),
+        ],
+      ),
+    );
+    expect(find.text('日本語'), findsOneWidget);
+    await t.tap(find.text('日本語'));
+    expect(calls.log, ['pick ja']);
+  });
+
+  testWidgets('Downloading shows the determinate progress', (t) async {
+    await pump(
+      t,
+      state(
+        phase: UiPhase.needsDownload,
+        session: const Downloading('en'),
+        progress: 0.5,
+      ),
+    );
+    expect(find.text('Đang tải… 50%'), findsOneWidget);
+    expect(
+      t.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).value,
+      0.5,
+    );
   });
 
   group('goldens (393x852)', () {

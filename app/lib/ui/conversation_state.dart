@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../board/board_link.dart' show BoardState;
+import '../core/model.dart' show LanguagePack;
 import '../engine/engine_api.g.dart' show AudioRoute;
 import '../engine/session_machine.dart' show SessionState;
 
@@ -80,6 +81,9 @@ class ConversationUiState {
     required this.languageLabel,
     this.onlineRecognizer = false,
     this.micRoute = AudioRoute.headset,
+    this.offeredPacks = const [],
+    this.languageNames = const {},
+    this.downloadProgress,
   });
 
   final UiPhase phase;
@@ -110,6 +114,16 @@ class ConversationUiState {
   /// "mic điện thoại" chip while listening.
   final AudioRoute micRoute;
 
+  /// Languages listed while the session is choosing.
+  final List<LanguagePack> offeredPacks;
+
+  /// Display name per language code, including the home language: used in
+  /// "Bản dịch A → B".
+  final Map<String, String> languageNames;
+
+  /// 0..1 while downloading; null when the platform reports none.
+  final double? downloadProgress;
+
   bool get hasHistory => theirLines.isNotEmpty || myLines.isNotEmpty;
 }
 
@@ -125,6 +139,7 @@ class ConversationActions {
     required this.openGlossary,
     required this.onDownload,
     required this.onRetry,
+    required this.pickLanguage,
   });
 
   final VoidCallback toggleBoardMic;
@@ -141,4 +156,7 @@ class ConversationActions {
 
   /// "Thử lại" of [UiPhase.failed] and of a failed download.
   final VoidCallback onRetry;
+
+  /// A language picked in the readiness view ([SessionState] Choosing).
+  final ValueChanged<String> pickLanguage;
 }

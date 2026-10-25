@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show AssetBundle, AssetManifest, rootBundle;
 
 import 'core/model.dart';
 import 'ui/conversation_screen.dart';
@@ -7,15 +8,35 @@ import 'ui/glossary_screen.dart';
 import 'ui/language_sheet.dart';
 import 'ui/theme.dart';
 
-void main() {
-  runApp(const DemoApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(DemoApp(packs: await loadDemoPacks()));
+}
+
+/// The packs the demo offers, read from `assets/languages/*.json` (no locale
+/// literals in code). The home language is the header's fixed "Tiếng Việt",
+/// so its pack is not offered as the other language.
+Future<List<LanguagePack>> loadDemoPacks([AssetBundle? bundle]) async {
+  final b = bundle ?? rootBundle;
+  final manifest = await AssetManifest.loadFromAssetBundle(b);
+  final paths = manifest
+      .listAssets()
+      .where((p) => p.startsWith('assets/languages/') && p.endsWith('.json'))
+      .toList()
+    ..sort();
+  final packs = [
+    for (final p in paths) LanguagePack.parse(await b.loadString(p)),
+  ];
+  return packs.where((p) => p.label != 'Tiếng Việt').toList();
 }
 
 /// Demo shell: shows the "Phụ đề" conversation screen with sample state so
 /// `flutter run` displays the design. The real controller replaces the state
 /// and the actions in Phase 2.
 class DemoApp extends StatelessWidget {
-  const DemoApp({super.key, this.fontFamily});
+  const DemoApp({super.key, required this.packs, this.fontFamily});
+
+  final List<LanguagePack> packs;
 
   /// Null in the app; widget tests pass a real font (the default test font has no Vietnamese).
   final String? fontFamily;
@@ -26,13 +47,16 @@ class DemoApp extends StatelessWidget {
       title: 'Phụ đề',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(fontFamily: fontFamily),
-      home: const DemoHome(),
+      home: DemoHome(packs: packs),
     );
   }
 }
 
 class DemoHome extends StatefulWidget {
-  const DemoHome({super.key});
+  const DemoHome({super.key, required this.packs});
+
+  /// Languages offered in the demo (loaded from assets/languages).
+  final List<LanguagePack> packs;
 
   @override
   State<DemoHome> createState() => _DemoHomeState();
@@ -40,29 +64,15 @@ class DemoHome extends StatefulWidget {
 
 class _DemoHomeState extends State<DemoHome> {
   static final _now = DateTime.now();
-  static final _packs = [
-    for (final (code, label, latin) in [
-      ('en', 'English', 'English'),
-      ('ja', '日本語', 'Japanese'),
-      ('fr', 'Français', 'French'),
-    ])
-      LanguagePack(
-        code: code,
-        appleLocale: code,
-        androidLocale: code,
-        whisperCode: code,
-        label: label,
-        labelLatin: latin,
-        script: Script.latin,
-      ),
-  ];
 
-  var _code = 'en';
+  late var _code = widget.packs.first.code;
   var _glossary = <Term>[const Term(id: '1', text: 'Zorvik')];
   late ConversationUiState _state = ConversationUiState(
     phase: UiPhase.running,
     board: BoardState.ready,
-    languageLabel: 'English',
+    languageLabel: widget.packs.first.label,
+    offeredPacks: widget.packs,
+    languageNames: {for (final p in widget.packs) p.code: p.label},
     theirLines: [
       UiLine(
         id: 't1',
@@ -114,18 +124,21 @@ class _DemoHomeState extends State<DemoHome> {
     languageLabel: languageLabel ?? s.languageLabel,
     onlineRecognizer: s.onlineRecognizer,
     micRoute: s.micRoute,
+    offeredPacks: s.offeredPacks,
+    languageNames: s.languageNames,
+    downloadProgress: s.downloadProgress,
   );
 
   void _openLanguages() {
     showLanguageSheet(
       context,
-      packs: _packs,
+      packs: widget.packs,
       currentCode: _code,
       onPick: (code) => _set((s) {
         _code = code;
         return _copy(
           s,
-          languageLabel: _packs.firstWhere((p) => p.code == code).label,
+          languageLabel: widget.packs.firstWhere((p) => p.code == code).label,
         );
       }),
     );
@@ -184,6 +197,7 @@ class _DemoHomeState extends State<DemoHome> {
         openGlossary: _openGlossary,
         onDownload: () {},
         onRetry: () {},
+        pickLanguage: (_) {},
       ),
     );
   }

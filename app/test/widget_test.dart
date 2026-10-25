@@ -9,8 +9,11 @@ void main() {
     tester,
   ) async {
     useIphoneSize(tester);
-    await tester.pumpWidget(const DemoApp(fontFamily: testFont));
+    final packs = (await tester.runAsync(loadDemoPacks))!;
+    expect(packs, isNotEmpty);
+    await tester.pumpWidget(DemoApp(packs: packs, fontFamily: testFont));
     expect(find.text('Ga tàu ở đâu vậy?'), findsOneWidget);
+    expect(find.text(packs.first.label), findsOneWidget);
     expect(find.text('Bắt đầu nghe'), findsOneWidget);
     await tester.tap(find.text('Bắt đầu nghe'));
     await tester.pump();

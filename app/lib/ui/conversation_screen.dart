@@ -43,17 +43,32 @@ class ConversationScreen extends StatelessWidget {
     if (yes == true) actions.clearHistory();
   }
 
+  /// needsDownload without a session is a controller bug: loud in debug, a
+  /// spinner in release.
+  Widget _missingSession() {
+    assert(false, 'UiPhase.needsDownload requires ConversationUiState.session');
+    return const Center(
+      child: CircularProgressIndicator(color: Palette.muted, strokeWidth: 2),
+    );
+  }
+
   bool get _canClear => state.phase == UiPhase.running && state.hasHistory;
 
   @override
   Widget build(BuildContext context) {
     final Widget body = switch (state.phase) {
       UiPhase.needsDownload => Expanded(
-        child: ReadinessView(
-          state: state.session!,
-          onDownload: actions.onDownload,
-          onRetry: actions.onRetry,
-        ),
+        child: state.session == null
+            ? _missingSession()
+            : ReadinessView(
+                state: state.session!,
+                onDownload: actions.onDownload,
+                onRetry: actions.onRetry,
+                offered: state.offeredPacks,
+                onPick: actions.pickLanguage,
+                labels: state.languageNames,
+                progress: state.downloadProgress,
+              ),
       ),
       UiPhase.preparing => Expanded(
         child: Center(
