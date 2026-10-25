@@ -39,22 +39,6 @@ enum EngineMapping {
         Int64((max(0, seconds) * 1000).rounded())
     }
 
-    /// Headset when the mic is in earbuds or a headset, else the phone mic
-    static func route(inputs: [AVAudioSession.Port]) -> AudioRoute {
-        let headset: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothLE, .headsetMic, .usbAudio, .carAudio]
-        return inputs.contains(where: headset.contains) ? .headset : .phoneMic
-    }
-
-    /// A device came or went; category changes are the engine's own doing and not reported
-    static func reportsRouteChange(_ reason: AVAudioSession.RouteChangeReason) -> Bool {
-        switch reason {
-        case .newDeviceAvailable, .oldDeviceUnavailable, .override, .wakeFromSleep, .noSuitableRouteForCategory:
-            true
-        default:
-            false
-        }
-    }
-
     /// 16-bit little-endian mono PCM as an Int16 buffer; nil for empty or odd-length input
     static func pcm16Buffer(_ bytes: Data, sampleRate: Double) -> AVAudioPCMBuffer? {
         let count = bytes.count / 2
@@ -71,6 +55,14 @@ enum EngineMapping {
         }
         buffer.frameLength = AVAudioFrameCount(count)
         return buffer
+    }
+
+    /// The highest-quality installed TTS voice for a language code or locale identifier, or nil
+    static func bestVoice(_ language: String) -> AVSpeechSynthesisVoice? {
+        let code = languageCode(Locale(identifier: language))
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { languageCode(Locale(identifier: $0.language)) == code }
+            .max { $0.quality.rawValue < $1.quality.rawValue }
     }
 
     /// The language code of a locale ("en_US" → "en"); the identifier itself when it has none

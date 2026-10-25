@@ -1,11 +1,9 @@
 import AVFAudio
-import Speech
-import Translation
 import XCTest
 @testable import Runner
 
-/// The pure pieces between the iOS frameworks and the pigeon messages: event construction, errors, audio
-/// routes and PCM, and the in-order, main-thread event delivery.
+/// The pure pieces between the iOS frameworks and the pigeon messages: event construction, errors, PCM, and
+/// the in-order, main-thread event delivery. Runs on the macOS host too (app/ios/NativeTests).
 final class EngineMappingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000.5)
 
@@ -33,20 +31,6 @@ final class EngineMappingTests: XCTestCase {
     func testTheirsDropsPartialsAndEmptyFinals() {
         XCTAssertNil(EngineMapping.theirs(.partial("good mor", audio: 1), generation: 1))
         XCTAssertNil(EngineMapping.theirs(.final("", confidence: 0.9, audio: 0), generation: 1))
-    }
-
-    func testRouteIsHeadsetForBluetoothAndWiredMics() {
-        XCTAssertEqual(EngineMapping.route(inputs: [.bluetoothHFP]), .headset)
-        XCTAssertEqual(EngineMapping.route(inputs: [.headsetMic]), .headset)
-        XCTAssertEqual(EngineMapping.route(inputs: [.builtInMic]), .phoneMic)
-        XCTAssertEqual(EngineMapping.route(inputs: []), .phoneMic)
-    }
-
-    func testOnlyDeviceChangesAreReportedAsRouteChanges() {
-        XCTAssertTrue(EngineMapping.reportsRouteChange(.newDeviceAvailable))
-        XCTAssertTrue(EngineMapping.reportsRouteChange(.oldDeviceUnavailable))
-        // Our own setCategory calls change the category: not a route change for Dart
-        XCTAssertFalse(EngineMapping.reportsRouteChange(.categoryChange))
     }
 
     func testPcm16BufferReadsLittleEndianSamples() throws {

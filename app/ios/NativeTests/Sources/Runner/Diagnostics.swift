@@ -1,0 +1,1 @@
+../../../Runner/Native/Diagnostics.swift

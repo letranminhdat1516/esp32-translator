@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D0E14DD2FA957E0CB8C7AE25 /* AudioRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D035FC70C3135A76786A272D /* AudioRouteTests.swift */; };
+		D0A98E0DADC50D8F3C6A5AFC /* TranslationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D09CBD5FB48AB9DA87E2B71E /* TranslationSheet.swift */; };
+		D03D9C607F6AE4514E3A608D /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = D08A707FEB78DE395062D1E0 /* Downloads.swift */; };
+		D0A0324765A8F05F3C1D194C /* Capabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = D033F5C841983F64D2591ADD /* Capabilities.swift */; };
+		D0B2D66DA34B4529D57FC7A6 /* CapabilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04B2A005812243B06F7829D /* CapabilitiesTests.swift */; };
 		D0E39AC24BCDFE9820597133 /* VoiceEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0CE999F81A690DC9D1402DA /* VoiceEngineTests.swift */; };
 		D0A5B10EF479E78000EC47B0 /* VoiceEngineHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E4D504310B52CE705D5C87 /* VoiceEngineHost.swift */; };
 		D0D16765CCD4D3368FDFB73E /* EngineMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = D08297F37E6C2A7A73F7D165 /* EngineMapping.swift */; };
@@ -55,6 +60,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D035FC70C3135A76786A272D /* AudioRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRouteTests.swift; sourceTree = "<group>"; };
+		D09CBD5FB48AB9DA87E2B71E /* TranslationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationSheet.swift; sourceTree = "<group>"; };
+		D08A707FEB78DE395062D1E0 /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
+		D033F5C841983F64D2591ADD /* Capabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capabilities.swift; sourceTree = "<group>"; };
+		D04B2A005812243B06F7829D /* CapabilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapabilitiesTests.swift; sourceTree = "<group>"; };
 		D0CE999F81A690DC9D1402DA /* VoiceEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEngineTests.swift; sourceTree = "<group>"; };
 		D0E4D504310B52CE705D5C87 /* VoiceEngineHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEngineHost.swift; sourceTree = "<group>"; };
 		D08297F37E6C2A7A73F7D165 /* EngineMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineMapping.swift; sourceTree = "<group>"; };
@@ -102,6 +112,9 @@
 		A1B2C3D41F00000100E10003 /* Native */ = {
 			isa = PBXGroup;
 			children = (
+				D09CBD5FB48AB9DA87E2B71E /* TranslationSheet.swift */,
+				D08A707FEB78DE395062D1E0 /* Downloads.swift */,
+				D033F5C841983F64D2591ADD /* Capabilities.swift */,
 				D0E4D504310B52CE705D5C87 /* VoiceEngineHost.swift */,
 				D08297F37E6C2A7A73F7D165 /* EngineMapping.swift */,
 				D08907D63A7411DBA0AE2315 /* AudioSession.swift */,
@@ -119,6 +132,8 @@
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
+				D035FC70C3135A76786A272D /* AudioRouteTests.swift */,
+				D04B2A005812243B06F7829D /* CapabilitiesTests.swift */,
 				D0CE999F81A690DC9D1402DA /* VoiceEngineTests.swift */,
 				D08CCFDC2BF95DC7C0BCEC55 /* EngineMappingTests.swift */,
 				D0A1A83283A4BD5FB0237565 /* VoiceGateTests.swift */,
@@ -320,6 +335,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0E14DD2FA957E0CB8C7AE25 /* AudioRouteTests.swift in Sources */,
+				D0B2D66DA34B4529D57FC7A6 /* CapabilitiesTests.swift in Sources */,
 				D0E39AC24BCDFE9820597133 /* VoiceEngineTests.swift in Sources */,
 				D0A1C6CB9DA4A9BD78E9B933 /* EngineMappingTests.swift in Sources */,
 				D06924635E90C809AF16B330 /* VoiceGateTests.swift in Sources */,
@@ -331,6 +348,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0A98E0DADC50D8F3C6A5AFC /* TranslationSheet.swift in Sources */,
+				D03D9C607F6AE4514E3A608D /* Downloads.swift in Sources */,
+				D0A0324765A8F05F3C1D194C /* Capabilities.swift in Sources */,
 				D0A5B10EF479E78000EC47B0 /* VoiceEngineHost.swift in Sources */,
 				D0D16765CCD4D3368FDFB73E /* EngineMapping.swift in Sources */,
 				D07996611AB3F18D01D99A54 /* AudioSession.swift in Sources */,

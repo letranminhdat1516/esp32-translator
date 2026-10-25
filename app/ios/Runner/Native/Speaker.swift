@@ -23,17 +23,9 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     /// `language` is a language code or locale identifier ("vi", "vi-VN")
     init(language: String) {
         synthesizer.usesApplicationAudioSession = true
-        voice = Self.bestVoice(language)
+        voice = EngineMapping.bestVoice(language)
         super.init()
         synthesizer.delegate = self
-    }
-
-    /// The highest-quality installed voice for the language, or nil
-    static func bestVoice(_ language: String) -> AVSpeechSynthesisVoice? {
-        let code = EngineMapping.languageCode(Locale(identifier: language))
-        return AVSpeechSynthesisVoice.speechVoices()
-            .filter { EngineMapping.languageCode(Locale(identifier: $0.language)) == code }
-            .max { $0.quality.rawValue < $1.quality.rawValue }
     }
 
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart u: AVSpeechUtterance) {

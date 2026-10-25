@@ -99,3 +99,22 @@ final class AudioSession {
         EngineMapping.route(inputs: AVAudioSession.sharedInstance().currentRoute.inputs.map(\.portType))
     }
 }
+
+/// Audio routes exist only on iOS (AVAudioSession)
+extension EngineMapping {
+    /// Headset when the mic is in earbuds or a headset, else the phone mic
+    static func route(inputs: [AVAudioSession.Port]) -> AudioRoute {
+        let headset: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothLE, .headsetMic, .usbAudio, .carAudio]
+        return inputs.contains(where: headset.contains) ? .headset : .phoneMic
+    }
+
+    /// A device came or went; category changes are the engine's own doing and not reported
+    static func reportsRouteChange(_ reason: AVAudioSession.RouteChangeReason) -> Bool {
+        switch reason {
+        case .newDeviceAvailable, .oldDeviceUnavailable, .override, .wakeFromSleep, .noSuitableRouteForCategory:
+            true
+        default:
+            false
+        }
+    }
+}

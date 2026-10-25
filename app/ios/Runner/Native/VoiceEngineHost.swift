@@ -37,9 +37,6 @@ final class VoiceEngineHost: VoiceEngineApi {
 /// on/off logic and subtitles live in Dart; this only reports events.
 @MainActor
 final class VoiceEngine {
-    /// The only recognizer kind offered on iOS in Phase 1 (Whisper on iOS is Phase 2 or later)
-    static let onDevice = "osOnDevice"
-
     private let events: EventQueue
     private let session = AudioSession()
     private let gate = VoiceGate()
@@ -59,31 +56,53 @@ final class VoiceEngine {
     /// The pair's generation, read by the board recognizer's result task
     private let generation = Generation()
 
-    init(events: EventQueue) {
+    private let capabilityCache = CapabilitiesCache()
+    private var downloads: Downloads!
+    private static let queryTimeout: TimeInterval = 5
+
+    init(events: EventQueue, downloadWork: Downloads.Work = .live) {
         self.events = events
         session.onChange = { [weak self] change in self?.sessionChanged(change) }
+        downloads = Downloads(events: events, home: { [weak self] in self?.homeLanguage ?? defaultHomeLanguage },
+                              work: downloadWork, onDone: { [weak self] in self?.refreshCapabilities() })
+        capabilityCache.refresh(home: defaultHomeLanguage)
     }
 
-    // MARK: Capabilities and downloads (D2)
+    /// After a download the cached capabilities are stale; Dart calls capabilities() again (ARCHITECTURE §5)
+    private func refreshCapabilities() {
+        capabilityCache.invalidate()
+        capabilityCache.refresh(home: homeLanguage)
+    }
 
+    // MARK: Capabilities and downloads
+
+    /// Fast: the background-gathered value, else gathered now (bounded wait)
     func capabilities() throws -> CapabilitiesMsg {
-        throw EngineErrors.notReady("capabilities are not implemented yet")
+        guard let caps = capabilityCache.get(home: homeLanguage, timeout: Self.queryTimeout) else {
+            throw EngineErrors.notReady("capabilities timed out")
+        }
+        return caps
     }
 
     func missing(_ pair: PairMsg) throws -> [MissingMsg] {
-        throw EngineErrors.notReady("missing is not implemented yet")
+        guard let missing = Blocking.run(timeout: Self.queryTimeout, { await MissingAssembly.gather(pair) }) else {
+            throw EngineErrors.notReady("missing timed out")
+        }
+        return missing
     }
 
     func download(_ item: MissingMsg) async throws {
-        throw EngineErrors.downloadFailed("download is not implemented yet")
+        try await downloads.download(item)
     }
+
+    private var homeLanguage: String { pair?.home ?? defaultHomeLanguage }
 
     // MARK: Start / stop
 
     /// Builds both recognizers for the pair. Idempotent: the same languages keep running (the generation and
     /// hints are updated); other languages replace the running pair.
     func start(_ pair: PairMsg, recognizer: String, hints: [String]) async throws {
-        guard recognizer == Self.onDevice else {
+        guard recognizer == RecognizerKinds.onDevice else {
             throw EngineErrors.notReady("recognizer \(recognizer) is not available on iOS")
         }
         if let running = self.pair, running.home == pair.home, running.other == pair.other, theirs != nil {
