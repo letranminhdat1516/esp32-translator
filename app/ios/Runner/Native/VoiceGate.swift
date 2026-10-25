@@ -2,6 +2,8 @@ import Accelerate
 import AVFAudio
 import os
 
+// Copied unchanged from ios/Sources/Audio/VoiceGate.swift (the Swift app keeps its own copy until P8).
+
 /// Own-voice gate for the AirPods mic: passes audio to the Vietnamese recognizer only while the wearer speaks.
 ///
 /// Speech from people nearby, heard just before or after your own words, was the largest source of

@@ -1,6 +1,8 @@
 import Foundation
 import os
 
+// Copied unchanged from ios/Sources/App/Diagnostics.swift.
+
 /// Lightweight diagnostics: timestamped lines on stdout (visible with `devicectl ... launch --console`)
 /// plus per-second counters for each pipeline stage.
 enum Diag {

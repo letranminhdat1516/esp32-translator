@@ -1,0 +1,101 @@
+import AVFAudio
+import Foundation
+
+// The audio-session parts of ios/Sources/App/ConversationEngine.swift (configureAudioSession, startSilence,
+// endConversation's deactivation, observeAudioSession), without the conversation logic: Dart decides when the
+// mic is on and the engine reports interruptions and route changes as events.
+
+/// The app's audio session: voice chat while the mic is held, mixable silent playback otherwise, so iOS keeps
+/// the app running in the background for the board (BLE keepalive, board audio) without touching other audio.
+@MainActor
+final class AudioSession {
+    enum Change {
+        case interruptionBegan
+        case interruptionEnded(shouldResume: Bool)
+        case routeChanged(AudioRoute)
+        case mediaServicesReset
+    }
+
+    private let silence = SilencePlayer()
+    private var observers: [NSObjectProtocol] = []
+
+    /// Called on the main thread
+    var onChange: ((Change) -> Void)?
+
+    init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil,
+                                            queue: .main) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+            let options = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt)
+                .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            Diag.log("session: INTERRUPTION \(type == .began ? "began" : "ended") options \(options.rawValue)")
+            MainActor.assumeIsolated {
+                self?.onChange?(type == .began ? .interruptionBegan
+                    : .interruptionEnded(shouldResume: options.contains(.shouldResume)))
+            }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil,
+                                            queue: .main) { [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+            let reason = AVAudioSession.RouteChangeReason(rawValue: raw) ?? .unknown
+            let route = AVAudioSession.sharedInstance().currentRoute
+            Diag.log("session: route change \(raw) in=\(route.inputs.map(\.portName)) out=\(route.outputs.map(\.portName))")
+            guard EngineMapping.reportsRouteChange(reason) else { return }
+            let mapped = EngineMapping.route(inputs: route.inputs.map(\.portType))
+            MainActor.assumeIsolated { self?.onChange?(.routeChanged(mapped)) }
+        })
+        observers.append(center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil,
+                                            queue: .main) { [weak self] _ in
+            Diag.log("session: MEDIA SERVICES RESET")
+            MainActor.assumeIsolated { self?.onChange?(.mediaServicesReset) }
+        })
+    }
+
+    /// voiceChat: echo cancellation, routes through the AirPods mic; speech still plays in the earbuds.
+    /// mixWithOthers + duckOthers: a video playing in another app gets quieter instead of stopping.
+    func configureForConversation() throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .voiceChat,
+                                options: [.allowBluetoothHFP, .mixWithOthers, .duckOthers])
+        try session.setPreferredIOBufferDuration(0.01)
+        try session.setActive(true)
+    }
+
+    /// The mic is taken: the silence is no longer needed to keep the app alive
+    func stopSilence() {
+        silence.stop()
+    }
+
+    /// Gives the session back: other apps return to full volume and the AirPods to A2DP
+    func deactivate() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            Diag.log("session: deactivate failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Mixable playback of silence (no mic, no ducking) so the app keeps running in the background
+    func startSilence() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            try silence.start()
+        } catch {
+            Diag.log("idle: silence start failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Engine stopped: no silence, session released
+    func release() {
+        silence.stop()
+        deactivate()
+    }
+
+    var currentRoute: AudioRoute {
+        EngineMapping.route(inputs: AVAudioSession.sharedInstance().currentRoute.inputs.map(\.portType))
+    }
+}
