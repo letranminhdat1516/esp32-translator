@@ -121,8 +121,12 @@ class NativeVoiceEngine(
     private val lock = Any()
     private var session: Session? = null
 
-    private inner class Session(val pair: PairMsg, val mine: UtteranceRecognizer, val theirs: UtteranceRecognizer) {
-        val startElapsed = SystemClock.elapsedRealtime()
+    private inner class Session(
+        val pair: PairMsg,
+        val mine: UtteranceRecognizer,
+        val theirs: UtteranceRecognizer,
+        startElapsed: Long,
+    ) {
         val mic = MicCapture(gate, events, object : UtteranceSink {
             override fun audio(pcm: ShortArray) = mine.audio(pcm, MicCapture.SAMPLE_RATE)
             override fun ended(startMs: Long, endMs: Long) = mine.endUtterance(startMs, endMs)
@@ -158,22 +162,30 @@ class NativeVoiceEngine(
             throw EngineErrors.notReady("microphone permission denied")
         }
         stop()
+        val startElapsed = SystemClock.elapsedRealtime()
+        val clock = { MicCapture.since(startElapsed) }
         val s = withContext(Dispatchers.IO) {
             val generation = pair.generation
-            val mine = recognizers.create(recognizers.mineKind(recognizerX), pair.home, hints) { r ->
-                events.mine(
-                    MineMsg(if (r.final) MineKind.FINAL_TEXT else MineKind.PARTIAL, r.text, r.startMs, r.endMs),
-                )
-            }
+            val mineKind = recognizers.mineKind(recognizerX)
+            val mine = recognizers.create(
+                RecognizerRequest(mineKind, pair.home, hints, mine = true, clock = clock, onResult = { r ->
+                    events.mine(
+                        MineMsg(if (r.final) MineKind.FINAL_TEXT else MineKind.PARTIAL, r.text, r.startMs, r.endMs),
+                    )
+                }, onSpeech = { events.gate(it) }),
+            )
             val theirs = try {
-                recognizers.create(recognizerX, pair.other, hints) { r ->
-                    if (r.final) events.theirs(TheirsMsg(r.text, r.confidence, generation))
-                }
+                recognizers.create(
+                    RecognizerRequest(recognizerX, pair.other, hints, mine = false, clock = clock, onResult = { r ->
+                        if (r.final) events.theirs(TheirsMsg(r.text, r.confidence, generation))
+                    }),
+                )
             } catch (e: Exception) {
                 mine.close()
                 throw e
             }
-            Session(pair, mine, theirs)
+            Log.i(TAG, "recognizers: mine $mineKind (${pair.home}), theirs $recognizerX (${pair.other})")
+            Session(pair, mine, theirs, startElapsed)
         }
         synchronized(lock) { session = s }
         VoiceService.status = { status() }
@@ -195,7 +207,12 @@ class NativeVoiceEngine(
 
     override fun micOn(on: Boolean) {
         val s = synchronized(lock) { session } ?: return
-        if (on) s.mic.start() else s.mic.stop()
+        when {
+            // An OS recognizer below Android 13 listens to the mic itself
+            s.mine.ownsMic -> s.mine.listen(on)
+            on -> s.mic.start()
+            else -> s.mic.stop()
+        }
     }
 
     override fun feedTheirAudio(pcm16le: ByteArray, sampleRate: Long) {

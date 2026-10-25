@@ -48,8 +48,8 @@ class VoiceServiceTest {
     private val catalog = object : RecognizerCatalog {
         override fun kinds(languages: List<String>) = emptyMap<String, List<String>>()
         override fun speechModelsMissing(pair: PairMsg) = emptyList<String>()
-        override fun create(kind: String, language: String, hints: List<String>, onResult: (Recognized) -> Unit): UtteranceRecognizer {
-            created += kind to language
+        override fun create(request: RecognizerRequest): UtteranceRecognizer {
+            created += request.kind to request.language
             return Recording()
         }
         override fun mineKind(recognizerX: String) = Kinds.WHISPER
