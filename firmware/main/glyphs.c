@@ -32,3 +32,56 @@ bool glyph_ok(uint32_t cp, uint32_t font_sets)
     }
     return false;
 }
+
+/* Length of the UTF-8 character at s[0..n), or 0 when invalid */
+static size_t utf8_len(const uint8_t *s, size_t n)
+{
+    uint8_t b = s[0];
+    size_t len;
+    uint32_t c, min;
+    if (b < 0x80) {
+        return 1;
+    } else if ((b & 0xe0) == 0xc0) {
+        len = 2, c = b & 0x1f, min = 0x80;
+    } else if ((b & 0xf0) == 0xe0) {
+        len = 3, c = b & 0x0f, min = 0x800;
+    } else if ((b & 0xf8) == 0xf0) {
+        len = 4, c = b & 0x07, min = 0x10000;
+    } else {
+        return 0;
+    }
+    if (len > n) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if ((s[i] & 0xc0) != 0x80) {
+            return 0;
+        }
+        c = (c << 6) | (s[i] & 0x3f);
+    }
+    if (c < min || c > 0x10ffff || (c >= 0xd800 && c <= 0xdfff)) {
+        return 0;
+    }
+    return len;
+}
+
+bool label_normalize(const char *in, size_t n, char *out)
+{
+    const uint8_t *s = (const uint8_t *)in;
+    size_t i = 0, keep = 0;
+    while (i < n) {
+        size_t l = utf8_len(s + i, n - i);
+        if (l == 0) {
+            return false;
+        }
+        i += l;
+        if (i <= LABEL_MAX) {
+            keep = i;
+        }
+    }
+    for (size_t k = 0; k < keep; k++) {
+        out[k] = in[k];
+    }
+    out[keep] = '\0';
+    return true;
+}

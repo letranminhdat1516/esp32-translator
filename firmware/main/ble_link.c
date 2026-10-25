@@ -5,7 +5,8 @@
  *   audio   ...0002  notify  : [seq u16][predictor i16][index u8][ADPCM...] (16 kHz mono)
  *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
  *                              kind 0 = subtitle (large), kind 1 = status line,
- *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect)
+ *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect),
+ *                              kind 3 = language label, <= 32 bytes UTF-8, shown as "<status> · <label>" ("" clears)
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
@@ -31,6 +32,7 @@
 void ble_store_config_init(void);
 
 #include "app.h"
+#include "glyphs.h"
 #include "claude_proto.h"
 #include "claude_link.h"
 #include "ancs.h"
@@ -82,6 +84,7 @@ static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 #define TEXT_KIND_MAIN   0
 #define TEXT_KIND_STATUS 1
 #define TEXT_KIND_TIME   2
+#define TEXT_KIND_LABEL  3
 #define TEXT_MAX         1024
 /* One Claude request write: the Mac chunks to ATT MTU - 3, but a long (prepared) write can carry up to 512 */
 #define CLAUDE_WRITE_MAX 512
@@ -417,6 +420,13 @@ static void handle_text_write(const uint8_t *data, uint16_t len)
             clock_sync_text(s_text_buf);
         } else if (kind == TEXT_KIND_STATUS) {
             ui_show_status(s_text_buf);
+        } else if (kind == TEXT_KIND_LABEL) {
+            char label[LABEL_MAX + 1];
+            if (label_normalize(s_text_buf, s_text_len, label)) {
+                ui_set_label(label);
+            } else {
+                ESP_LOGW(TAG, "language label is not valid UTF-8, ignored");
+            }
         } else {
             ui_show_text(s_text_buf);
         }

@@ -12,6 +12,7 @@
  *   text:<utf8>              subtitle from the app ("\n" breaks a line)    T (next sample)
  *   status:<utf8>            status line
  *   toast:<utf8>             status line for 2 s
+ *   label:<utf8>             language label after the status ("<status> · <label>"; empty clears)
  *   level:<0..100>           level ring (0 hides it)                       V (fake voice on/off)
  *   lock / unlock / face     PWR x1 / PWR x2 / tap on the lock screen      K / U / F
  *   sleep                    the deep-sleep message
@@ -30,6 +31,7 @@
 #include <SDL2/SDL.h>
 
 #include "app.h"
+#include "glyphs.h"
 #include "bsp/esp-bsp.h"
 #include "clock.h"
 #include "esp_timer.h"
@@ -264,6 +266,11 @@ static void run(char *cmd)
         ui_show_text(arg);
     } else if (!strcmp(cmd, "status") && arg) {
         ui_show_status(arg);
+    } else if (!strcmp(cmd, "label")) {
+        char label[LABEL_MAX + 1];
+        if (label_normalize(arg ? arg : "", arg ? strlen(arg) : 0, label)) {
+            ui_set_label(label);
+        }
     } else if (!strcmp(cmd, "toast") && arg) {
         ui_toast(arg, 2000);
     } else if (!strcmp(cmd, "level") && arg) {

@@ -1,6 +1,7 @@
 // firmware/test/test_glyphs.c — build: cc -Wall -Wextra -Werror -I../main -o /tmp/test_glyphs test_glyphs.c ../main/glyphs.c && /tmp/test_glyphs
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "board_info.h"
 #include "glyphs.h"
 
@@ -51,11 +52,35 @@ static void per_set(void)
     assert(!glyph_ok(0x7f, BOTH));
 }
 
+static void label_clip(void)
+{
+    char out[LABEL_MAX + 1];
+    assert(label_normalize("Fran\xc3\xa7" "ais", 9, out) && !strcmp(out, "Fran\xc3\xa7" "ais"));
+    assert(label_normalize("", 0, out) && out[0] == '\0');
+    assert(label_normalize("\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e", 9, out) && strlen(out) == 9);
+    /* invalid: lone continuation, truncated sequence, overlong, surrogate, > U+10FFFF */
+    assert(!label_normalize("a\x80", 2, out));
+    assert(!label_normalize("a\xe6\x97", 3, out));
+    assert(!label_normalize("\xc0\x80", 2, out));
+    assert(!label_normalize("\xed\xa0\x80", 3, out));
+    assert(!label_normalize("\xf4\x90\x80\x80", 4, out));
+    /* 40 bytes of 3-byte chars: cut at a character boundary <= 32 bytes (30) */
+    char big[41];
+    for (int i = 0; i < 13; i++) {
+        memcpy(big + 3 * i, "\xe6\x97\xa5", 3);
+    }
+    assert(label_normalize(big, 39, out) && strlen(out) == 30);
+    char ascii[40];
+    memset(ascii, 'x', sizeof(ascii));
+    assert(label_normalize(ascii, 40, out) && strlen(out) == 32);
+}
+
 int main(void)
 {
     no_regression();
     canonical_ranges();
     per_set();
+    label_clip();
     puts("test_glyphs ok");
     return 0;
 }

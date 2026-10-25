@@ -29,6 +29,7 @@ add_executable(board-sim
     ${FW}/ui.c
     ${FW}/lock_ui.c
     ${FW}/modes.c
+    ${FW}/glyphs.c
     ${FW}/logo_img.c
     ${FW}/font_vi_22.c
     ${FW}/font_vi_36.c)

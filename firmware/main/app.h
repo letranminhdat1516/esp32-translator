@@ -100,6 +100,9 @@ void ui_set_connected(bool connected);
 void ui_set_recording(rec_lang_t lang);
 void ui_show_text(const char *utf8);
 void ui_show_status(const char *utf8);
+/* The other person's language, appended to the status line as "<status> · <label>" (empty clears it).
+ * At most 32 bytes of valid UTF-8; kept across reconnects. */
+void ui_set_label(const char *utf8);
 /* Voice level ring around the round screen, 0 = hidden, 1..100 = louder. Safe from any task. */
 void ui_set_level(int percent);
 /* Keeps the screen on (or wakes it). Safe from any task except LVGL callbacks. */
