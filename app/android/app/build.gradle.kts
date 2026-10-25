@@ -27,6 +27,33 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                // whisper.cpp for arm64 phones only; other ABIs run without Whisper
+                abiFilters += "arm64-v8a"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // `-PtestBuildType=release` runs the instrumented tests against the R8-minified release build
+    testBuildType = (project.findProperty("testBuildType") as String?) ?: "debug"
+
+    // BuildConfig.DEBUG: recognized text is logged in debug builds only
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // JVM unit tests: android.util.Log and friends return defaults instead of throwing
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     buildTypes {
@@ -34,6 +61,11 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Keep rules for ML Kit's registrars and the Whisper JNI classes
+            proguardFile("proguard-rules.pro")
+            // The instrumented test APK, when built against release (-PtestBuildType=release)
+            testProguardFiles("test-proguard-rules.pro")
+            if (project.findProperty("testBuildType") == "release") proguardFile("release-under-test.pro")
         }
     }
 }
@@ -46,4 +78,17 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation("com.google.mlkit:translate:17.0.3")
+
+    testImplementation("junit:junit:4.13.2")
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
