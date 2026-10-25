@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D0B8C56788CEE6BEF1D52845 /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00B81907C1CAB6783CE0E03 /* Diagnostics.swift */; };
+		D0DC6BB2F511C6D2842EFD2F /* VoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0B191481F1683FE6BA6A2A0 /* VoiceGate.swift */; };
+		D06924635E90C809AF16B330 /* VoiceGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0A1A83283A4BD5FB0237565 /* VoiceGateTests.swift */; };
 		A1B2C3D41F00000100E10001 /* EngineApi.g.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D41F00000100E10002 /* EngineApi.g.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
@@ -43,6 +46,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D00B81907C1CAB6783CE0E03 /* Diagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Diagnostics.swift; sourceTree = "<group>"; };
+		D0B191481F1683FE6BA6A2A0 /* VoiceGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceGate.swift; sourceTree = "<group>"; };
+		D0A1A83283A4BD5FB0237565 /* VoiceGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceGateTests.swift; sourceTree = "<group>"; };
 		A1B2C3D41F00000100E10002 /* EngineApi.g.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineApi.g.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
@@ -78,6 +84,8 @@
 		A1B2C3D41F00000100E10003 /* Native */ = {
 			isa = PBXGroup;
 			children = (
+				D00B81907C1CAB6783CE0E03 /* Diagnostics.swift */,
+				D0B191481F1683FE6BA6A2A0 /* VoiceGate.swift */,
 				A1B2C3D41F00000100E10002 /* EngineApi.g.swift */,
 			);
 			path = Native;
@@ -86,6 +94,7 @@
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
+				D0A1A83283A4BD5FB0237565 /* VoiceGateTests.swift */,
 				331C807B294A618700263BE5 /* RunnerTests.swift */,
 			);
 			path = RunnerTests;
@@ -284,6 +293,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D06924635E90C809AF16B330 /* VoiceGateTests.swift in Sources */,
 				331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -292,6 +302,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0B8C56788CEE6BEF1D52845 /* Diagnostics.swift in Sources */,
+				D0DC6BB2F511C6D2842EFD2F /* VoiceGate.swift in Sources */,
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
