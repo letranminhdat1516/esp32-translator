@@ -28,6 +28,24 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                // whisper.cpp for arm64 phones only; other ABIs run without Whisper
+                abiFilters += "arm64-v8a"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // JVM unit tests: android.util.Log and friends return defaults instead of throwing
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 
     buildTypes {

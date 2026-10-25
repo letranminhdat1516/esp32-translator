@@ -111,7 +111,7 @@ class NativeVoiceEngine(
     private val translator = MlKitTranslator({ context.isOnline() })
     private val speaker = Speaker(context, events)
     private val downloads = Downloads(context, events, translator, recognizers as? SpeechModelDownloader
-        ?: SpeechModelDownloader { throw EngineErrors.downloadFailed("no speech model download on this build") })
+        ?: SpeechModelDownloader { throw EngineErrors.downloadFailed("no speech model download on this phone") })
     private val gate = VoiceGate(log = { Log.i("VoiceGate", it) })
     private val router = AudioRouter(context, events, onRoute = { route ->
         gate.resetWearerLevel()

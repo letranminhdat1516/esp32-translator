@@ -253,6 +253,17 @@ class VoiceGateTest {
     @Test fun partnerStaysOutDuringLongListening15() = partnerStaysOutDuringLongListening(15f)
     @Test fun partnerStaysOutDuringLongListening20() = partnerStaysOutDuringLongListening(20f)
 
+    /** The speech-presence check that keeps non-speech away from Whisper */
+    @Test fun voicedSecondsFindsSpeechNotNoise() {
+        val s = Signal()
+        val speech = VoiceGate.voicedSeconds(s.noise(1.0, -62f) + Signal.voice(2.0, -30f) + s.noise(1.0, -62f), 16_000)
+        assertTrue("speech: $speech", speech >= 1.5)
+        assertEquals(0.0, VoiceGate.voicedSeconds(s.noise(3.0, -45f), 16_000), 0.05)
+        assertEquals(0.0, VoiceGate.voicedSeconds(FloatArray(3 * 16_000), 16_000), 0.0)
+        // Too quiet to count, even if voiced
+        assertEquals(0.0, VoiceGate.voicedSeconds(Signal.voice(2.0, -70f), 16_000), 0.0)
+    }
+
     @Test fun pcm16RoundTripMatchesSwiftScaling() {
         val pcm = VoiceGate.toPcm16(floatArrayOf(0f, 0.5f, -1f, 1.5f, -0.00002f))
         assertEquals(listOf<Short>(0, 16384, -32768, 32767, -1), pcm.toList())

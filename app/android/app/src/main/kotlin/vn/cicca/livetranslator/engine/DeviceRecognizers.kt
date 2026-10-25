@@ -17,7 +17,10 @@ import java.util.Locale
  * The recognizers of this phone (P3): what [capabilities] reports and what a session gets.
  * See [RecognizerChoice] for the rules.
  */
-class DeviceRecognizers(private val context: Context) : RecognizerCatalog {
+class DeviceRecognizers(
+    private val context: Context,
+    private val whisper: WhisperSupport? = DeviceWhisper(context) { context.isOnline() },
+) : RecognizerCatalog, SpeechModelDownloader {
     private val api = Build.VERSION.SDK_INT
     @Volatile private var onDeviceLanguages: Set<String> = emptySet()
 
@@ -25,15 +28,18 @@ class DeviceRecognizers(private val context: Context) : RecognizerCatalog {
         if (api >= RecognizerChoice.FED_AUDIO_API) queryOnDeviceLanguages()
     }
 
-    /** Whisper hooks; null until the Whisper recognizer is available on this build */
-    var whisper: WhisperSupport? = null
-
     fun choice() = RecognizerChoice(
         api = api,
         onDeviceLanguages = onDeviceLanguages,
         onlineAvailable = SpeechRecognizer.isRecognitionAvailable(context),
         whisperAvailable = whisper?.libraryLoaded == true,
     )
+
+    /** The Whisper model is the only speech model the app downloads */
+    override suspend fun download(progress: (Double) -> Unit) {
+        val d = whisper as? SpeechModelDownloader ?: throw EngineErrors.downloadFailed("no Whisper on this phone")
+        d.download(progress)
+    }
 
     override fun kinds(languages: List<String>): Map<String, List<String>> {
         val c = choice()

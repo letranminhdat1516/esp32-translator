@@ -364,30 +364,62 @@ class VoiceGate(
         if (n <= maxLag + 32) return false
         val x = analysisScratch
         analysis.copyInOrder(x)
-        var mean = 0f
-        for (j in 0 until n) mean += x[j]
-        mean /= n
-        for (j in 0 until n) x[j] -= mean
-        var best = 0f
-        for (lag in minLag..min(maxLag, n - 32)) {
-            val len = n - lag
-            var r = 0f
-            var e0 = 0f
-            var e1 = 0f
-            for (j in 0 until len) {
-                val a = x[j]
-                val b = x[j + lag]
-                r += a * b
-                e0 += a * a
-                e1 += b * b
-            }
-            val denom = sqrt(e0 * e1)
-            if (denom > 0) best = max(best, r / denom)
-        }
-        return best >= config.voicing
+        return peakAutocorrelation(x, n, minLag, maxLag) >= config.voicing
     }
 
     companion object {
+        /**
+         * Peak of the normalized autocorrelation of `x[0 until n]` over lags [minLag]…[maxLag] (0…1).
+         * Removes the mean from [x] in place.
+         */
+        fun peakAutocorrelation(x: FloatArray, n: Int, minLag: Int, maxLag: Int): Float {
+            var mean = 0f
+            for (j in 0 until n) mean += x[j]
+            mean /= n
+            for (j in 0 until n) x[j] -= mean
+            var best = 0f
+            for (lag in minLag..min(maxLag, n - 32)) {
+                val len = n - lag
+                var r = 0f
+                var e0 = 0f
+                var e1 = 0f
+                for (j in 0 until len) {
+                    val a = x[j]
+                    val b = x[j + lag]
+                    r += a * b
+                    e0 += a * a
+                    e1 += b * b
+                }
+                val denom = sqrt(e0 * e1)
+                if (denom > 0) best = max(best, r / denom)
+            }
+            return best
+        }
+
+        /**
+         * Seconds of voiced speech in [samples]: 20 ms frames above [minDB] whose pitch analysis (the gate's,
+         * same window and threshold) finds a speech pitch. Used to keep non-speech away from Whisper.
+         */
+        fun voicedSeconds(samples: FloatArray, sampleRate: Int, config: Config = Config(), minDB: Float = config.minDB): Double {
+            val frame = max(1, (config.frame * sampleRate).toInt())
+            val minLag = (sampleRate / config.maxPitchHz).toInt()
+            val maxLag = (sampleRate / config.minPitchHz).toInt()
+            val window = max(frame, 2 * maxLag + frame / 2)
+            val scratch = FloatArray(window)
+            var voiced = 0
+            var end = frame
+            while (end <= samples.size) {
+                val start = max(0, end - window)
+                val n = end - start
+                if (n > maxLag + 32 && levelDB(samples.copyOfRange(end - frame, end)) > minDB) {
+                    samples.copyInto(scratch, 0, start, end)
+                    if (peakAutocorrelation(scratch, n, minLag, maxLag) >= config.voicing) voiced++
+                }
+                end += frame
+            }
+            return voiced * config.frame
+        }
+
         fun levelDB(frame: FloatArray): Float {
             if (frame.isEmpty()) return -100f
             var ms = 0f
