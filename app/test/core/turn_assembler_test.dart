@@ -2,11 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_translator/core/model.dart';
+import 'package:live_translator/core/rule_engine.dart';
 import 'package:live_translator/core/turn_assembler.dart';
 
-/// Stand-in for the Vietnamese loanword fixer (the real one is the rule
-/// engine's recognition rules, covered in rule_engine_test.dart).
-String _fakeFix(String s) => s.replaceAll('giữa lo', 'Zalo');
+/// The Vietnamese loanword fixer: the recognition rules of the bundled pack.
+final _engine = RuleEngine.forPack(
+  LanguagePack.parse(File('assets/languages/vi.json').readAsStringSync()),
+);
+String _fix(String s) => _engine.fixRecognition(s);
 
 DateTime _t0() => DateTime.utc(2026, 1, 1);
 
@@ -32,7 +36,7 @@ List<(double, TranscriptEvent)> recordedEvents(String name) {
 
 /// Lines the "You say" panel shows after replaying events.
 List<String> replay(List<(double, TranscriptEvent)> events) {
-  final assembler = TurnAssembler(fixLoanwords: _fakeFix);
+  final assembler = TurnAssembler(fixLoanwords: _fix);
   final lines = <int, String>{};
   final order = <int>[];
   final t0 = _t0();
@@ -117,7 +121,7 @@ void main() {
   });
 
   test('displayed text has loanwords fixed', () {
-    final a = TurnAssembler(fixLoanwords: _fakeFix);
+    final a = TurnAssembler(fixLoanwords: _fix);
     a.handle(const FinalText('Mình nhắn tin qua giữa lo cho tiện nhé'), _t0());
     expect(a.turn?.text, 'Mình nhắn tin qua Zalo cho tiện nhé');
   });
