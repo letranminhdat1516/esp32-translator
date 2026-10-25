@@ -1,4 +1,4 @@
-// firmware/test/test_ancs.c — build: cc -Wall -Wextra -Werror -I../main -o /tmp/test_ancs test_ancs.c ../main/ancs.c && /tmp/test_ancs
+// firmware/test/test_ancs.c — build: cc -Wall -Wextra -Werror -I../main -o /tmp/test_ancs test_ancs.c ../main/ancs.c ../main/glyphs.c && /tmp/test_ancs
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
