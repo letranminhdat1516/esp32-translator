@@ -41,9 +41,11 @@ final class VoiceEngine {
     private let session = AudioSession()
     private let gate = VoiceGate()
 
-    private var pair: PairMsg?
-    private var theirs: LiveTranscriber?
-    private var mine: LiveTranscriber?
+    /// Both recognizers; serializes start/stop across their awaits
+    private let recognizers: RecognizerPair
+    private var pair: PairMsg? { recognizers.pair }
+    private var theirs: (any Recognizer)? { recognizers.theirs }
+    private var mine: (any Recognizer)? { recognizers.mine }
     private var theirConverter: BufferConverter?
     private var mic: MicSource?
     private var speaker: Speaker?
@@ -53,15 +55,14 @@ final class VoiceEngine {
     /// Finalizes the board phrase once Dart stops feeding audio (the board streams only while it hears speech)
     private var theirPause: DispatchWorkItem?
     private static let theirPauseGap: TimeInterval = 0.25
-    /// The pair's generation, read by the board recognizer's result task
-    private let generation = Generation()
-
     private let capabilityCache = CapabilitiesCache()
     private var downloads: Downloads!
     private static let queryTimeout: TimeInterval = 5
 
     init(events: EventQueue, downloadWork: Downloads.Work = .live) {
         self.events = events
+        // Asked at the start of a fresh start so the prompt comes before the first conversation; micOn checks it
+        recognizers = RecognizerPair(events: events, beforeStart: { _ = await AVAudioApplication.requestRecordPermission() })
         session.onChange = { [weak self] change in self?.sessionChanged(change) }
         downloads = Downloads(events: events, home: { [weak self] in self?.homeLanguage ?? defaultHomeLanguage },
                               work: downloadWork, onDone: { [weak self] in self?.refreshCapabilities() })
@@ -100,92 +101,57 @@ final class VoiceEngine {
     // MARK: Start / stop
 
     /// Builds both recognizers for the pair. Idempotent: the same languages keep running (the generation and
-    /// hints are updated); other languages replace the running pair.
+    /// hints are updated); other languages replace the running pair. A `stop` or a later `start` that comes in
+    /// while this one awaits wins: this one then throws `notReady` and leaves nothing running.
     func start(_ pair: PairMsg, recognizer: String, hints: [String]) async throws {
         guard recognizer == RecognizerKinds.onDevice else {
             throw EngineErrors.notReady("recognizer \(recognizer) is not available on iOS")
         }
-        if let running = self.pair, running.home == pair.home, running.other == pair.other, theirs != nil {
-            self.pair = pair
-            generation.value = pair.generation
-            await theirs?.setHints(hints)
-            return
-        }
-        tearDown()
-        // Asked here so the prompt comes before the first conversation; micOn checks the answer
-        _ = await AVAudioApplication.requestRecordPermission()
-
-        guard let x = await LiveTranscriber.resolve(pair.other) else {
-            throw EngineErrors.notReady("no on-device recognizer for \(pair.other)")
-        }
-        guard let home = await LiveTranscriber.resolve(pair.home) else {
-            throw EngineErrors.notReady("no on-device recognizer for \(pair.home)")
-        }
-        for t in [x, home] {
-            if await t.assetStatus != .installed {
-                throw EngineErrors.notReady("speech model for \(t.locale.identifier) is not installed")
-            }
-        }
-        generation.value = pair.generation
-        let events = self.events
-        let generation = self.generation
-        do {
-            try await x.start { event in
-                if let msg = EngineMapping.theirs(event, generation: generation.value) { events.send(.theirs(msg)) }
-            }
-            try await home.start { event in
-                events.send(.mine(EngineMapping.mine(event, now: Date())))
-            }
-        } catch {
-            await x.stop()
-            await home.stop()
-            throw EngineErrors.notReady("recognizers did not start: \(error.localizedDescription)")
-        }
-        guard let xFormat = x.audioFormat, home.audioFormat != nil else {
-            await x.stop()
-            await home.stop()
-            throw EngineErrors.notReady("no audio format for the speech models")
-        }
-        await x.setHints(hints)
-        self.pair = pair
-        theirs = x
-        mine = home
+        let sameLanguages = self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false
+        if !sameLanguages { tearDown() }
+        guard try await recognizers.start(pair, hints: hints) else { return }
+        // A fresh pair is running. No await from here on, so no stop or start can interleave.
+        guard let x = theirs, let xFormat = x.audioFormat else { return }
         theirConverter = BufferConverter(target: xFormat)
         let speaker = Speaker(language: pair.home)
         speaker.onStart = { [events] id in events.send(.ttsStart(id)) }
         speaker.onEnd = { [events] id in events.send(.ttsEnd(id)) }
-        speaker.warmUp()
         self.speaker = speaker
+        // The session is set up before the synthesizer touches it (as in the Swift app)
         if micWanted {
-            try? micOn(true)
+            do {
+                try micOn(true)
+            } catch {
+                // micOn fell back to idle (silence on); Dart must learn the mic is gone
+                Diag.log("engine: mic not taken back after start: \(error)")
+                events.send(.audioSession(AudioSessionMsg(kind: .interrupted)))
+            }
         } else {
             session.startSilence()
         }
-        Diag.log("engine: running \(x.locale.identifier) (\(x.engine)) / \(home.locale.identifier) (\(home.engine)), voice \(speaker.voiceName)")
+        speaker.warmUp()
+        Diag.log("engine: running \(x.locale.identifier) / \(mine?.locale.identifier ?? "-"), voice \(speaker.voiceName)")
     }
 
-    /// Releases the mic, both recognizers, speech output and the audio session. Idempotent.
+    /// Releases the mic, both recognizers, speech output and the audio session; a start in progress gives up.
+    /// Idempotent.
     func stop() {
         micWanted = false
         tearDown()
+        recognizers.stop()
     }
 
-    /// Stops everything but remembers whether Dart wants the mic (a pair change takes it again)
+    /// Stops what this engine built on top of the recognizers (mic, speech output, session) but remembers
+    /// whether Dart wants the mic (a pair change takes it again). The recognizers themselves are replaced by
+    /// `RecognizerPair.start` or stopped by `stop`.
     private func tearDown() {
         theirPause?.cancel()
         theirPause = nil
         releaseMic()
         speaker?.stop()
         speaker = nil
-        let running = [theirs, mine].compactMap { $0 }
-        theirs = nil
-        mine = nil
         theirConverter = nil
-        if !running.isEmpty || pair != nil {
-            Task { for t in running { await t.stop() } }
-            session.release()
-        }
-        pair = nil
+        if recognizers.isRunning { session.release() }
     }
 
     // MARK: Mic
@@ -346,16 +312,5 @@ final class VoiceEngine {
             events.send(.audioSession(AudioSessionMsg(kind: .interrupted)))
             return false
         }
-    }
-}
-
-/// The current pair generation, written on the main actor and read from the recognizer's result task
-final class Generation: @unchecked Sendable {
-    private let lock = NSLock()
-    private var current: Int64 = 0
-
-    var value: Int64 {
-        get { lock.withLock { current } }
-        set { lock.withLock { current = newValue } }
     }
 }

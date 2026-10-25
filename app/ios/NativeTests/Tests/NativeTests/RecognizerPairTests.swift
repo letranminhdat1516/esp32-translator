@@ -1,0 +1,1 @@
+../../../RunnerTests/RecognizerPairTests.swift
