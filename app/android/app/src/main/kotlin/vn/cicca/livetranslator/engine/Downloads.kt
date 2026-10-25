@@ -70,3 +70,15 @@ fun Context.isOnline(): Boolean {
     val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
+
+/** What `missing(pair)` reports, in the order the readiness view lists it */
+object MissingItems {
+    /**
+     * [translation]: the ML Kit item for the pair, if any; [speechModels]: languages of the pair that need
+     * the Whisper model and do not have it; [vietnameseVoice]: a Vietnamese TTS voice is installed.
+     */
+    fun compute(translation: List<MissingMsg>, speechModels: List<String>, vietnameseVoice: Boolean): List<MissingMsg> =
+        speechModels.map { MissingMsg(MissingKind.SPEECH_MODEL, it) } +
+            translation +
+            (if (vietnameseVoice) emptyList() else listOf(MissingMsg(MissingKind.TTS_VOICE, HOME_LANGUAGE)))
+}
