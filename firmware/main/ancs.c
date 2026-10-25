@@ -1,4 +1,5 @@
 #include "ancs.h"
+#include "glyphs.h"
 
 #include <string.h>
 
@@ -150,15 +151,6 @@ bool ancs_reply_attr(const ancs_reply_t *r, uint8_t id, const uint8_t **value, u
     return false;
 }
 
-/* The code points font_vi_22 / font_vi_36 carry (their -r ranges) */
-static bool glyph_ok(uint32_t c)
-{
-    return (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || c == 0x102 || c == 0x103 || c == 0x110 ||
-           c == 0x111 || c == 0x128 || c == 0x129 || c == 0x168 || c == 0x169 || c == 0x1a0 || c == 0x1a1 ||
-           c == 0x1af || c == 0x1b0 || (c >= 0x1ea0 && c <= 0x1ef9) || c == 0x2013 || c == 0x2014 ||
-           (c >= 0x2018 && c <= 0x201d) || c == 0x2026;
-}
-
 /* One UTF-8 character at s[0..n): its length, or 0 when invalid (bad lead or continuation, truncated, overlong,
  * surrogate, above U+10FFFF) */
 static size_t utf8_next(const uint8_t *s, size_t n, uint32_t *cp)
@@ -221,7 +213,7 @@ size_t ancs_clean_text(const uint8_t *src, size_t len, char *out, size_t out_siz
             space = o > 0;
             continue;
         }
-        if (!glyph_ok(c)) {
+        if (!glyph_ok(c, FONTSET_LATIN_VI | FONTSET_LATIN_EXT_A)) {
             continue;
         }
         size_t need = n + (space ? 1 : 0);

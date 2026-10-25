@@ -2,3 +2,6 @@
 nvs,      data, nvs,     0x9000,  0x6000,
 phy_init, data, phy,     0xf000,  0x1000,
 factory,  app,  factory, 0x10000, 0x600000,
+# Script fonts (CJK, Hangul, Thai) as LVGL binfonts, written by tools/flash_fonts.sh; 64 KB aligned for mmap;
+# ends at 16 MB: flash mapping is 24-bit (32-bit addressing is experimental on quad flash)
+fonts,    data, 0x40,    0x610000, 0x9F0000,

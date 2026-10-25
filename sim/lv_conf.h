@@ -4,7 +4,9 @@
 #define LV_CONF_H
 
 #define LV_COLOR_FORMAT_DEFAULT LV_COLOR_FORMAT_RGB565
-#define LV_MEM_SIZE (1024 * 1024)
+#define LV_MEM_SIZE (24 * 1024 * 1024) /* the script fonts' glyph tables (Hangul alone is ~11k glyphs) */
+#define LV_USE_FS_MEMFS 1
+#define LV_FS_MEMFS_LETTER 'M'
 #define LV_USE_OS LV_OS_NONE
 #define LV_USE_SNAPSHOT 1
 #define LV_FONT_MONTSERRAT_14 1

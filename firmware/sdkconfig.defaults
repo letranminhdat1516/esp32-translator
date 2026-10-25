@@ -43,3 +43,9 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
 CONFIG_BT_CTRL_MODEM_SLEEP=y
 CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1=y
 CONFIG_BT_NIMBLE_NVS_PERSIST=y
+
+# font_store.c loads the script fonts from the mapped 'fonts' partition through LVGL's memory file system
+CONFIG_LV_USE_FS_MEMFS=y
+CONFIG_LV_FS_MEMFS_LETTER=77
+# ...and its glyph tables (a few hundred KB) need more than LVGL's 64 KB builtin pool: lv_malloc = malloc (PSRAM-backed)
+CONFIG_LV_USE_CLIB_MALLOC=y

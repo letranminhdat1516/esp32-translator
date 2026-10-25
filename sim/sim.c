@@ -4,6 +4,8 @@
  *
  *   board-sim                         window; the mouse is the finger, keys below drive the fake iPhone
  *   board-sim --do "a;b;..."          runs the commands first, then stays interactive
+ *   board-sim --fonts firmware/fonts  load the CJK / Hangul / Thai fallback fonts (.bin) from disk, like the
+ *                                     firmware does from its fonts partition
  *   board-sim --headless --do "..."   no window: run the commands (use shot:<file.bmp>) and exit
  *
  * Commands (also what the keys do):
@@ -12,6 +14,7 @@
  *   text:<utf8>              subtitle from the app ("\n" breaks a line)    T (next sample)
  *   status:<utf8>            status line
  *   toast:<utf8>             status line for 2 s
+ *   label:<utf8>             language label after the status ("<status> · <label>"; empty clears)
  *   level:<0..100>           level ring (0 hides it)                       V (fake voice on/off)
  *   lock / unlock / face     PWR x1 / PWR x2 / tap on the lock screen      K / U / F
  *   sleep                    the deep-sleep message
@@ -30,6 +33,9 @@
 #include <SDL2/SDL.h>
 
 #include "app.h"
+#include "board_info.h"
+#include "font_store.h"
+#include "glyphs.h"
 #include "bsp/esp-bsp.h"
 #include "clock.h"
 #include "esp_timer.h"
@@ -264,6 +270,11 @@ static void run(char *cmd)
         ui_show_text(arg);
     } else if (!strcmp(cmd, "status") && arg) {
         ui_show_status(arg);
+    } else if (!strcmp(cmd, "label")) {
+        char label[LABEL_MAX + 1];
+        if (label_normalize(arg ? arg : "", arg ? strlen(arg) : 0, label)) {
+            ui_set_label(label);
+        }
     } else if (!strcmp(cmd, "toast") && arg) {
         ui_toast(arg, 2000);
     } else if (!strcmp(cmd, "level") && arg) {
@@ -383,6 +394,41 @@ static void dummy_flush(lv_display_t *d, const lv_area_t *a, uint8_t *px)
     lv_display_flush_ready(d);
 }
 
+/* The firmware maps the 'fonts' partition; the simulator reads the .bin files of --fonts <dir> (firmware/fonts) */
+static const char *s_fonts_dir;
+
+void font_store_init(void)
+{
+    static const struct {
+        const char *name;
+        uint32_t set;
+    } scripts[] = { { "cjk", FONTSET_CJK }, { "hangul", FONTSET_HANGUL }, { "thai", FONTSET_THAI } };
+    if (!s_fonts_dir) {
+        return;
+    }
+    for (unsigned i = 0; i < sizeof(scripts) / sizeof(scripts[0]); i++) {
+        for (int px = 22; px <= 36; px += 14) {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/%s_%d.bin", s_fonts_dir, scripts[i].name, px);
+            FILE *fp = fopen(path, "rb");
+            if (!fp) {
+                fprintf(stderr, "font_store: %s not found\n", path);
+                continue;
+            }
+            fseek(fp, 0, SEEK_END);
+            long n = ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+            void *buf = malloc((size_t)n);   /* stays valid: the binfont reads glyphs from it on demand */
+            if (!buf || fread(buf, 1, (size_t)n, fp) != (size_t)n ||
+                !font_store_add_buffer(scripts[i].set, px, buf, (uint32_t)n)) {
+                fprintf(stderr, "font_store: %s did not load\n", path);
+            }
+            fclose(fp);
+        }
+    }
+    printf("font sets 0x%x loaded\n", (unsigned)font_store_sets());
+}
+
 int main(int argc, char **argv)
 {
     bool headless = false;
@@ -392,8 +438,10 @@ int main(int argc, char **argv)
             headless = true;
         } else if (!strcmp(argv[i], "--do") && i + 1 < argc) {
             script = argv[++i];
+        } else if (!strcmp(argv[i], "--fonts") && i + 1 < argc) {
+            s_fonts_dir = argv[++i];
         } else {
-            fprintf(stderr, "usage: %s [--headless] [--do \"cmd;cmd;...\"]\n", argv[0]);
+            fprintf(stderr, "usage: %s [--headless] [--fonts <dir>] [--do \"cmd;cmd;...\"]\n", argv[0]);
             return 2;
         }
     }

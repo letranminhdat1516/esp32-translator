@@ -29,8 +29,11 @@ add_executable(board-sim
     ${FW}/ui.c
     ${FW}/lock_ui.c
     ${FW}/modes.c
+    ${FW}/glyphs.c
+    ${FW}/font_store.c
     ${FW}/logo_img.c
     ${FW}/font_vi_22.c
     ${FW}/font_vi_36.c)
 target_include_directories(board-sim PRIVATE stubs ${FW})
+target_compile_definitions(board-sim PRIVATE FONT_STORE_SIM)
 target_link_libraries(board-sim PRIVATE lvgl m)

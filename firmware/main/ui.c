@@ -5,13 +5,17 @@
  *   bottom : round board mic button (mic icon; slashed and dimmed when off)
  *   edge   : level ring, brighter and thicker the louder the speaker
  */
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "bsp/esp-bsp.h"
 #include "esp_timer.h"
 #include "lvgl.h"
 
 #include "app.h"
+#include "font_store.h"
+#include "glyphs.h"
 
 LV_FONT_DECLARE(font_vi_22);
 LV_FONT_DECLARE(font_vi_36);
@@ -22,12 +26,14 @@ LV_FONT_DECLARE(font_vi_36);
 #define COLOR_OUTLINE 0x2a2d33
 #define COLOR_OFF_BG  0x16171a
 
-/* The other person's language, shown while translating (one pair for now) */
-#define THEIR_LANGUAGE "English"
+/* Status while translating; the language label (kind 3) follows it: "Live translation · 日本語" */
+#define LIVE_STATUS "Live translation"
 /* Shown while no iPhone is connected (replaces stale subtitles on a disconnect, cleared on connect) */
 #define WELCOME_TEXT "Hello!\nOpen the iPhone app to connect."
 
 static lv_obj_t *s_status;
+static char s_status_text[96];        /* what the status line says, without the language label */
+static char s_label[LABEL_MAX + 1];   /* the other person's language (kind 3); survives reconnects */
 static lv_obj_t *s_ring;
 static int s_level = -1;
 static lv_obj_t *s_text_box;
@@ -38,6 +44,22 @@ static lv_obj_t *s_mic_cradle;
 static lv_obj_t *s_mic_stem;
 static lv_obj_t *s_mic_slash;
 static bool s_connected;
+
+/* Display lock held. Status line = "<status> · <label>" */
+static void status_set(const char *utf8)
+{
+    size_t n = utf8_cut_len(utf8, strlen(utf8), sizeof(s_status_text) - 1);   /* not through a character */
+    memcpy(s_status_text, utf8, n);
+    s_status_text[n] = '\0';
+    if (s_label[0]) {
+        char line[sizeof(s_status_text) + LABEL_MAX + 8];
+        snprintf(line, sizeof(line), "%s · %s", s_status_text, s_label);
+        lv_label_set_text(s_status, line);
+    } else {
+        lv_label_set_text(s_status, s_status_text);
+    }
+}
+
 
 /* The AMOLED draws power per lit pixel and per brightness step: turn it off when nobody needs it */
 #define SCREEN_OFF_AFTER_MS 30000
@@ -202,7 +224,7 @@ void ui_toast(const char *utf8, uint32_t ms)
     s_manual_off = false;
     ui_mark_activity();
     lock();
-    lv_label_set_text(s_status, utf8);
+    status_set(utf8);
     lv_timer_t *t = lv_timer_create(toast_done_cb, ms, NULL);
     lv_timer_set_repeat_count(t, 1);
     unlock();
@@ -215,7 +237,7 @@ void ui_prepare_power_off(void)
     lv_screen_load(s_translator_scr);   /* the message lives there, whatever mode or lock was shown */
     s_manual_off = false;
     set_screen(true);
-    lv_label_set_text(s_status, "Powering off");
+    status_set("Powering off");
     lv_label_set_text(s_text, "Press the PWR button\nto turn on");
     unlock();
     vTaskDelay(pdMS_TO_TICKS(1500));
@@ -229,7 +251,7 @@ void ui_prepare_sleep(void)
     lock();
     s_shutting_down = true;
     lv_screen_load(s_translator_scr);
-    lv_label_set_text(s_status, "Sleeping");
+    status_set("Sleeping");
     lv_label_set_text(s_text, "Touch the screen\nto wake up");
     unlock();
     vTaskDelay(pdMS_TO_TICKS(2500));
@@ -295,6 +317,7 @@ void ui_init(void)
 {
     s_last_activity_us = esp_timer_get_time();
     lock();
+    font_store_init();   /* script fallbacks of the subtitle fonts, when the fonts partition holds them */
     lv_obj_t *scr = lv_screen_active();
     s_translator_scr = scr;
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -302,12 +325,12 @@ void ui_init(void)
 
     s_status = lv_label_create(scr);
     lv_obj_set_width(s_status, 300);
-    lv_obj_set_style_text_font(s_status, &font_vi_22, 0);
+    lv_obj_set_style_text_font(s_status, font_store_font(22), 0);
     lv_obj_set_style_text_color(s_status, lv_color_hex(COLOR_MUTED), 0);
     lv_obj_set_style_text_align(s_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_MODE_DOTS);
     /* One line: dots only cut a label of fixed height; a wrapped toast would run into the subtitles */
-    lv_obj_set_height(s_status, lv_font_get_line_height(&font_vi_22));
+    lv_obj_set_height(s_status, lv_font_get_line_height(font_store_font(22)));
     lv_obj_align(s_status, LV_ALIGN_TOP_MID, 0, 48);
 
     /* Level ring: tells the speaker the board hears them (and to come closer when it is faint) */
@@ -336,7 +359,7 @@ void ui_init(void)
     s_text = lv_label_create(s_text_box);
     lv_obj_set_width(s_text, lv_pct(100));
     lv_label_set_long_mode(s_text, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_style_text_font(s_text, &font_vi_36, 0);
+    lv_obj_set_style_text_font(s_text, font_store_font(36), 0);
     /* The container gets the theme's dark text colour; force full white on the AMOLED */
     lv_obj_set_style_text_color(s_text, lv_color_white(), 0);
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
@@ -356,7 +379,7 @@ void ui_init(void)
     build_mic_icon(s_btn_mic);
     style_mic(false);
 
-    lv_label_set_text(s_status, "Waiting for iPhone…");
+    status_set("Waiting for iPhone…");
     lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
@@ -365,11 +388,11 @@ void ui_init(void)
 static void refresh_status(rec_lang_t lang)
 {
     if (!s_connected) {
-        lv_label_set_text(s_status, "Waiting for iPhone…");
+        status_set("Waiting for iPhone…");
     } else if (lang != REC_NONE) {
-        lv_label_set_text(s_status, THEIR_LANGUAGE);
+        status_set(LIVE_STATUS);
     } else {
-        lv_label_set_text(s_status, "Mic off");
+        status_set("Mic off");
     }
 }
 
@@ -408,6 +431,14 @@ void ui_show_text(const char *utf8)
 void ui_show_status(const char *utf8)
 {
     lock();
-    lv_label_set_text(s_status, utf8);
+    status_set(utf8);
+    unlock();
+}
+
+void ui_set_label(const char *utf8)
+{
+    lock();
+    snprintf(s_label, sizeof(s_label), "%s", utf8);
+    status_set(s_status_text);
     unlock();
 }

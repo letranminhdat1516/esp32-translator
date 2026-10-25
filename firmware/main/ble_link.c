@@ -5,7 +5,8 @@
  *   audio   ...0002  notify  : [seq u16][predictor i16][index u8][ADPCM...] (16 kHz mono)
  *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
  *                              kind 0 = subtitle (large), kind 1 = status line,
- *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect)
+ *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect),
+ *                              kind 3 = language label, <= 32 bytes UTF-8, shown as "<status> · <label>" ("" clears)
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
@@ -31,6 +32,8 @@
 void ble_store_config_init(void);
 
 #include "app.h"
+#include "font_store.h"
+#include "glyphs.h"
 #include "claude_proto.h"
 #include "claude_link.h"
 #include "ancs.h"
@@ -66,6 +69,7 @@ static const ble_uuid128_t s_svc_uuid = SVC_UUID(0x01);
 static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
+static const ble_uuid128_t s_info_uuid = SVC_UUID(0x05);   /* read: [BOARD_INFO_VERSION][font_sets u32 LE] */
 
 /* Claude companion service. Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr, from the Mac or
  * the iPhone relay, after its hello (kind 9); before that only the hello is taken.
@@ -82,6 +86,7 @@ static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 #define TEXT_KIND_MAIN   0
 #define TEXT_KIND_STATUS 1
 #define TEXT_KIND_TIME   2
+#define TEXT_KIND_LABEL  3
 #define TEXT_MAX         1024
 /* One Claude request write: the Mac chunks to ATT MTU - 3, but a long (prepared) write can carry up to 512 */
 #define CLAUDE_WRITE_MAX 512
@@ -89,6 +94,7 @@ static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
 static uint16_t s_ctrl_handle;
+static uint16_t s_info_handle;
 
 static uint16_t s_claude_req_handle;
 static uint16_t s_claude_ans_handle;
@@ -417,6 +423,13 @@ static void handle_text_write(const uint8_t *data, uint16_t len)
             clock_sync_text(s_text_buf);
         } else if (kind == TEXT_KIND_STATUS) {
             ui_show_status(s_text_buf);
+        } else if (kind == TEXT_KIND_LABEL) {
+            char label[LABEL_MAX + 1];
+            if (label_normalize(s_text_buf, s_text_len, label)) {
+                ui_set_label(label);
+            } else {
+                ESP_LOGW(TAG, "language label is not valid UTF-8, ignored");
+            }
         } else {
             ui_show_text(s_text_buf);
         }
@@ -430,6 +443,12 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
     uint8_t buf[256];
     uint16_t len = 0;
 
+    if (attr_handle == s_info_handle && ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        uint32_t sets = BOARD_BASE_FONT_SETS | font_store_sets();
+        uint8_t info[5] = { BOARD_INFO_VERSION, (uint8_t)sets, (uint8_t)(sets >> 8), (uint8_t)(sets >> 16),
+                            (uint8_t)(sets >> 24) };
+        return os_mbuf_append(ctxt->om, info, sizeof(info)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
     if (attr_handle == s_ctrl_handle) {
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
             uint8_t state = app_get_recording();
@@ -517,6 +536,12 @@ static const struct ble_gatt_svc_def s_services[] = {
                 .access_cb = chr_access,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_ctrl_handle,
+            },
+            {
+                .uuid = &s_info_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_info_handle,
             },
             { 0 },
         },
@@ -789,14 +814,15 @@ static void hash_bytes(uint32_t *h, const void *data, size_t len)
 /* Bonded peers cache this GATT table. When a firmware update changes it (Phase 3 added the voice characteristic),
  * mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects, and the peer
  * rediscovers. Without it macOS keeps the old table and never sees the new characteristic.
- * The range starts at the Claude service: the translator service before it keeps its handles, and the iPhone app
- * does not handle a services change (its characteristic references would go stale). The Mac daemon rediscovers.
+ * The range starts at the translator service: its board info characteristic (...0005) sits before the Claude
+ * service and shifts the Claude handles, so a peer with the old cache must rediscover both.
  * Known limits: the hash is stored right away, before any peer got the indication (NimBLE persists the pending
  * indication per bonded peer, but a peer that bonds later never needs it); a change to the translator service or
  * the GAP / GATT services would need its own range (they are not hashed here). */
 static void announce_gatt_changes(void)
 {
     uint32_t hash = 2166136261u;
+    hash_bytes(&hash, "svcchg:translator", 17);   /* the announced range changed: re-announce once */
     for (const struct ble_gatt_svc_def *svc = s_services; svc->type != 0; svc++) {
         hash_bytes(&hash, svc->uuid, sizeof(ble_uuid128_t));
         for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr->uuid != NULL; chr++) {
@@ -811,14 +837,14 @@ static void announce_gatt_changes(void)
     uint32_t stored = 0;
     if (nvs_get_u32(nvs, "gatt_hash", &stored) != ESP_OK || stored != hash) {
         uint16_t start;
-        if (ble_gatts_find_svc(&s_claude_svc_uuid.u, &start) == 0) {
+        if (ble_gatts_find_svc(&s_svc_uuid.u, &start) == 0) {
             ESP_LOGI(TAG, "GATT table changed (%08lx -> %08lx): Service Changed 0x%04x..0xffff for bonded peers",
                      (unsigned long)stored, (unsigned long)hash, start);
             ble_svc_gatt_changed(start, 0xffff);
             nvs_set_u32(nvs, "gatt_hash", hash);
             nvs_commit(nvs);
         } else {
-            ESP_LOGW(TAG, "GATT table changed but the Claude service was not found: no Service Changed sent");
+            ESP_LOGW(TAG, "GATT table changed but the translator service was not found: no Service Changed sent");
         }
     }
     nvs_close(nvs);
