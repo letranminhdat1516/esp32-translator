@@ -65,6 +65,23 @@ class MlKitTranslatorTest {
         }
     }
 
+    /** missing() is a synchronous pigeon call on the main thread: the ML Kit query must not deadlock there */
+    @Test fun missingAnswersOnTheMainThread() {
+        val translator = MlKitTranslator({ context.isOnline() })
+        // The answer the background query gives (off the main thread, where awaiting works)
+        val expected = runBlocking { TranslationModels().missing(home, other, translator.downloaded()) }
+        var result: List<MissingMsg>? = null
+        var ms = 0L
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val t0 = android.os.SystemClock.elapsedRealtime()
+            result = translator.missing(home, other)
+            ms = android.os.SystemClock.elapsedRealtime() - t0
+        }
+        Log.i(TAG, "missing() on main: $result in $ms ms")
+        assertTrue("took $ms ms", ms < 200)
+        assertEquals(expected, result)
+    }
+
     @Test fun downloadWithoutNetworkFailsInsteadOfWaiting() = runBlocking {
         val translator = MlKitTranslator(isOnline = { false })
         val absent = listOf("is", "mt", "cy", "ga").first { it !in translator.downloaded() }

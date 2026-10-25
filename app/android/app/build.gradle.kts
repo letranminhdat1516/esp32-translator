@@ -43,6 +43,11 @@ android {
         }
     }
 
+    // BuildConfig.DEBUG: recognized text is logged in debug builds only
+    buildFeatures {
+        buildConfig = true
+    }
+
     // JVM unit tests: android.util.Log and friends return defaults instead of throwing
     testOptions {
         unitTests.isReturnDefaultValues = true

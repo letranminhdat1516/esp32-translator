@@ -3,6 +3,7 @@ package vn.cicca.livetranslator.engine
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import vn.cicca.livetranslator.BuildConfig
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -69,10 +70,16 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
         val segments = WhisperNative.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
         val seconds = (SystemClock.elapsedRealtime() - started) / 1000.0
         val t = Transcript(HallucinationFilter.filter(segments), segments, audio, seconds)
+        // What people said stays out of release logs: metrics only, the text in debug builds
+        val outcome = when {
+            t.text == null -> "dropped"
+            BuildConfig.DEBUG -> "kept \"${t.text}\""
+            else -> "kept"
+        }
         Log.i(
             TAG,
-            "whisper $language: %.1f s audio in %.2f s, real-time factor %.2f, %d segment(s) → %s".format(
-                audio, seconds, t.rtf, segments.size, t.text?.let { "\"$it\"" } ?: "(dropped)",
+            "whisper $language: %.1f s audio in %.2f s, real-time factor %.2f, %d segment(s), %s".format(
+                audio, seconds, t.rtf, segments.size, outcome,
             ),
         )
         return t
