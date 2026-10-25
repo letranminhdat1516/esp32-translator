@@ -68,6 +68,7 @@ static const ble_uuid128_t s_svc_uuid = SVC_UUID(0x01);
 static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
+static const ble_uuid128_t s_info_uuid = SVC_UUID(0x05);   /* read: [BOARD_INFO_VERSION][font_sets u32 LE] */
 
 /* Claude companion service. Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr, from the Mac or
  * the iPhone relay, after its hello (kind 9); before that only the hello is taken.
@@ -92,6 +93,7 @@ static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
 static uint16_t s_ctrl_handle;
+static uint16_t s_info_handle;
 
 static uint16_t s_claude_req_handle;
 static uint16_t s_claude_ans_handle;
@@ -440,6 +442,12 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
     uint8_t buf[256];
     uint16_t len = 0;
 
+    if (attr_handle == s_info_handle && ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        uint32_t sets = BOARD_BASE_FONT_SETS;
+        uint8_t info[5] = { BOARD_INFO_VERSION, (uint8_t)sets, (uint8_t)(sets >> 8), (uint8_t)(sets >> 16),
+                            (uint8_t)(sets >> 24) };
+        return os_mbuf_append(ctxt->om, info, sizeof(info)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
     if (attr_handle == s_ctrl_handle) {
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
             uint8_t state = app_get_recording();
@@ -527,6 +535,12 @@ static const struct ble_gatt_svc_def s_services[] = {
                 .access_cb = chr_access,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &s_ctrl_handle,
+            },
+            {
+                .uuid = &s_info_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_info_handle,
             },
             { 0 },
         },
