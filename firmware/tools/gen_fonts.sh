@@ -131,6 +131,7 @@ PY
   done
 
   pack_image
+  python3 "$HERE/gen_glyph_sets.py"   # app/assets/board_glyphs/*.txt, the exact glyphs of the .bin fonts
 }
 
 case "$MODE" in

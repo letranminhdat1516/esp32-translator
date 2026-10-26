@@ -1,8 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:live_translator/core/board_glyphs.dart';
 import 'package:live_translator/core/board_text.dart';
 import 'package:live_translator/core/model.dart';
 
-const text = BoardText();
+String _asset(String name) => File('assets/board_glyphs/$name.txt').readAsStringSync();
+
+/// The committed lists, as the app loads them.
+final glyphs = BoardGlyphSets.parse(cjk: _asset('cjk'), hangul: _asset('hangul'), thai: _asset('thai'));
+final text = BoardText(glyphs);
 const vi = FontSets.latinVI;
 final viExt = FontSets.latinVI | FontSets.latinExtA;
 
@@ -43,18 +50,76 @@ void main() {
       ]);
     });
 
-    test('script sets add their blocks only when their bit is set', () {
-      final cjk = text.ranges(vi | FontSets.cjk);
-      expect(cjk, containsAll([(0x3000, 0x303f), (0x3040, 0x30ff), (0x4e00, 0x9fff), (0xff00, 0xffef)]));
-      final hangul = text.ranges(vi | FontSets.hangul);
-      expect(hangul, containsAll([(0x1100, 0x11ff), (0x3130, 0x318f), (0xac00, 0xd7a3)]));
-      final thai = text.ranges(vi | FontSets.thai);
-      expect(thai, contains((0x0e00, 0x0e7f)));
+    test('script sets add their exact glyphs only when their bit is set', () {
+      expect(text.isDrawable(0x4e2d, vi | FontSets.cjk), isTrue); // 中
+      expect(text.isDrawable(0x3042, vi | FontSets.cjk), isTrue); // あ
+      expect(text.isDrawable(0xac00, vi | FontSets.hangul), isTrue); // 가
+      expect(text.isDrawable(0x0e01, vi | FontSets.thai), isTrue); // ก
       // and not otherwise
       expect(text.ranges(viExt).any((r) => r.$1 >= 0x3000), isFalse);
-      expect(text.ranges(vi | FontSets.cjk).any((r) => r.$1 >= 0xac00 && r.$1 <= 0xd7a3), isFalse);
-      expect(text.ranges(vi | FontSets.hangul).any((r) => r.$1 >= 0x4e00 && r.$1 <= 0x9fff), isFalse);
-      expect(text.ranges(vi | FontSets.thai).any((r) => r.$1 == 0x1100), isFalse);
+      expect(text.isDrawable(0xac00, vi | FontSets.cjk), isFalse);
+      expect(text.isDrawable(0x4e2d, vi | FontSets.hangul), isFalse);
+      expect(text.isDrawable(0x0e01, vi | FontSets.hangul), isFalse);
+    });
+
+    test('the fonts are subsets: code points inside the old blocks but not in the font are not drawable', () {
+      expect(text.isDrawable(0x4e02, vi | FontSets.cjk), isFalse); // rare Han, in the block, not in the font
+      expect(text.isDrawable(0x3040, vi | FontSets.cjk), isFalse); // unassigned
+      expect(text.isDrawable(0xd7a3, vi | FontSets.hangul), isFalse); // last syllable, not in KS X 1001
+      expect(text.isDrawable(0x1100, vi | FontSets.hangul), isFalse); // conjoining jamo
+      expect(text.isDrawable(0x0e3b, vi | FontSets.thai), isFalse); // unassigned
+      expect(text.isDrawable(0x0e5c, vi | FontSets.thai), isFalse);
+    });
+
+    test('the lists are injectable', () {
+      final small = BoardText(BoardGlyphSets(cjk: [(0x4e00, 0x4e01)], thai: [(0x0e01, 0x0e01)]));
+      expect(small.ranges(vi | FontSets.cjk).last, (0x4e00, 0x4e01));
+      expect(small.isDrawable(0x4e01, vi | FontSets.cjk), isTrue);
+      expect(small.isDrawable(0x4e2d, vi | FontSets.cjk), isFalse);
+      expect(small.isDrawable(0x0e02, vi | FontSets.thai), isFalse);
+      expect(small.isDrawable(0xac00, vi | FontSets.hangul), isFalse); // empty list
+    });
+
+    test('parseRanges reads single points and ranges and rejects garbage', () {
+      expect(BoardGlyphSets.parseRanges('0E01-0E3A\n0E3F\n\n# note\n'), [(0xe01, 0xe3a), (0xe3f, 0xe3f)]);
+      expect(() => BoardGlyphSets.parseRanges('xyz'), throwsFormatException);
+      expect(() => BoardGlyphSets.parseRanges('0E3A-0E01'), throwsFormatException);
+    });
+
+    test('the Latin/Vietnamese ranges equal the table in firmware/main/glyphs.c', () {
+      final c = File('../firmware/main/glyphs.c').readAsStringSync();
+      final table = c.split('/* BEGIN GENERATED').last.split('/* END GENERATED */').first;
+      final row = RegExp(r'\{\s*0x([0-9A-Fa-f]+),\s*0x([0-9A-Fa-f]+),\s*([A-Z_| ]+?)\s*\}');
+      final latinVI = <(int, int)>[];
+      final latinExt = <(int, int)>[];
+      for (final m in row.allMatches(table)) {
+        final r = (int.parse(m[1]!, radix: 16), int.parse(m[2]!, radix: 16));
+        final sets = m[3]!.split('|').map((e) => e.trim()).toSet();
+        expect(
+          sets.difference({'FONTSET_LATIN_VI', 'FONTSET_LATIN_EXT_A'}),
+          isEmpty,
+          reason: 'glyphs.c lists a non-Latin set: ${m[0]}',
+        );
+        if (sets.contains('FONTSET_LATIN_VI')) latinVI.add(r);
+        if (sets.contains('FONTSET_LATIN_EXT_A')) latinExt.add(r);
+      }
+      expect(latinVI, isNotEmpty);
+      // Same coverage, whatever the list is split into.
+      bool cInSets(int cp, FontSets sets) {
+        final wanted = [
+          if (sets.contains(FontSets.latinVI)) ...latinVI,
+          if (sets.contains(FontSets.latinExtA)) ...latinExt,
+        ];
+        return wanted.any((r) => cp >= r.$1 && cp <= r.$2);
+      }
+
+      for (final sets in [vi, viExt]) {
+        for (var cp = 0; cp < 0x3000; cp++) {
+          final dart = text.isDrawable(cp, sets);
+          final c = cInSets(cp, sets);
+          if (dart != c) fail('U+${cp.toRadixString(16)} differs for $sets: dart=$dart c=$c');
+        }
+      }
     });
 
     test('a board that reports nothing is treated as latinVI', () {
@@ -169,6 +234,11 @@ void main() {
       const s = '東京に行く。こんにちは、ラーメン';
       expect(enc(s, vi | FontSets.cjk), s);
     });
+
+    test('a character the cjk font lacks takes the fallback path', () {
+      expect(enc('中\u4e02文', vi | FontSets.cjk), '中·文');
+      expect(enc('\u4e02', vi | FontSets.cjk), '·');
+    });
   });
 
   group('scripts with no table', () {
@@ -182,6 +252,10 @@ void main() {
       expect(enc('สวัสดี ครับ'), '· ·');
       expect(enc('안녕 세계', vi | FontSets.hangul), '안녕 세계');
       expect(enc('สวัสดี', vi | FontSets.thai), 'สวัสดี');
+    });
+
+    test('a Hangul syllable outside KS X 1001 gets a dot', () {
+      expect(enc('안\ud7a3녕', vi | FontSets.hangul), '안·녕');
     });
 
     test('the bit of another script does not help', () {
