@@ -67,6 +67,7 @@ flutter:
 
   assets:
     - assets/languages/
+    - assets/board_glyphs/
 
   fonts:
     - family: BeVietnamPro

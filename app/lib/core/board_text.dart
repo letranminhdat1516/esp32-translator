@@ -1,5 +1,6 @@
 import 'package:unorm_dart/unorm_dart.dart' as unorm;
 
+import 'board_glyphs.dart';
 import 'model.dart';
 import 'translit.dart';
 
@@ -19,8 +20,6 @@ import 'translit.dart';
 /// - The result is never empty for non-blank input: when nothing is left it
 ///   is `·`. Blank input stays blank (there is nothing to show).
 class BoardText {
-  const BoardText();
-
   // The canonical ranges (progress.md ruling). latinVI is the firmware's
   // `-r` list; latinExtA adds U+0100-U+017F, which contains the four single
   // Vietnamese letter pairs that latinVI lists on their own.
@@ -39,51 +38,61 @@ class BoardText {
     (0x2026, 0x2026),
   ];
   static const List<(int, int)> _latinExtA = [(0x100, 0x17f)];
-  static const List<(int, int)> _cjk = [
-    (0x3000, 0x303f),
-    (0x3040, 0x30ff),
-    (0x4e00, 0x9fff),
-    (0xff00, 0xffef),
-  ];
-  static const List<(int, int)> _hangul = [
-    (0x1100, 0x11ff),
-    (0x3130, 0x318f),
-    (0xac00, 0xd7a3),
-  ];
-  static const List<(int, int)> _thai = [(0x0e00, 0x0e7f)];
-
   static const String _dot = '·';
 
-  static final Map<int, List<(int, int)>> _cache = {};
+  /// [glyphs] are the exact code points of the CJK, Hangul and Thai fonts
+  /// (subsets, not whole blocks). Null means [BoardGlyphSets.shared], loaded
+  /// from the app assets; it is only read for a board with one of those fonts.
+  const BoardText([this.glyphs]);
+
+  final BoardGlyphSets? glyphs;
+
+  // Merged ranges per glyph lists and font bits; the const constructor
+  // leaves no room for a field.
+  static final Expando<Map<int, List<(int, int)>>> _cache = Expando();
+  static final Object _noGlyphs = Object();
 
   /// The code point ranges the board can draw with [sets], sorted, ranges
   /// that overlap merged. Latin Basic and the Vietnamese letters are always
-  /// included: a board that reports no Latin bit is treated as latinVI.
-  List<(int, int)> ranges(FontSets sets) => _cache.putIfAbsent(sets.value, () {
-    final all = <(int, int)>[
-      ..._latinVI,
-      if (sets.contains(FontSets.latinExtA)) ..._latinExtA,
-      if (sets.contains(FontSets.cjk)) ..._cjk,
-      if (sets.contains(FontSets.hangul)) ..._hangul,
-      if (sets.contains(FontSets.thai)) ..._thai,
-    ]..sort((a, b) => a.$1.compareTo(b.$1));
-    final merged = <(int, int)>[];
-    for (final r in all) {
-      if (merged.isNotEmpty && r.$1 <= merged.last.$2) {
-        final last = merged.removeLast();
-        merged.add((last.$1, r.$2 > last.$2 ? r.$2 : last.$2));
-      } else {
-        merged.add(r);
+  /// included: a board that reports no Latin bit is treated as latinVI. The
+  /// CJK, Hangul and Thai fonts are subsets: only their listed code points
+  /// are included.
+  List<(int, int)> ranges(FontSets sets) {
+    final extra = FontSets.cjk | FontSets.hangul | FontSets.thai;
+    final source = (sets.value & extra.value) != 0 ? (glyphs ?? BoardGlyphSets.shared) : null;
+    final cache = _cache[source ?? _noGlyphs] ??= {};
+    return cache.putIfAbsent(sets.value, () {
+      final all = <(int, int)>[
+        ..._latinVI,
+        if (sets.contains(FontSets.latinExtA)) ..._latinExtA,
+        ...?source?.rangesFor(sets),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      final merged = <(int, int)>[];
+      for (final r in all) {
+        if (merged.isNotEmpty && r.$1 <= merged.last.$2) {
+          final last = merged.removeLast();
+          merged.add((last.$1, r.$2 > last.$2 ? r.$2 : last.$2));
+        } else {
+          merged.add(r);
+        }
       }
-    }
-    return List.unmodifiable(merged);
-  });
+      return List.unmodifiable(merged);
+    });
+  }
 
   /// True when the board can draw [codePoint] with [sets].
   bool isDrawable(int codePoint, FontSets sets) {
-    for (final (lo, hi) in ranges(sets)) {
-      if (codePoint < lo) return false;
-      if (codePoint <= hi) return true;
+    final r = ranges(sets);
+    var lo = 0, hi = r.length - 1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (codePoint < r[mid].$1) {
+        hi = mid - 1;
+      } else if (codePoint > r[mid].$2) {
+        lo = mid + 1;
+      } else {
+        return true;
+      }
     }
     return false;
   }
