@@ -15,6 +15,7 @@ class BleBoardLink implements BoardLink {
     this._adapter, {
     DateTime Function()? now,
     this.retryDelay = const Duration(milliseconds: 500),
+    this.maxRetryDelay = const Duration(seconds: 10),
     this.keepaliveInterval = const Duration(seconds: 20),
   }) : _now = now ?? DateTime.now {
     _powerSub = _adapter.powered.listen(_onPower);
@@ -29,6 +30,9 @@ class BleBoardLink implements BoardLink {
   /// Pause before rescanning after a drop or a failed connect. Swift rescans
   /// at once; the pause only keeps a failing connect from spinning.
   final Duration retryDelay;
+
+  /// Ceiling of the backoff: [retryDelay] doubles per consecutive failure.
+  final Duration maxRetryDelay;
   final Duration keepaliveInterval;
 
   final _state = StreamController<BoardState>.broadcast();
@@ -38,12 +42,16 @@ class BleBoardLink implements BoardLink {
   StreamSubscription<bool>? _powerSub;
   StreamSubscription<BleDevice>? _scanSub;
   StreamSubscription<bool>? _connSub;
+  StreamSubscription<void>? _resetSub;
   final _notifySubs = <StreamSubscription<Uint8List>>[];
   Timer? _retry;
   Timer? _keepalive;
 
   bool _powered = false;
   bool _disposed = false;
+
+  /// Consecutive failed attempts since the last time the link was ready.
+  int _failures = 0;
 
   /// Bumped whenever the current attempt is abandoned; stale async steps stop.
   int _gen = 0;
@@ -92,6 +100,9 @@ class BleBoardLink implements BoardLink {
   /// subscription).
   void _abandon() {
     _gen++;
+    _flushing = null;
+    unawaited(_resetSub?.cancel());
+    _resetSub = null;
     _retry?.cancel();
     _retry = null;
     _keepalive?.cancel();
@@ -116,7 +127,13 @@ class BleBoardLink implements BoardLink {
   void _scheduleRetry() {
     if (_disposed || !_powered) return;
     _retry?.cancel();
-    _retry = Timer(retryDelay, () {
+    var delay = retryDelay;
+    for (var i = 0; i < _failures && delay < maxRetryDelay; i++) {
+      delay *= 2;
+    }
+    if (delay > maxRetryDelay) delay = maxRetryDelay;
+    _failures++;
+    _retry = Timer(delay, () {
       if (!_disposed && _powered) unawaited(_startScan());
     });
   }
@@ -157,7 +174,8 @@ class BleBoardLink implements BoardLink {
     // is the connect itself; a `false` after it is a drop.
     var wasUp = false;
     _connSub = dev.connected.listen((up) {
-      if (gen != _gen) return;
+      // Not `gen`: a services reset bumps it but the connection lives on.
+      if (!identical(dev, _device)) return;
       if (up) {
         wasUp = true;
       } else if (wasUp) {
@@ -167,9 +185,38 @@ class BleBoardLink implements BoardLink {
     try {
       await dev.connect();
       if (gen != _gen) return;
-      final chars = await dev.discover(boardServiceUuid);
-      if (gen != _gen) return;
-      await _setUp(dev, chars, gen);
+      _resetSub = dev.servicesReset.listen((_) => _onServicesReset(dev));
+      await _discoverAndSetUp(dev, gen);
+    } catch (_) {
+      if (gen == _gen) _onDrop();
+    }
+  }
+
+  Future<void> _discoverAndSetUp(BleDevice dev, int gen) async {
+    final chars = await dev.discover(boardServiceUuid);
+    if (gen != _gen) return;
+    await _setUp(dev, chars, gen);
+  }
+
+  /// The board changed its GATT table: the characteristics we hold are dead.
+  /// Redo discovery and setup on the same connection (time, label, mic).
+  Future<void> _onServicesReset(BleDevice dev) async {
+    if (_disposed || !identical(dev, _device)) return;
+    final gen = ++_gen;
+    _keepalive?.cancel();
+    _keepalive = null;
+    for (final s in _notifySubs) {
+      unawaited(s.cancel());
+    }
+    _notifySubs.clear();
+    _pending.clear();
+    _flushing = null;
+    _textChar = null;
+    _controlChar = null;
+    _ready = false;
+    _setState(BoardState.connecting);
+    try {
+      await _discoverAndSetUp(dev, gen);
     } catch (_) {
       if (gen == _gen) _onDrop();
     }
@@ -252,6 +299,7 @@ class BleBoardLink implements BoardLink {
           .catchError((_) {});
     });
     _ready = true;
+    _failures = 0;
     _setState(BoardState.ready);
   }
 
@@ -283,7 +331,8 @@ class BleBoardLink implements BoardLink {
     } catch (_) {
       _pending.clear();
     } finally {
-      _flushing = null;
+      // A flush left over from an abandoned link must not clear a newer one.
+      if (gen == _gen) _flushing = null;
     }
   }();
 

@@ -59,7 +59,13 @@ class FakeDevice implements BleDevice {
   final writes = <Write>[];
   final _conn = StreamController<bool>.broadcast();
   int connectCalls = 0;
+  int discoverCalls = 0;
   bool failNextConnect = false;
+
+  /// While > 0, discovery returns no characteristics (and counts down).
+  int incompleteDiscoveries = 0;
+  final _reset = StreamController<void>.broadcast();
+  void fireServicesReset() => _reset.add(null);
 
   FakeChar get text => chars[boardTextUuid.toLowerCase()]!;
   FakeChar get audio => chars[boardAudioUuid.toLowerCase()]!;
@@ -91,7 +97,17 @@ class FakeDevice implements BleDevice {
   @override
   Future<void> disconnect() async {}
   @override
-  Future<Map<String, BleCharacteristic>> discover(String uuid) async => chars;
+  Future<Map<String, BleCharacteristic>> discover(String uuid) async {
+    discoverCalls++;
+    if (incompleteDiscoveries > 0) {
+      incompleteDiscoveries--;
+      return {};
+    }
+    return chars;
+  }
+
+  @override
+  Stream<void> get servicesReset => _reset.stream;
 }
 
 class FakeAdapter implements BleAdapter {
@@ -290,28 +306,31 @@ void main() {
     expect(dev.controlWrites.every((w) => w.withResponse), isTrue);
   });
 
-  test('drop: reconnects, resends time and label, next subtitle goes out', () async {
-    final dev = FakeDevice(maxWrite: 100, info: infoBytes(1, 0x3));
-    await start(dev);
-    await link.sendText('Chủ tịch', TextKind.label);
-    dev.writes.clear();
-    states.clear();
+  test(
+    'drop: reconnects, resends time and label, next subtitle goes out',
+    () async {
+      final dev = FakeDevice(maxWrite: 100, info: infoBytes(1, 0x3));
+      await start(dev);
+      await link.sendText('Chủ tịch', TextKind.label);
+      dev.writes.clear();
+      states.clear();
 
-    dev.drop();
-    await until(() => states.isNotEmpty && states.last == BoardState.ready);
-    expect(states.first, BoardState.scanning);
-    expect(dev.connectCalls, 2);
+      dev.drop();
+      await until(() => states.isNotEmpty && states.last == BoardState.ready);
+      expect(states.first, BoardState.scanning);
+      expect(dev.connectCalls, 2);
 
-    expect(dev.textWrites.map((w) => w.data[1]).toList(), [2, 3]);
-    expect(dev.textWrites.every((w) => w.withResponse), isTrue);
-    expect(payloadOf(dev.textWrites[1]), 'Chủ tịch');
+      expect(dev.textWrites.map((w) => w.data[1]).toList(), [2, 3]);
+      expect(dev.textWrites.every((w) => w.withResponse), isTrue);
+      expect(payloadOf(dev.textWrites[1]), 'Chủ tịch');
 
-    dev.writes.clear();
-    await link.sendText('xin chào', TextKind.subtitle);
-    final w = dev.textWrites.single;
-    expect(w.data[1], 0);
-    expect(payloadOf(w), 'xin chào');
-  });
+      dev.writes.clear();
+      await link.sendText('xin chào', TextKind.subtitle);
+      final w = dev.textWrites.single;
+      expect(w.data[1], 0);
+      expect(payloadOf(w), 'xin chào');
+    },
+  );
 
   test('drop on old firmware resends time but no label', () async {
     final dev = FakeDevice();
@@ -371,6 +390,92 @@ void main() {
         [0xFF],
         [0xFF],
       ]);
+      link.dispose();
+    });
+  });
+
+  test(
+    'services reset: rediscovers, resubscribes, resends time and label',
+    () async {
+      final dev = FakeDevice(maxWrite: 100, info: infoBytes(1, 0x3));
+      await start(dev);
+      await link.sendText('Chủ tịch', TextKind.label);
+      dev.writes.clear();
+      final audio = <Uint8List>[];
+      link.audio.listen(audio.add);
+      states.clear();
+
+      dev.fireServicesReset();
+      await until(() => states.isNotEmpty && states.last == BoardState.ready);
+      expect(dev.discoverCalls, 2);
+      expect(dev.connectCalls, 1);
+      expect(dev.textWrites.map((w) => w.data[1]).toList(), [2, 3]);
+      expect(payloadOf(dev.textWrites[1]), 'Chủ tịch');
+      expect(dev.controlWrites.map((w) => w.data.toList()), [
+        [1],
+      ]);
+
+      // old subscriptions are gone: one notification yields one event
+      dev.audio.notify.add(Uint8List.fromList([5]));
+      await settle();
+      expect(audio.length, 1);
+
+      dev.writes.clear();
+      await link.sendText('xin chào', TextKind.subtitle);
+      expect(payloadOf(dev.textWrites.single), 'xin chào');
+    },
+  );
+
+  test(
+    'a stale flush from before a reconnect does not strand the next text',
+    () async {
+      final dev = FakeDevice(maxWrite: 20);
+      await start(dev);
+      final gate = dev.text.gate = Completer<void>();
+      unawaited(link.sendText('a' * 60, TextKind.subtitle));
+      await settle();
+      states.clear();
+      dev.drop();
+      dev.text.gate = null; // the old write stays stuck on its own gate
+      await until(() => states.isNotEmpty && states.last == BoardState.ready);
+      dev.writes.clear();
+      await link
+          .sendText('xin chào', TextKind.subtitle)
+          .timeout(const Duration(seconds: 1));
+      expect(payloadOf(dev.textWrites.single), 'xin chào');
+      gate.complete();
+    },
+  );
+
+  test('incomplete GATT discovery retries with growing delays, max 10 s', () {
+    fakeAsync((fa) {
+      final dev = FakeDevice()..incompleteDiscoveries = 100;
+      adapter.scanned.add(dev);
+      link = BleBoardLink(adapter);
+      adapter.power(true);
+      fa.flushMicrotasks();
+      expect(dev.connectCalls, 1);
+      // delays: 0.5, 1, 2, 4, 8, 10, 10 s
+      var elapsed = 0;
+      var calls = 1;
+      for (final d in [500, 1000, 2000, 4000, 8000, 10000, 10000]) {
+        fa.elapse(Duration(milliseconds: d - 1));
+        elapsed += d - 1;
+        expect(dev.connectCalls, calls, reason: 'too early at +$d ms');
+        fa.elapse(const Duration(milliseconds: 1));
+        calls++;
+        expect(dev.connectCalls, calls, reason: 'missing at +$d ms');
+      }
+      expect(elapsed, greaterThan(0));
+      // success resets the backoff
+      dev.incompleteDiscoveries = 0;
+      fa.elapse(const Duration(seconds: 10));
+      fa.flushMicrotasks();
+      final ready = dev.connectCalls;
+      dev.drop();
+      fa.flushMicrotasks();
+      fa.elapse(const Duration(milliseconds: 500));
+      expect(dev.connectCalls, ready + 1);
       link.dispose();
     });
   });
