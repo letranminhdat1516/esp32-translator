@@ -89,6 +89,7 @@ class BleBoardLink implements BoardLink {
   void _onPower(bool on) {
     _powered = on;
     if (on) {
+      _failures = 0;
       if (_current == BoardState.off) unawaited(_startScan());
     } else {
       _abandon();
@@ -127,6 +128,7 @@ class BleBoardLink implements BoardLink {
   void _scheduleRetry() {
     if (_disposed || !_powered) return;
     _retry?.cancel();
+    // Failed connects and scans back off too, on purpose.
     var delay = retryDelay;
     for (var i = 0; i < _failures && delay < maxRetryDelay; i++) {
       delay *= 2;
@@ -329,7 +331,8 @@ class BleBoardLink implements BoardLink {
         await c.write(_pending.removeFirst(), withResponse: false);
       }
     } catch (_) {
-      _pending.clear();
+      // Only this link's queue: a stale write may fail after a reset/reconnect.
+      if (gen == _gen) _pending.clear();
     } finally {
       // A flush left over from an abandoned link must not clear a newer one.
       if (gen == _gen) _flushing = null;

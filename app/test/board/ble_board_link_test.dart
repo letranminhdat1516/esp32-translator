@@ -306,31 +306,28 @@ void main() {
     expect(dev.controlWrites.every((w) => w.withResponse), isTrue);
   });
 
-  test(
-    'drop: reconnects, resends time and label, next subtitle goes out',
-    () async {
-      final dev = FakeDevice(maxWrite: 100, info: infoBytes(1, 0x3));
-      await start(dev);
-      await link.sendText('Chủ tịch', TextKind.label);
-      dev.writes.clear();
-      states.clear();
+  test('drop: reconnects, resends time and label, next subtitle goes out', () async {
+    final dev = FakeDevice(maxWrite: 100, info: infoBytes(1, 0x3));
+    await start(dev);
+    await link.sendText('Chủ tịch', TextKind.label);
+    dev.writes.clear();
+    states.clear();
 
-      dev.drop();
-      await until(() => states.isNotEmpty && states.last == BoardState.ready);
-      expect(states.first, BoardState.scanning);
-      expect(dev.connectCalls, 2);
+    dev.drop();
+    await until(() => states.isNotEmpty && states.last == BoardState.ready);
+    expect(states.first, BoardState.scanning);
+    expect(dev.connectCalls, 2);
 
-      expect(dev.textWrites.map((w) => w.data[1]).toList(), [2, 3]);
-      expect(dev.textWrites.every((w) => w.withResponse), isTrue);
-      expect(payloadOf(dev.textWrites[1]), 'Chủ tịch');
+    expect(dev.textWrites.map((w) => w.data[1]).toList(), [2, 3]);
+    expect(dev.textWrites.every((w) => w.withResponse), isTrue);
+    expect(payloadOf(dev.textWrites[1]), 'Chủ tịch');
 
-      dev.writes.clear();
-      await link.sendText('xin chào', TextKind.subtitle);
-      final w = dev.textWrites.single;
-      expect(w.data[1], 0);
-      expect(payloadOf(w), 'xin chào');
-    },
-  );
+    dev.writes.clear();
+    await link.sendText('xin chào', TextKind.subtitle);
+    final w = dev.textWrites.single;
+    expect(w.data[1], 0);
+    expect(payloadOf(w), 'xin chào');
+  });
 
   test('drop on old firmware resends time but no label', () async {
     final dev = FakeDevice();
@@ -456,17 +453,14 @@ void main() {
       fa.flushMicrotasks();
       expect(dev.connectCalls, 1);
       // delays: 0.5, 1, 2, 4, 8, 10, 10 s
-      var elapsed = 0;
       var calls = 1;
       for (final d in [500, 1000, 2000, 4000, 8000, 10000, 10000]) {
         fa.elapse(Duration(milliseconds: d - 1));
-        elapsed += d - 1;
         expect(dev.connectCalls, calls, reason: 'too early at +$d ms');
         fa.elapse(const Duration(milliseconds: 1));
         calls++;
         expect(dev.connectCalls, calls, reason: 'missing at +$d ms');
       }
-      expect(elapsed, greaterThan(0));
       // success resets the backoff
       dev.incompleteDiscoveries = 0;
       fa.elapse(const Duration(seconds: 10));
@@ -478,5 +472,61 @@ void main() {
       expect(dev.connectCalls, ready + 1);
       link.dispose();
     });
+  });
+
+  test('a stale write failing after a services reset keeps the new text', () async {
+    final dev = FakeDevice(maxWrite: 20);
+    await start(dev);
+    final old = dev.text.gate = Completer<void>();
+    final oldSend = link.sendText('a' * 60, TextKind.subtitle);
+    await settle();
+    states.clear();
+    dev.fireServicesReset();
+    await until(() => states.isNotEmpty && states.last == BoardState.ready);
+    dev.writes.clear();
+    final fresh = dev.text.gate = Completer<void>();
+    final newSend = link.sendText('b' * 60, TextKind.subtitle);
+    await settle();
+    old.completeError(StateError('dead characteristic'));
+    await oldSend;
+    fresh.complete();
+    dev.text.gate = null;
+    await newSend;
+    expect(
+      dev.textWrites.map((w) => w.data.toList()),
+      frameText('b' * 60, TextKind.subtitle, 20).map((x) => x.toList()),
+    );
+  });
+
+  test('Bluetooth coming back on resets the backoff', () {
+    fakeAsync((fa) {
+      final dev = FakeDevice()..incompleteDiscoveries = 100;
+      adapter.scanned.add(dev);
+      link = BleBoardLink(adapter);
+      adapter.power(true);
+      fa.flushMicrotasks();
+      fa.elapse(const Duration(seconds: 4)); // attempts at 0, .5, 1.5, 3.5
+      fa.flushMicrotasks();
+      expect(dev.connectCalls, 4);
+      adapter.power(false);
+      fa.flushMicrotasks();
+      adapter.power(true);
+      fa.flushMicrotasks();
+      final before = dev.connectCalls;
+      fa.elapse(const Duration(milliseconds: 500)); // first retry: base delay
+      expect(dev.connectCalls, before + 1);
+      link.dispose();
+    });
+  });
+
+  test('rediscovery failing after a services reset falls back to reconnect', () async {
+    final dev = FakeDevice();
+    await start(dev);
+    dev.incompleteDiscoveries = 1;
+    states.clear();
+    dev.fireServicesReset();
+    await until(() => states.isNotEmpty && states.last == BoardState.ready);
+    expect(states, contains(BoardState.scanning));
+    expect(dev.connectCalls, 2);
   });
 }
