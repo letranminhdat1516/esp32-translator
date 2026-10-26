@@ -173,6 +173,7 @@ class OsRecognizer(
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             Log.d(TAG, "ready")
+            wasReady = true
         }
 
         override fun onBeginningOfSpeech() {
@@ -215,6 +216,10 @@ class OsRecognizer(
     }
 
     @Volatile var lastError: Int? = null
+        private set
+
+    /** The service opened its audio and is waiting for speech (in a silent room it may wait a long time). */
+    @Volatile var wasReady = false
         private set
 
     private fun emit(bundle: Bundle, final: Boolean) {

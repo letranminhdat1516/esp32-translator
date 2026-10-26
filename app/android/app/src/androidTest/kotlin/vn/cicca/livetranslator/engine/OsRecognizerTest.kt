@@ -80,12 +80,13 @@ class OsRecognizerTest {
         r.listen(true)
         val os = r as OsRecognizer
         val end = SystemClock.uptimeMillis() + 8_000
-        while (os.lastError == null && results.isEmpty() && SystemClock.uptimeMillis() < end) SystemClock.sleep(100)
-        Log.i(TAG, "online recognizer: results $results, last error ${os.lastError?.let { OsRecognizer.errorName(it) }}")
+        while (!os.wasReady && os.lastError == null && results.isEmpty() && SystemClock.uptimeMillis() < end) SystemClock.sleep(100)
+        Log.i(TAG, "online recognizer: ready ${os.wasReady}, results $results, last error ${os.lastError?.let { OsRecognizer.errorName(it) }}")
         r.listen(false)
         r.close()
-        // It really ran: either a result, or (offline phone) a network / no-match error from the service
-        assertFalse("the recognizer never answered", os.lastError == null && results.isEmpty())
+        // It really ran: the service opened its audio, or gave a result, or (offline phone) an error.
+        // In a silent room Google's service stays ready without an error for longer than this wait.
+        assertFalse("the recognizer never answered", !os.wasReady && os.lastError == null && results.isEmpty())
     }
 
     private companion object {
