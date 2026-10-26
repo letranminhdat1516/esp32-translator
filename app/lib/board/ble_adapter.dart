@@ -22,6 +22,10 @@ abstract class BleDevice {
   /// True while connected; emits false on every drop.
   Stream<bool> get connected;
 
+  /// Fires when the peripheral changed its GATT table (Services Changed);
+  /// the old characteristics are then invalid.
+  Stream<void> get servicesReset;
+
   Future<void> connect();
   Future<void> disconnect();
 
@@ -98,6 +102,9 @@ class _FbpDevice implements BleDevice {
   Stream<bool> get connected => _d.connectionState.map(
     (s) => s == fbp.BluetoothConnectionState.connected,
   );
+
+  @override
+  Stream<void> get servicesReset => _d.onServicesReset;
 
   // flutter_blue_plus 2.x requires a license choice; this is a personal app.
   @override
