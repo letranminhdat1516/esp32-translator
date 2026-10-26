@@ -24,11 +24,18 @@ class BoardGlyphSets {
 
   static BoardGlyphSets? _shared;
 
-  /// The lists the app uses unless a [BoardText] is given others. Throws when
-  /// [load] has not completed: a board with an extra font must never be
-  /// handled with guessed coverage.
-  static BoardGlyphSets get shared =>
-      _shared ?? (throw StateError('BoardGlyphSets.load() has not completed'));
+  static final BoardGlyphSets _empty = BoardGlyphSets();
+
+  /// The lists the app uses unless a [BoardText] is given others. When
+  /// [load] has not completed this asserts (debug and tests) and returns an
+  /// empty set that is not remembered, so a later [load] still wins; in
+  /// release, non-Latin characters then take the `·` fallback.
+  static BoardGlyphSets get shared {
+    final s = _shared;
+    if (s != null) return s;
+    assert(false, 'BoardGlyphSets.load() not awaited');
+    return _empty;
+  }
 
   /// Loads the lists from the app assets once; later calls return the same
   /// object. Await it at startup, before the first encode for a board with an

@@ -37,6 +37,7 @@ def code_points(path):
         elif kind == 1:  # sparse_full: u16 offsets, then u16 ids
             out.update(start + o for o in struct.unpack_from("<%dH" % entries, d, base))
         elif kind == 0:  # format0_full: u8 id offset per code point; 0 = absent, except the first (id = gid_start)
+            # Heuristic ("byte 0 = absent, except the first entry"), verified against the committed fonts.
             ids = d[base:base + length]
             out.update(start + j for j, v in enumerate(ids) if v != 0 or j == 0)
         else:

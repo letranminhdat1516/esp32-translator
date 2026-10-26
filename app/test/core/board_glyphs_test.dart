@@ -9,9 +9,12 @@ void main() {
   setUp(BoardGlyphSets.resetShared);
   tearDown(BoardGlyphSets.resetShared);
 
-  test('shared throws until the assets are loaded', () {
-    expect(() => BoardGlyphSets.shared, throwsStateError);
-    expect(() => const BoardText().isDrawable(0x4e2d, FontSets.cjk), throwsStateError);
+  test('shared asserts in debug until the assets are loaded, and a later load() still wins', () async {
+    expect(() => BoardGlyphSets.shared, throwsA(isA<AssertionError>()));
+    expect(() => const BoardText().isDrawable(0x4e2d, FontSets.cjk), throwsA(isA<AssertionError>()));
+    final loaded = await BoardGlyphSets.load();
+    expect(BoardGlyphSets.shared, same(loaded));
+    expect(const BoardText().isDrawable(0x4e2d, FontSets.cjk), isTrue);
     // No extra font: no lists needed.
     expect(const BoardText().isDrawable(0x41, FontSets.latinVI), isTrue);
   });
