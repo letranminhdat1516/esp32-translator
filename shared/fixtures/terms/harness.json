@@ -1,0 +1,658 @@
+{
+ "_doc": "Cases for the term harness (P2.5, R10): shared/fixtures/terms/README.md. Both ios/Tools/term-harness and android/src/harness/termHarness.ts pass them.",
+ "shapes": [
+  "Zorvik{n}",
+  "[[{n}]]",
+  "TERM{n}",
+  "⟦{n}⟧",
+  "__{n}__"
+ ],
+ "parse": [
+  {
+   "name": "lines, comments, blank lines and CRLF",
+   "lang": "en",
+   "text": "# en corpus\n\nen>vi\tI booked a Grab to the airport.\tGrab\tGrab\r\nvi>en\tTàu từ Hà Nội vào Huế chạy lúc tám giờ.\tHà Nội\tHanoi\n",
+   "expected": [
+    {
+     "lineNo": 3,
+     "from": "en",
+     "to": "vi",
+     "source": "I booked a Grab to the airport.",
+     "term": "Grab",
+     "expected": "Grab"
+    },
+    {
+     "lineNo": 4,
+     "from": "vi",
+     "to": "en",
+     "source": "Tàu từ Hà Nội vào Huế chạy lúc tám giờ.",
+     "term": "Hà Nội",
+     "expected": "Hanoi"
+    }
+   ]
+  },
+  {
+   "name": "zh-Hans direction",
+   "lang": "zh-Hans",
+   "text": "zh-Hans>vi\t我叫了一辆 Grab 去机场。\tGrab\tGrab",
+   "expected": [
+    {
+     "lineNo": 1,
+     "from": "zh-Hans",
+     "to": "vi",
+     "source": "我叫了一辆 Grab 去机场。",
+     "term": "Grab",
+     "expected": "Grab"
+    }
+   ]
+  },
+  {
+   "name": "three columns",
+   "lang": "en",
+   "text": "en>vi\tI booked a Grab.\tGrab",
+   "error": {
+    "kind": "columns",
+    "lineNo": 1
+   }
+  },
+  {
+   "name": "five columns",
+   "lang": "en",
+   "text": "en>vi\ta Grab\tGrab\tGrab\textra",
+   "error": {
+    "kind": "columns",
+    "lineNo": 1
+   }
+  },
+  {
+   "name": "pair without Vietnamese",
+   "lang": "en",
+   "text": "en>fr\tI booked a Grab.\tGrab\tGrab",
+   "error": {
+    "kind": "direction",
+    "lineNo": 1
+   }
+  },
+  {
+   "name": "other language than the file",
+   "lang": "en",
+   "text": "\nja>vi\tGrab を予約しました。\tGrab\tGrab",
+   "error": {
+    "kind": "direction",
+    "lineNo": 2
+   }
+  },
+  {
+   "name": "no arrow",
+   "lang": "en",
+   "text": "en-vi\tI booked a Grab.\tGrab\tGrab",
+   "error": {
+    "kind": "direction",
+    "lineNo": 1
+   }
+  },
+  {
+   "name": "empty field",
+   "lang": "en",
+   "text": "en>vi\tI booked a Grab.\t\tGrab",
+   "error": {
+    "kind": "empty",
+    "lineNo": 1
+   }
+  }
+ ],
+ "evaluate": [
+  {
+   "name": "kept: verbatim term",
+   "lang": "en",
+   "line": "en>vi\tI booked a Grab to the airport.\tGrab\tGrab",
+   "shape": "Zorvik{n}",
+   "masked": "I booked a Zorvik1 to the airport.",
+   "translations": {
+    "I booked a Zorvik1 to the airport.": "Tôi đã đặt Zorvik1 ra sân bay."
+   },
+   "expected": {
+    "asked": [
+     "I booked a Zorvik1 to the airport."
+    ],
+    "restored": true,
+    "output": "Tôi đã đặt Grab ra sân bay.",
+    "passed": true
+   }
+  },
+  {
+   "name": "kept: fixed translation",
+   "lang": "en",
+   "line": "en>vi\tWe are flying to Phu Quoc next weekend.\tPhu Quoc\tPhú Quốc",
+   "shape": "Zorvik{n}",
+   "masked": "We are flying to Zorvik1 next weekend.",
+   "translations": {
+    "We are flying to Zorvik1 next weekend.": "Cuối tuần tới chúng tôi bay đến Zorvik1."
+   },
+   "expected": {
+    "asked": [
+     "We are flying to Zorvik1 next weekend."
+    ],
+    "restored": true,
+    "output": "Cuối tuần tới chúng tôi bay đến Phú Quốc.",
+    "passed": true
+   }
+  },
+  {
+   "name": "kept: placeholder case changed by the translator",
+   "lang": "en",
+   "line": "en>vi\tPlease send the file through Zalo.\tZalo\tZalo",
+   "shape": "TERM{n}",
+   "masked": "Please send the file through TERM1.",
+   "translations": {
+    "Please send the file through TERM1.": "Vui lòng gửi tệp qua Term1."
+   },
+   "expected": {
+    "asked": [
+     "Please send the file through TERM1."
+    ],
+    "restored": true,
+    "output": "Vui lòng gửi tệp qua Zalo.",
+    "passed": true
+   }
+  },
+  {
+   "name": "lost: repaired to the fixed translation",
+   "lang": "en",
+   "line": "en>vi\tWe are flying to Phu Quoc next weekend.\tPhu Quoc\tPhú Quốc",
+   "shape": "[[{n}]]",
+   "masked": "We are flying to [[1]] next weekend.",
+   "translations": {
+    "We are flying to [[1]] next weekend.": "Cuối tuần tới chúng tôi bay đến [1].",
+    "We are flying to Phu Quoc next weekend.": "Cuối tuần tới chúng tôi bay đến Phu Quoc."
+   },
+   "expected": {
+    "asked": [
+     "We are flying to [[1]] next weekend.",
+     "We are flying to Phu Quoc next weekend."
+    ],
+    "restored": false,
+    "output": "Cuối tuần tới chúng tôi bay đến Phú Quốc.",
+    "passed": true
+   }
+  },
+  {
+   "name": "lost: repair finds nothing",
+   "lang": "en",
+   "line": "en>vi\tWe are flying to Phu Quoc next weekend.\tPhu Quoc\tPhú Quốc",
+   "shape": "[[{n}]]",
+   "masked": "We are flying to [[1]] next weekend.",
+   "translations": {
+    "We are flying to [[1]] next weekend.": "Cuối tuần tới chúng tôi bay đến [1].",
+    "We are flying to Phu Quoc next weekend.": "Cuối tuần tới chúng tôi bay đến Phú Quoc."
+   },
+   "expected": {
+    "asked": [
+     "We are flying to [[1]] next weekend.",
+     "We are flying to Phu Quoc next weekend."
+    ],
+    "restored": false,
+    "output": "Cuối tuần tới chúng tôi bay đến Phú Quoc.",
+    "passed": false
+   }
+  },
+  {
+   "name": "lost: duplicated placeholder, verbatim term survives the plain translation",
+   "lang": "en",
+   "line": "en>vi\tI booked a Grab to the airport.\tGrab\tGrab",
+   "shape": "__{n}__",
+   "masked": "I booked a __1__ to the airport.",
+   "translations": {
+    "I booked a __1__ to the airport.": "Tôi đã đặt __1__ ra __1__ sân bay.",
+    "I booked a Grab to the airport.": "Tôi đã đặt Grab ra sân bay."
+   },
+   "expected": {
+    "asked": [
+     "I booked a __1__ to the airport.",
+     "I booked a Grab to the airport."
+    ],
+    "restored": false,
+    "output": "Tôi đã đặt Grab ra sân bay.",
+    "passed": true
+   }
+  },
+  {
+   "name": "lost: invented placeholder, term dropped",
+   "lang": "en",
+   "line": "en>vi\tI booked a Grab to the airport.\tGrab\tGrab",
+   "shape": "⟦{n}⟧",
+   "masked": "I booked a ⟦1⟧ to the airport.",
+   "translations": {
+    "I booked a ⟦1⟧ to the airport.": "Tôi đã đặt ⟦1⟧ ra sân bay ⟦2⟧.",
+    "I booked a Grab to the airport.": "Tôi đã đặt xe ra sân bay."
+   },
+   "expected": {
+    "asked": [
+     "I booked a ⟦1⟧ to the airport.",
+     "I booked a Grab to the airport."
+    ],
+    "restored": false,
+    "output": "Tôi đã đặt xe ra sân bay.",
+    "passed": false
+   }
+  },
+  {
+   "name": "score is case-sensitive",
+   "lang": "en",
+   "line": "en>vi\tIs the VinFast showroom open on Sunday?\tVinFast\tVinFast",
+   "shape": "Zorvik{n}",
+   "masked": "Is the Zorvik1 showroom open on Sunday?",
+   "translations": {
+    "Is the Zorvik1 showroom open on Sunday?": "Showroom Vinfast có mở cửa vào Chủ nhật không?",
+    "Is the VinFast showroom open on Sunday?": "Showroom Vinfast có mở cửa vào Chủ nhật không?"
+   },
+   "expected": {
+    "asked": [
+     "Is the Zorvik1 showroom open on Sunday?",
+     "Is the VinFast showroom open on Sunday?"
+    ],
+    "restored": false,
+    "output": "Showroom Vinfast có mở cửa vào Chủ nhật không?",
+    "passed": false
+   }
+  },
+  {
+   "name": "score compares NFC forms",
+   "lang": "en",
+   "line": "en>vi\tWe are flying to Phu Quoc next weekend.\tPhu Quoc\tPhú Quốc",
+   "shape": "Zorvik{n}",
+   "masked": "We are flying to Zorvik1 next weekend.",
+   "translations": {
+    "We are flying to Zorvik1 next weekend.": "Cuối tuần tới chúng tôi bay đến Phú Quốc.",
+    "We are flying to Phu Quoc next weekend.": "Cuối tuần tới chúng tôi bay đến Phú Quốc."
+   },
+   "expected": {
+    "asked": [
+     "We are flying to Zorvik1 next weekend.",
+     "We are flying to Phu Quoc next weekend."
+    ],
+    "restored": false,
+    "output": "Cuối tuần tới chúng tôi bay đến Phú Quốc.",
+    "passed": true
+   }
+  },
+  {
+   "name": "vi to ja with a fixed translation",
+   "lang": "ja",
+   "line": "vi>ja\tCuối tuần sau chúng tôi bay ra Phú Quốc.\tPhú Quốc\tフーコック",
+   "shape": "⟦{n}⟧",
+   "masked": "Cuối tuần sau chúng tôi bay ra ⟦1⟧.",
+   "translations": {
+    "Cuối tuần sau chúng tôi bay ra ⟦1⟧.": "来週末、私たちは⟦1⟧に飛びます。"
+   },
+   "expected": {
+    "asked": [
+     "Cuối tuần sau chúng tôi bay ra ⟦1⟧."
+    ],
+    "restored": true,
+    "output": "来週末、私たちはフーコックに飛びます。",
+    "passed": true
+   }
+  },
+  {
+   "name": "term inside unspaced Chinese text",
+   "lang": "zh-Hans",
+   "line": "zh-Hans>vi\t我们十二点在滨城市场见面好吗？\t滨城\tBến Thành",
+   "shape": "Zorvik{n}",
+   "masked": "我们十二点在Zorvik1市场见面好吗？",
+   "translations": {
+    "我们十二点在Zorvik1市场见面好吗？": "Chúng ta gặp nhau ở chợ Zorvik1 lúc mười hai giờ nhé?"
+   },
+   "expected": {
+    "asked": [
+     "我们十二点在Zorvik1市场见面好吗？"
+    ],
+    "restored": true,
+    "output": "Chúng ta gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé?",
+    "passed": true
+   }
+  },
+  {
+   "name": "term missing from the source",
+   "lang": "en",
+   "line": "en>vi\tI booked a taxi.\tGrab\tGrab",
+   "shape": "Zorvik{n}",
+   "translations": {},
+   "error": "termNotFound"
+  },
+  {
+   "name": "Latin term glued to kana is not masked (protector contract)",
+   "lang": "ja",
+   "line": "ja>vi\t空港までGrabを予約しました。\tGrab\tGrab",
+   "shape": "Zorvik{n}",
+   "translations": {},
+   "error": "termNotFound"
+  }
+ ],
+ "scripted": [
+  {
+   "input": "a [[1]] b [[2]]",
+   "output": "a [1] b [2]"
+  },
+  {
+   "input": "x __2__ y",
+   "output": "x _2_ y"
+  },
+  {
+   "input": "⟦1⟧ Zorvik2 TERM3",
+   "output": "⟦1⟧ Zorvik2 TERM3"
+  },
+  {
+   "input": "no placeholder",
+   "output": "no placeholder"
+  }
+ ],
+ "report": [
+  {
+   "name": "two languages, two shapes",
+   "engine": "Fake",
+   "shapes": [
+    "Zorvik{n}",
+    "[[{n}]]"
+   ],
+   "results": [
+    {
+     "lang": "en",
+     "from": "en",
+     "to": "vi",
+     "shape": "Zorvik{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "en",
+     "from": "en",
+     "to": "vi",
+     "shape": "Zorvik{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "en",
+     "from": "vi",
+     "to": "en",
+     "shape": "Zorvik{n}",
+     "restored": false,
+     "passed": false
+    },
+    {
+     "lang": "en",
+     "from": "en",
+     "to": "vi",
+     "shape": "[[{n}]]",
+     "restored": false,
+     "passed": true
+    },
+    {
+     "lang": "en",
+     "from": "en",
+     "to": "vi",
+     "shape": "[[{n}]]",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "en",
+     "from": "vi",
+     "to": "en",
+     "shape": "[[{n}]]",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "ja",
+     "from": "ja",
+     "to": "vi",
+     "shape": "Zorvik{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "ja",
+     "from": "vi",
+     "to": "ja",
+     "shape": "Zorvik{n}",
+     "restored": false,
+     "passed": true
+    },
+    {
+     "lang": "ja",
+     "from": "ja",
+     "to": "vi",
+     "shape": "[[{n}]]",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "ja",
+     "from": "vi",
+     "to": "ja",
+     "shape": "[[{n}]]",
+     "restored": true,
+     "passed": true
+    }
+   ],
+   "best": {
+    "en": {
+     "shape": "[[{n}]]",
+     "passed": 3,
+     "total": 3,
+     "lost": 1
+    },
+    "ja": {
+     "shape": "[[{n}]]",
+     "passed": 2,
+     "total": 2,
+     "lost": 0
+    }
+   },
+   "markdown": "## Term accuracy: Fake\n\n| Language | Direction | `Zorvik{n}` | `[[{n}]]` |\n|---|---|---:|---:|\n| en | en → vi (2) | 100.0 % · 0 lost | 100.0 % · 1 lost |\n| en | vi → en (1) | 0.0 % · 1 lost | 100.0 % · 0 lost |\n| en | both (3) | 66.7 % · 1 lost | 100.0 % · 1 lost |\n| ja | ja → vi (1) | 100.0 % · 0 lost | 100.0 % · 0 lost |\n| ja | vi → ja (1) | 100.0 % · 1 lost | 100.0 % · 0 lost |\n| ja | both (2) | 100.0 % · 1 lost | 100.0 % · 0 lost |\n\n| Language | Best shape | Accuracy | Lost placeholders | R10 (≥ 95 %) |\n|---|---|---:|---:|---|\n| en | `[[{n}]]` | 100.0 % | 1 | yes |\n| ja | `[[{n}]]` | 100.0 % | 0 | yes |\n"
+  },
+  {
+   "name": "below target shows the gap",
+   "engine": "ML Kit",
+   "shapes": [
+    "TERM{n}"
+   ],
+   "results": [
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "de",
+     "to": "vi",
+     "shape": "TERM{n}",
+     "restored": true,
+     "passed": true
+    },
+    {
+     "lang": "de",
+     "from": "vi",
+     "to": "de",
+     "shape": "TERM{n}",
+     "restored": false,
+     "passed": false
+    },
+    {
+     "lang": "de",
+     "from": "vi",
+     "to": "de",
+     "shape": "TERM{n}",
+     "restored": false,
+     "passed": false
+    }
+   ],
+   "best": {
+    "de": {
+     "shape": "TERM{n}",
+     "passed": 18,
+     "total": 20,
+     "lost": 2
+    }
+   },
+   "markdown": "## Term accuracy: ML Kit\n\n| Language | Direction | `TERM{n}` |\n|---|---|---:|\n| de | de → vi (18) | 100.0 % · 0 lost |\n| de | vi → de (2) | 0.0 % · 2 lost |\n| de | both (20) | 90.0 % · 2 lost |\n\n| Language | Best shape | Accuracy | Lost placeholders | R10 (≥ 95 %) |\n|---|---|---:|---:|---|\n| de | `TERM{n}` | 90.0 % | 2 | no (5.0 points short) |\n"
+  }
+ ],
+ "setPlaceholder": [
+  {
+   "name": "inserted after whisperCode",
+   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"label\": \"English\"\n}\n",
+   "key": "applePlaceholder",
+   "shape": "⟦{n}⟧",
+   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"applePlaceholder\": \"⟦{n}⟧\",\n  \"label\": \"English\"\n}\n"
+  },
+  {
+   "name": "replaces the existing value",
+   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"androidPlaceholder\": \"Zorvik{n}\",\n  \"label\": \"English\"\n}\n",
+   "key": "androidPlaceholder",
+   "shape": "TERM{n}",
+   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"androidPlaceholder\": \"TERM{n}\",\n  \"label\": \"English\"\n}\n"
+  },
+  {
+   "name": "no whisperCode line",
+   "text": "{\"code\": \"en\"}\n",
+   "key": "applePlaceholder",
+   "shape": "TERM{n}",
+   "error": "noAnchor"
+  }
+ ]
+}

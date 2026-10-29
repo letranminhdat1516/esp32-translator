@@ -1,0 +1,86 @@
+# Term corpus de <-> vi (German), P2.5 / R10. Format: shared/fixtures/terms/README.md
+# direction	source sentence	term	expected
+de>vi	Ich habe ein Grab zum Flughafen gebucht.	Grab	Grab
+de>vi	Treffen wir uns um zwölf am Markt Ben Thanh?	Ben Thanh	Bến Thành
+de>vi	Mein neues iPhone 15 verliert ständig das Netz.	iPhone 15	iPhone 15
+de>vi	Wir fliegen nächstes Wochenende nach Phu Quoc.	Phu Quoc	Phú Quốc
+de>vi	Ich habe die Schuhe gestern Abend bei Shopee bestellt.	Shopee	Shopee
+de>vi	Hat der Showroom von VinFast am Sonntag geöffnet?	VinFast	VinFast
+de>vi	Meine Kollegin Sarah Johnson kommt später dazu.	Sarah Johnson	Sarah Johnson
+de>vi	Das Hotel liegt in der Nähe des Sees Hoan Kiem.	Hoan Kiem	Hoàn Kiếm
+de>vi	Schick mir die Datei bitte über Zalo.	Zalo	Zalo
+de>vi	Wie lange braucht man bis zur Bucht von Ha Long?	Ha Long	Hạ Long
+de>vi	Ich habe mit MoMo bezahlt, weil ich kein Bargeld hatte.	MoMo	MoMo
+de>vi	Unser Flug mit Vietnam Airlines hatte zwei Stunden Verspätung.	Vietnam Airlines	Vietnam Airlines
+de>vi	Michael sagt, das Samsung Galaxy S24 ist hier billiger.	Samsung Galaxy S24	Samsung Galaxy S24
+de>vi	Wir haben drei Nächte in einem Airbnb in Hoi An verbracht.	Hoi An	Hội An
+de>vi	Weißt du, wo der nächste Circle K ist?	Circle K	Circle K
+de>vi	Emma möchte den Kaffee bei Highlands Coffee probieren.	Highlands Coffee	Highlands Coffee
+de>vi	Der Zug von Hanoi nach Hue fährt um acht.	Hue	Huế
+de>vi	Ich habe mein MacBook Pro im Taxi liegen lassen.	MacBook Pro	MacBook Pro
+de>vi	David wartet vor dem Opernhaus auf uns.	David	David
+de>vi	Lass uns morgen früh mit der Fähre zur Insel Cat Ba fahren.	Cat Ba	Cát Bà
+de>vi	Meine Schwester arbeitet bei Viettel in Da Nang.	Viettel	Viettel
+de>vi	Kann ich hier mit Visa bezahlen?	Visa	Visa
+de>vi	Wir haben den Sonnenuntergang vom Bitexco Tower aus gesehen.	Bitexco	Bitexco
+de>vi	Gibt es einen Lotte Mart in der Nähe des Hotels?	Lotte Mart	Lotte Mart
+de>vi	Herr Tanaka kommt heute Abend mit Flug VN 301 an.	VN 301	VN 301
+de>vi	Ich möchte für einen Tag eine Honda Wave mieten.	Honda Wave	Honda Wave
+de>vi	Die beste Pho hatte ich in der Straße Ly Thuong Kiet.	Ly Thuong Kiet	Lý Thường Kiệt
+de>vi	Meine Tochter liebt die Zeichentrickfilme von Pokémon.	Pokémon	Pokémon
+de>vi	Unsere Reiseführerin Minh Anh spricht sehr gut Englisch.	Minh Anh	Minh Anh
+de>vi	Lade bitte mein Handy mit der Powerbank von Anker auf.	Anker	Anker
+de>vi	Wir brauchen zwei Tickets für den Nachtbus nach Sa Pa.	Sa Pa	Sa Pa
+de>vi	Ich habe den neuen Toyota Vios auf dem Parkplatz gesehen.	Toyota Vios	Toyota Vios
+de>vi	Kannst du ein Restaurant in der Nähe der Fußgängerzone Nguyen Hue empfehlen?	Nguyen Hue	Nguyễn Huệ
+de>vi	Christian hat seine AirPods Pro im Bus verloren.	AirPods Pro	AirPods Pro
+de>vi	Das Passwort für das Wi-Fi steht auf der Rückseite der Speisekarte.	Wi-Fi	Wi-Fi
+de>vi	Wir checken um drei im Sheraton ein.	Sheraton	Sheraton
+de>vi	Mein Sohn spielt jeden Abend Minecraft.	Minecraft	Minecraft
+de>vi	Die Tour ins Delta des Mekong beginnt um sieben.	Mekong	Mê Kông
+de>vi	Anna hat am Flughafen einen Kindle gekauft.	Kindle	Kindle
+de>vi	Gibt es Netflix auf diesem Fernseher?	Netflix	Netflix
+de>vi	Unser Büro ist im zwölften Stock des Landmark 81.	Landmark 81	Landmark 81
+de>vi	Ich muss Guthaben auf meine SIM-Karte von Vinaphone laden.	Vinaphone	Vinaphone
+vi>de	Tôi đã đặt Grab ra sân bay rồi.	Grab	Grab
+vi>de	Mình gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé.	Bến Thành	Bến Thành
+vi>de	Chiếc iPhone 15 của tôi cứ bị mất sóng.	iPhone 15	iPhone 15
+vi>de	Cuối tuần sau chúng tôi bay ra Phú Quốc.	Phú Quốc	Phú Quốc
+vi>de	Tối qua em mua đôi giày trên Shopee.	Shopee	Shopee
+vi>de	Showroom VinFast có mở cửa chủ nhật không?	VinFast	VinFast
+vi>de	Anh Nguyễn Văn Nam sẽ đến đón chị ở khách sạn.	Nguyễn Văn Nam	Nguyễn Văn Nam
+vi>de	Khách sạn ở gần hồ Hoàn Kiếm.	Hoàn Kiếm	Hoàn Kiếm
+vi>de	Anh gửi file qua Zalo giúp em nhé.	Zalo	Zalo
+vi>de	Đi vịnh Hạ Long mất bao lâu?	Hạ Long	Hạ Long
+vi>de	Tôi trả bằng MoMo vì không có tiền mặt.	MoMo	MoMo
+vi>de	Chuyến bay Vietnam Airlines bị trễ hai tiếng.	Vietnam Airlines	Vietnam Airlines
+vi>de	Chị Lan nói ở đây Samsung Galaxy S24 rẻ hơn.	Samsung Galaxy S24	Samsung Galaxy S24
+vi>de	Chúng tôi ở Hội An ba đêm.	Hội An	Hội An
+vi>de	Cửa hàng Circle K gần nhất ở đâu vậy?	Circle K	Circle K
+vi>de	Chị Hương muốn uống cà phê ở Highlands Coffee.	Highlands Coffee	Highlands Coffee
+vi>de	Tàu từ Hà Nội vào Huế chạy lúc tám giờ.	Hà Nội	Hanoi
+vi>de	Tôi để quên MacBook Pro trên taxi.	MacBook Pro	MacBook Pro
+vi>de	Anh Tuấn đang đợi chúng ta trước Nhà hát Lớn.	Tuấn	Tuấn
+vi>de	Sáng mai mình đi phà ra đảo Cát Bà nhé.	Cát Bà	Cát Bà
+vi>de	Em gái tôi làm cho Viettel ở Đà Nẵng.	Viettel	Viettel
+vi>de	Ở đây có trả bằng thẻ Visa được không?	Visa	Visa
+vi>de	Chúng tôi ngắm hoàng hôn từ tòa Bitexco.	Bitexco	Bitexco
+vi>de	Gần khách sạn có Lotte Mart không?	Lotte Mart	Lotte Mart
+vi>de	Ông Tanaka đến trên chuyến bay VN 301 tối nay.	VN 301	VN 301
+vi>de	Tôi muốn thuê một chiếc Honda Wave trong ngày.	Honda Wave	Honda Wave
+vi>de	Thành phố Hồ Chí Minh nóng hơn Hà Nội nhiều.	Thành phố Hồ Chí Minh	Ho-Chi-Minh-Stadt
+vi>de	Con gái tôi rất thích phim hoạt hình Pokémon.	Pokémon	Pokémon
+vi>de	Hướng dẫn viên của chúng tôi, chị Minh Anh, nói tiếng Anh rất giỏi.	Minh Anh	Minh Anh
+vi>de	Anh sạc điện thoại bằng pin dự phòng Anker giúp tôi.	Anker	Anker
+vi>de	Chúng tôi cần hai vé xe giường nằm đi Sa Pa.	Sa Pa	Sa Pa
+vi>de	Tôi thấy chiếc Toyota Vios mới ở bãi đỗ xe.	Toyota Vios	Toyota Vios
+vi>de	Có nhà hàng nào gần phố đi bộ Nguyễn Huệ không?	Nguyễn Huệ	Nguyễn Huệ
+vi>de	Anh Quang làm mất AirPods Pro trên xe buýt.	AirPods Pro	AirPods Pro
+vi>de	Mật khẩu Wi-Fi ở mặt sau thực đơn.	Wi-Fi	Wi-Fi
+vi>de	Ba giờ chúng tôi nhận phòng ở Sheraton.	Sheraton	Sheraton
+vi>de	Con trai tôi tối nào cũng chơi Minecraft.	Minecraft	Minecraft
+vi>de	Tour đi Đà Nẵng bắt đầu lúc bảy giờ.	Đà Nẵng	Da Nang
+vi>de	Chị Mai mua một chiếc Kindle ở sân bay.	Kindle	Kindle
+vi>de	Tivi này có xem được Netflix không?	Netflix	Netflix
+vi>de	Văn phòng chúng tôi ở tầng 12 tòa Landmark 81.	Landmark 81	Landmark 81
+vi>de	Tôi cần nạp tiền cho sim Vinaphone.	Vinaphone	Vinaphone
