@@ -46,14 +46,18 @@ function fixRecognitionOf(code: string): (text: string) => string {
   };
 }
 
-function assemblerOf(c: JsonObject): TurnAssembler {
+/**
+ * `unitsPerMs` scales the configured durations: 1 for the scenarios (times in ms), 1000 for
+ * the replays, whose clock runs in integer microseconds like the Dart test's DateTime.
+ */
+function assemblerOf(c: JsonObject, unitsPerMs = 1): TurnAssembler {
   const config = {...defaults, ...((c.config as JsonObject | undefined) ?? {})};
   const fixPack = config.fixLoanwords as string | undefined;
   return new TurnAssembler({
-    turnGapMs: config.turnGapMs as number,
-    staleGapMs: config.staleGapMs as number,
+    turnGapMs: (config.turnGapMs as number) * unitsPerMs,
+    staleGapMs: (config.staleGapMs as number) * unitsPerMs,
     maxCharacters: config.maxCharacters as number,
-    maxDurationMs: config.maxDurationMs as number,
+    maxDurationMs: (config.maxDurationMs as number) * unitsPerMs,
     fixLoanwords: fixPack == null ? undefined : fixRecognitionOf(fixPack),
   });
 }
@@ -116,7 +120,8 @@ describe('scenarios', () => {
 describe('recorded replays', () => {
   for (const c of casesOf(fixture, 'replays')) {
     test(c.name as string, () => {
-      const a = assemblerOf(c);
+      const a = assemblerOf(c, 1000);
+      const t0Us = t0 * 1000;
       const lines = new Map<number, string>();
       const records = fs
         .readFileSync(path.join(sharedDir, 'fixtures', c.recording as string), 'utf8')
@@ -125,8 +130,8 @@ describe('recorded replays', () => {
       expect(records.length).toBeGreaterThan(0);
       for (const line of records) {
         const d = JSON.parse(line) as {t: number; kind: string; text: string};
-        // Whole microseconds, as the Dart test's DateTime.
-        const now = t0 + Math.round(d.t * 1e6) / 1000;
+        // Integer microseconds, as the Dart test's DateTime (no float milliseconds).
+        const now = t0Us + Math.round(d.t * 1e6);
         const change = a.handle(eventOf(d.kind, d.text), now);
         const turn = a.turn;
         if (change == null || turn == null) {
