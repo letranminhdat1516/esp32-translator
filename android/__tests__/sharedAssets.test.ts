@@ -22,7 +22,7 @@ describe('sharedAssets', () => {
     }
   });
 
-  test('bundled packs parse and keep the file order of codes', () => {
+  test('bundled packs parse once, one per shared/languages file', () => {
     const packs = bundledPacks();
     expect(packs.map(p => p.code).sort()).toEqual(shippedPackCodes());
     expect(bundledPacks()).toBe(packs); // parsed once

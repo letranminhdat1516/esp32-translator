@@ -116,6 +116,9 @@ describe('BoardGlyphSets.shared', () => {
   test('never loaded: non-Latin text takes the dot fallback, no crash', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
+      const empty = BoardGlyphSets.shared;
+      expect(BoardGlyphSets.shared).toBe(empty); // one frozen empty instance
+      expect(Object.isFrozen(empty)).toBe(true);
       const board = new BoardText();
       const cjkHangulThai = FontSets.fromInt(28); // cjk + hangul + thai
       expect(board.isDrawable(0x4e00, cjkHangulThai)).toBe(false);

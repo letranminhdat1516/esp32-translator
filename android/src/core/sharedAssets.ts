@@ -1,8 +1,8 @@
 // The data in shared/ as the app bundles it: language packs, the board's glyph lists and the
 // transliteration tables. Metro cannot import from outside android/ nor import .txt files, so
-// `npm run sync-shared` (also run before every `npm test`) copies them into src/shared-generated/
-// as JSON; that folder is committed so a plain Gradle/Metro build needs no extra step, and
-// __tests__/sharedAssets.test.ts fails when it no longer equals shared/.
+// `npm run sync-shared` copies them into src/shared-generated/ as JSON; that folder is committed
+// so a plain Gradle/Metro build needs no extra step. `npm test` stops first (`pretest`,
+// `sync-shared --check`) and __tests__/sharedAssets.test.ts fails when it no longer equals shared/.
 import boardGlyphsJson from '../shared-generated/boardGlyphs.json';
 import languagesJson from '../shared-generated/languages.json';
 import translitJson from '../shared-generated/translit.json';

@@ -19,6 +19,8 @@ const sorted = (r: readonly Range[]): readonly Range[] =>
 
 let shared: BoardGlyphSets | null = null;
 let warned = false;
+/** What `shared` gives before `load` (created on first use: the class is not defined yet). */
+let empty: BoardGlyphSets | null = null;
 
 /**
  * The exact code points of the board's partition fonts (CJK, Hangul, Thai). Those fonts are
@@ -52,8 +54,8 @@ export class BoardGlyphSets {
 
   /**
    * The lists the app uses unless a `BoardText` is given others. When `load` has not run this
-   * warns (dev builds) and returns an empty set that is not remembered, so a later `load` still
-   * wins; non-Latin characters then take the `·` fallback. Never throws.
+   * warns once (dev builds) and returns one frozen empty set, which is not remembered as the
+   * loaded lists, so a later `load` still wins; non-Latin characters then take the `·` fallback. Never throws.
    */
   static get shared(): BoardGlyphSets {
     if (shared !== null) {
@@ -63,7 +65,11 @@ export class BoardGlyphSets {
       warned = true;
       console.warn('BoardGlyphSets.load() was not called: CJK/Hangul/Thai text shows as ·');
     }
-    return new BoardGlyphSets();
+    if (empty === null) {
+      empty = new BoardGlyphSets();
+      Object.freeze(empty);
+    }
+    return empty;
   }
 
   /**
