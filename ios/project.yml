@@ -12,6 +12,10 @@ targets:
     platform: iOS
     sources:
       - Sources
+      # Shared with the Android app, loaded at run time (SharedResources / Copy): folder references keep
+      # the languages/, board_glyphs/ and copy/ directories in the bundle
+      - {path: ../shared/languages, type: folder, buildPhase: resources}
+      - {path: ../shared/board_glyphs, type: folder, buildPhase: resources}
       - {path: ../shared/copy, type: folder, buildPhase: resources}
     dependencies: [{ package: ClaudeRelay }]
     info:
