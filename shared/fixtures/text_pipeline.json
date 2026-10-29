@@ -81,6 +81,21 @@
       ],
       "terms": [],
       "hints": []
+    },
+    "jaPack": {
+      "file": "ja"
+    },
+    "koPack": {
+      "file": "ko"
+    },
+    "zh-HansPack": {
+      "file": "zh-Hans"
+    },
+    "thPack": {
+      "file": "th"
+    },
+    "frPack": {
+      "file": "fr"
     }
   },
   "prepare": [
@@ -323,6 +338,76 @@
       "placeholders": {
         "ja": "QX{n}Z"
       }
+    },
+    {
+      "name": "theirs: ja brand katakana is masked from the ja pack terms",
+      "home": "vi",
+      "other": "jaPack",
+      "direction": "theirs",
+      "input": "グラブを呼んでください",
+      "prepared": "Zorvik1を呼んでください",
+      "finish": [
+        {
+          "translated": "Hãy gọi Zorvik1",
+          "expected": "Hãy gọi Grab"
+        }
+      ]
+    },
+    {
+      "name": "theirs: ko brand hangul is masked from the ko pack terms",
+      "home": "vi",
+      "other": "koPack",
+      "direction": "theirs",
+      "input": "와이파이 비밀번호가 뭐예요",
+      "prepared": "Zorvik1 비밀번호가 뭐예요",
+      "finish": [
+        {
+          "translated": "Mật khẩu Zorvik1 là gì",
+          "expected": "Mật khẩu Wi-Fi là gì"
+        }
+      ]
+    },
+    {
+      "name": "theirs: th brand is masked from the th pack terms",
+      "home": "vi",
+      "other": "thPack",
+      "direction": "theirs",
+      "input": "เรียกแกร็บให้หน่อย",
+      "prepared": "เรียกZorvik1ให้หน่อย",
+      "finish": [
+        {
+          "translated": "Gọi Zorvik1 giúp tôi",
+          "expected": "Gọi Grab giúp tôi"
+        }
+      ]
+    },
+    {
+      "name": "theirs: zh-Hans brand is masked from the zh-Hans pack terms",
+      "home": "vi",
+      "other": "zh-HansPack",
+      "direction": "theirs",
+      "input": "我在虾皮上买的",
+      "prepared": "我在Zorvik1上买的",
+      "finish": [
+        {
+          "translated": "Tôi mua trên Zorvik1",
+          "expected": "Tôi mua trên Shopee"
+        }
+      ]
+    },
+    {
+      "name": "theirs: fr Latin term keeps word bounds",
+      "home": "vi",
+      "other": "frPack",
+      "direction": "theirs",
+      "input": "Je prends un Grab ou un Grabuge",
+      "prepared": "Je prends un Zorvik1 ou un Grabuge",
+      "finish": [
+        {
+          "translated": "Tôi đi Zorvik1",
+          "expected": "Tôi đi Grab"
+        }
+      ]
     }
   ],
   "translate": [
