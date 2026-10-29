@@ -33,12 +33,13 @@ export class CompiledRule {
       return text;
     }
     return text.replace(this.regex, (...args: unknown[]) => {
-      // args = match, group 1..n, offset, whole string[, named groups object]
+      // args = match, group 1..n, offset, whole string[, named groups object]; `$0` is the whole
+      // match (Dart `m.group(0)`), a group that did not take part or does not exist is empty.
       const groupsEnd = typeof args[args.length - 1] === 'object' ? args.length - 3 : args.length - 2;
-      const groups = args.slice(1, groupsEnd) as (string | undefined)[];
+      const groups = args.slice(0, groupsEnd) as (string | undefined)[];
       return this.template.replace(/\$(\d)/g, (_, digit: string) => {
         const n = Number(digit);
-        return n >= 1 && n <= groups.length ? groups[n - 1] ?? '' : '';
+        return n < groups.length ? groups[n] ?? '' : '';
       });
     });
   }
