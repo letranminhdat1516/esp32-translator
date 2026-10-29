@@ -2,6 +2,7 @@
 // (shared/fixtures/README.md, "glossary.json — glossary validation"). The Dart store keeps a file;
 // here the JSON list lives under one key of a `KeyValueStore` (AsyncStorage in the app, memory in
 // tests), on the phone only (R17).
+import {graphemes} from '../board/protocol';
 import {TypedEmitter, type Unsubscribe} from '../engine/VoiceEngine';
 import {termFromJson, type Term} from './model';
 
@@ -22,7 +23,7 @@ export class EmptyText extends GlossaryError {
   }
 }
 
-/** A string is longer than `limit` characters (code points). */
+/** A string is longer than `limit` characters (grapheme clusters, Dart `characters.length`). */
 export class TooLong extends GlossaryError {
   constructor(readonly field: string, readonly limit: number) {
     super('TooLong', `TooLong(${field} > ${limit})`);
@@ -141,8 +142,8 @@ class CorruptData extends Error {}
 
 /**
  * The user's glossary (R11): a JSON list of `Term` (pack term format) under one key, on the phone
- * only. Limits: 500 terms, 64 characters (code points) per term, variant and fixed translation,
- * 8 variants; control characters and bidirectional overrides (U+202A-U+202E, U+2066-U+2069) are
+ * only. Limits: 500 terms, 64 characters (grapheme clusters) per term, variant and fixed
+ * translation, 8 variants; control characters and bidirectional overrides (U+202A-U+202E, U+2066-U+2069) are
  * rejected, and every term or variant is unique ignoring case.
  *
  * Stored data that cannot be read back is moved to `<key>.corrupt-<yyyyMMdd-HHmmss>` and the store
@@ -322,8 +323,11 @@ export class GlossaryStore {
       await this.kv.setItem(target, raw);
       await this.kv.removeItem(this.key);
     } catch (e) {
-      // Could not keep a copy: the bad value stays where it is and is overwritten by the next
-      // change. Starting empty is still better than not starting.
+      // Storage failed part-way. If the copy was not written, the bad value stays under `key`
+      // with no copy. If the copy was written but `removeItem` failed, both exist: the next
+      // change overwrites `key`, and until then every `open` sets the value aside again under
+      // the next free `-n` key (one more copy each time). Either way this store starts empty,
+      // which beats not starting.
       console.warn('glossary: could not set corrupt data aside', e);
     }
     this.termList = Object.freeze([]);
@@ -377,7 +381,6 @@ function check(field: string, value: string): string {
   if (s === '') {
     throw new EmptyText(field);
   }
-  let length = 0;
   for (const c of s) {
     const cp = c.codePointAt(0)!;
     if (
@@ -388,9 +391,8 @@ function check(field: string, value: string): string {
     ) {
       throw new ForbiddenCharacter(field, cp);
     }
-    length++;
   }
-  if (length > GlossaryStore.maxLength) {
+  if (graphemes(s).length > GlossaryStore.maxLength) {
     throw new TooLong(field, GlossaryStore.maxLength);
   }
   return s;

@@ -1,5 +1,6 @@
 // Port of app/lib/core/term_protector.dart. Contract: shared/fixtures/terms.json
 // (shared/fixtures/README.md, "terms.json — TermProtector"; Review Focus 3).
+import {graphemes} from '../board/protocol';
 import type {Term} from './model';
 
 /** `mask` was given a placeholder shape without exactly one `{n}` or with nothing around it. */
@@ -193,8 +194,9 @@ export class TermProtector {
    * Case-insensitive for Latin unless `caseSensitive`.
    */
   static wholeWordRegex(candidate: string, caseSensitive?: boolean): RegExp {
-    const first = firstGrapheme(candidate);
-    const last = lastGrapheme(candidate);
+    const chars = graphemes(candidate);
+    const first = chars[0] ?? '';
+    const last = chars[chars.length - 1] ?? '';
     const before = wordChar.test(first) && !unspaced.test(first) ? '(?<![\\p{L}\\p{N}])' : '';
     const after = wordChar.test(last) && !unspaced.test(last) ? '(?![\\p{L}\\p{N}])' : '';
     const exact = caseSensitive ?? nonLatinLetter.test(candidate);
@@ -210,17 +212,4 @@ function slotRegex(prefix: string, suffix: string): RegExp {
 /** Escapes the regex syntax characters (valid with and without the `u` flag). */
 export function escapeRegExp(s: string): string {
   return s.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
-}
-
-// Grapheme edges without Intl.Segmenter (absent on Hermes): a code point plus the marks, emoji
-// modifiers and zero-width-joiner sequences after it, which is what decides a word edge here.
-const graphemeAtStart = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*/su;
-const graphemeAtEnd = /.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*$/su;
-
-function firstGrapheme(s: string): string {
-  return graphemeAtStart.exec(s)?.[0] ?? s;
-}
-
-function lastGrapheme(s: string): string {
-  return graphemeAtEnd.exec(s)?.[0] ?? s;
 }

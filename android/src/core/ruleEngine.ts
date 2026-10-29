@@ -5,6 +5,7 @@
 // phone, V8 under Jest), case-insensitive. `\d` is ASCII-only in JS even with `u` (the portable
 // dialect's `digits: "ascii"`), so it needs no rewriting here, unlike ICU on iOS. Input is
 // NFC-normalized with `String.prototype.normalize` before the rules run.
+import {graphemes} from '../board/protocol';
 import type {LanguagePack, Rule} from './model';
 
 /** A `Rule` with its regular expressions compiled. */
@@ -119,12 +120,5 @@ function tidy(text: string, original: string): string {
 const isLower = (g: string): boolean => g.toUpperCase() !== g && g.toLowerCase() === g;
 const isUpper = (g: string): boolean => g.toLowerCase() !== g && g.toUpperCase() === g;
 
-/**
- * The first user-perceived character of a non-empty `s`: its first code point with the marks
- * (and joiner sequences) that follow it. Hermes has no `Intl.Segmenter`; this covers what the
- * Dart `characters` package gives for a sentence start (letters with combining marks).
- */
-function firstGrapheme(s: string): string {
-  const m = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*/su.exec(s);
-  return m ? m[0] : s;
-}
+/** The first grapheme cluster of a non-empty `s` (Dart `characters.first`). */
+const firstGrapheme = (s: string): string => graphemes(s)[0];

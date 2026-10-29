@@ -277,11 +277,16 @@ describe('rejections and storage failures, not fixture-driven', () => {
     expect(e.name).toBe('TooManyTerms');
   });
 
-  test('length counts code points: 64 astral letters pass, 65 do not', async () => {
+  test('length counts grapheme clusters (Dart characters.length), not code points', async () => {
     const store = await open();
     const a = '\u{1D400}';
     await expect(store.add({text: a.repeat(64)})).resolves.toBeTruthy();
     await expect(store.add({text: 'x' + a.repeat(64)})).rejects.toBeInstanceOf(TooLong);
+    // e + U+0301 stays two code points (no NFC here): 128 code points, 64 characters.
+    const decomposed = 'e\u0301'.repeat(64);
+    await expect(store.add({text: decomposed})).resolves.toBeTruthy();
+    await expect(store.add({text: 'e\u0301'.repeat(65)})).rejects.toBeInstanceOf(TooLong);
+    await expect(store.add({text: '\u{1F1FB}\u{1F1F3}'.repeat(64)})).resolves.toBeTruthy();
   });
 
   test('a trailing U+0085 is trimmed like the Dart reference', async () => {
