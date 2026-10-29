@@ -143,7 +143,7 @@ export class SubtitleTranslator {
             continue;
           }
           state.finals[finalJob.index] = translation ?? state.placeholders[finalJob.index];
-          this.onResult(finalJob.turn, state.text);
+          this.report(finalJob.turn, state.text);
         } else if (this.partialJob !== null) {
           const job = this.partialJob;
           this.partialJob = null;
@@ -154,13 +154,22 @@ export class SubtitleTranslator {
             continue;
           }
           state.partial = translation;
-          this.onResult(job.turn, state.text);
+          this.report(job.turn, state.text);
         } else {
           break;
         }
       }
     } finally {
       this.running = false;
+    }
+  }
+
+  /** `onResult` from the work loop: a throwing listener is logged and the loop goes on. */
+  private report(turn: number, text: string): void {
+    try {
+      this.onResult(turn, text);
+    } catch (e) {
+      this.log?.(`onResult FAILED (turn ${turn}): ${String(e)}`);
     }
   }
 

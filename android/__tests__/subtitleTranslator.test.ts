@@ -145,3 +145,32 @@ test('a failed translation is logged', async () => {
   await jest.advanceTimersByTimeAsync(0);
   expect(log).toEqual(['translate FAILED (3 chars): Error: boom']);
 });
+
+test('an exception from onResult is logged and the remaining jobs still run', async () => {
+  const log: string[] = [];
+  const results: Array<[number, string]> = [];
+  const st = new SubtitleTranslator({
+    translate: async text => text.toUpperCase(),
+    onResult: (turn, text) => {
+      results.push([turn, text]);
+      if (text === 'MỘT') {
+        throw new Error('listener broke');
+      }
+    },
+    log: message => log.push(message),
+  });
+  st.addFinal('một', 1);
+  st.addFinal('hai', 1);
+  st.setPartial('ba', 1);
+  await jest.advanceTimersByTimeAsync(0);
+  expect(results).toEqual([
+    [1, 'MỘT'],
+    [1, 'MỘT HAI'],
+    [1, 'MỘT HAI BA'],
+  ]);
+  expect(log).toEqual(['onResult FAILED (turn 1): Error: listener broke']);
+  // The loop is not stuck: new work still runs.
+  st.addFinal('bốn', 2);
+  await jest.advanceTimersByTimeAsync(0);
+  expect(results[results.length - 1]).toEqual([2, 'BỐN']);
+});
