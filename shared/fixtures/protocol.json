@@ -1,0 +1,212 @@
+{
+  "description": "Board BLE protocol (app/lib/board/protocol.dart, byte-compatible with the firmware and ios/Sources/BLE/ESPLink.swift).",
+  "uuids": {
+    "service": "A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A",
+    "audio": "A7C00002-3B2F-4C1E-9D8A-5F6E7D8C9B0A",
+    "text": "A7C00003-3B2F-4C1E-9D8A-5F6E7D8C9B0A",
+    "control": "A7C00004-3B2F-4C1E-9D8A-5F6E7D8C9B0A",
+    "info": "A7C00005-3B2F-4C1E-9D8A-5F6E7D8C9B0A"
+  },
+  "textKinds": {
+    "subtitle": 0,
+    "status": 1,
+    "time": 2,
+    "label": 3
+  },
+  "maxTextBytes": 150,
+  "maxLabelBytes": 32,
+  "frameText": [
+    {
+      "name": "10 bytes at 185 is one chunk, flags 0x03",
+      "text": "0123456789",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "030030313233343536373839"
+      ]
+    },
+    {
+      "name": "120 bytes at 50 gives payload 48, three chunks",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "status",
+      "maxWrite": 50,
+      "expected": [
+        "0101616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+        "0001616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+        "0201616161616161616161616161616161616161616161616161"
+      ]
+    },
+    {
+      "name": "maxWrite 10 behaves as 20",
+      "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "subtitle",
+      "maxWrite": 10,
+      "expected": [
+        "0100616161616161616161616161616161616161",
+        "0000616161616161616161616161616161616161",
+        "020061616161"
+      ]
+    },
+    {
+      "name": "empty text is one chunk with flags 0x03",
+      "text": "",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300"
+      ]
+    },
+    {
+      "name": "long text keeps the tail after a word boundary, with ellipsis",
+      "text": "w000 w001 w002 w003 w004 w005 w006 w007 w008 w009 w010 w011 w012 w013 w014 w015 w016 w017 w018 w019 w020 w021 w022 w023 w024 w025 w026 w027 w028 w029 w030 w031 w032 w033 w034 w035 w036 w037 w038 w039",
+      "kind": "subtitle",
+      "maxWrite": 400,
+      "expected": [
+        "0300e280a67730313020773031312077303132207730313320773031342077303135207730313620773031372077303138207730313920773032302077303231207730323220773032332077303234207730323520773032362077303237207730323820773032392077303330207730333120773033322077303333207730333420773033352077303336207730333720773033382077303339"
+      ]
+    },
+    {
+      "name": "Xin chào kind 0 matches the Swift bytes",
+      "text": "Xin chào",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "030058696e206368c3a06f"
+      ]
+    },
+    {
+      "name": "long Vietnamese text is cut at a character boundary",
+      "text": "Xin chào, hôm nay trời đẹp quá. Xin chào, hôm nay trời đẹp quá. Xin chào, hôm nay trời đẹp quá. Xin chào, hôm nay trời đẹp quá. Xin chào, hôm nay trời đẹp quá. Xin chào, hôm nay trời đẹp quá. ",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300e280a668c3b46d206e6179207472e1bb9d6920c491e1bab970207175c3a12e2058696e206368c3a06f2c2068c3b46d206e6179207472e1bb9d6920c491e1bab970207175c3a12e2058696e206368c3a06f2c2068c3b46d206e6179207472e1bb9d6920c491e1bab970207175c3a12e2058696e206368c3a06f2c2068c3b46d206e6179207472e1bb9d6920c491e1bab970207175c3a12e20"
+      ]
+    },
+    {
+      "name": "exactly 150 bytes is not cut",
+      "text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262"
+      ]
+    },
+    {
+      "name": "151 bytes without a space is cut to the last 150 bytes after the ellipsis",
+      "text": "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300e280a6636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363"
+      ]
+    },
+    {
+      "name": "label kind 3",
+      "text": "Nhật",
+      "kind": "label",
+      "maxWrite": 185,
+      "expected": [
+        "03034e68e1baad74"
+      ]
+    }
+  ],
+  "labelText": [
+    {
+      "name": "cuts at a character boundary, no ellipsis",
+      "input": "日本語日本語日本語日本語",
+      "expected": "日本語日本語日本語日"
+    },
+    {
+      "name": "short label unchanged",
+      "input": "Nhật",
+      "expected": "Nhật"
+    },
+    {
+      "name": "exactly 32 bytes is kept",
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expected": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+      "name": "33 ASCII bytes lose the last one",
+      "input": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+      "expected": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    }
+  ],
+  "boardInfo": [
+    {
+      "name": "version and font sets",
+      "hex": "0103000000",
+      "expected": {
+        "protocolVersion": 1,
+        "fontSets": 3
+      }
+    },
+    {
+      "name": "short input is null",
+      "hex": "01030000",
+      "expected": null
+    },
+    {
+      "name": "little endian across bytes",
+      "hex": "0210010000",
+      "expected": {
+        "protocolVersion": 2,
+        "fontSets": 272
+      }
+    },
+    {
+      "name": "all bits of the u32",
+      "hex": "01ffffffff",
+      "expected": {
+        "protocolVersion": 1,
+        "fontSets": 4294967295
+      }
+    },
+    {
+      "name": "extra bytes are ignored",
+      "hex": "011f00000099",
+      "expected": {
+        "protocolVersion": 1,
+        "fontSets": 31
+      }
+    },
+    {
+      "name": "empty input is null",
+      "hex": "",
+      "expected": null
+    }
+  ],
+  "timeText": [
+    {
+      "name": "unix seconds and UTC offset minutes, milliseconds dropped",
+      "epochMs": 1761400000999,
+      "utcOffsetMinutes": 0,
+      "expected": "1761400000 0"
+    },
+    {
+      "name": "UTC+7 (Vietnam)",
+      "epochMs": 1761400000999,
+      "utcOffsetMinutes": 420,
+      "expected": "1761400000 420"
+    },
+    {
+      "name": "UTC-5",
+      "epochMs": 1761400000000,
+      "utcOffsetMinutes": -300,
+      "expected": "1761400000 -300"
+    },
+    {
+      "name": "UTC+5:30",
+      "epochMs": 1761400000500,
+      "utcOffsetMinutes": 330,
+      "expected": "1761400000 330"
+    },
+    {
+      "name": "UTC-9:30",
+      "epochMs": 1761400001000,
+      "utcOffsetMinutes": -570,
+      "expected": "1761400001 -570"
+    }
+  ]
+}

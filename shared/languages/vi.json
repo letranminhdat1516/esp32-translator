@@ -1,0 +1,135 @@
+{
+  "code": "vi",
+  "appleLocale": "vi-VN",
+  "androidLocale": "vi-VN",
+  "whisperCode": "vi",
+  "label": "Tiếng Việt",
+  "labelLatin": "VI",
+  "script": "latin",
+  "minConfidence": null,
+  "recognition": [
+    {
+      "id": "loan.grab",
+      "pattern": "gran(?:t|d)? (?:out|ao)|grab out|gờ ráp|xe ra rounds",
+      "template": "Grab"
+    },
+    {
+      "id": "loan.grab-after-xe",
+      "pattern": "(?<=xe )gram",
+      "template": "Grab"
+    },
+    {
+      "id": "loan.wifi",
+      "pattern": "hoa phay|hoa pha(?! lê)|oai phai|quai phai|wai phai|wi fi|wifi",
+      "template": "Wi-Fi"
+    },
+    {
+      "id": "loan.wifi-after-password",
+      "pattern": "(?<=mật khẩu )(?:khoai tây|phai)",
+      "template": "Wi-Fi"
+    },
+    {
+      "id": "loan.zalo",
+      "pattern": "(?<=(?:qua|bằng|trên|dùng|có|gửi|nhắn|gọi) )giữa lo(?! (?:lắng|âu|sợ|ngại|xa|liệu|nghĩ))|zalo lo",
+      "template": "Zalo"
+    },
+    {
+      "id": "loan.singapore",
+      "pattern": "china com|(?:c|phi) nga (?:co|to|tho)|(?<=ở )c call|syria tho|xin ga po|xing ga po|sing ga po|singapo",
+      "template": "Singapore"
+    },
+    {
+      "id": "loan.facebook",
+      "pattern": "phây búc|phây bút|phê búc|phết búc|face book",
+      "template": "Facebook"
+    },
+    {
+      "id": "loan.email",
+      "pattern": "i meo|i-meo|e mail|e-mail|ê meo",
+      "template": "email"
+    },
+    {
+      "id": "loan.ok",
+      "pattern": "ô kê|ô-kê|oke|okê|okey",
+      "template": "OK"
+    },
+    {
+      "id": "loan.ngo-to-o",
+      "pattern": "ngở(?! ngàng)",
+      "template": "ở"
+    }
+  ],
+  "beforeTranslation": [
+    {
+      "id": "vocative.clause-start",
+      "pattern": "(?:ông bà|cô chú|anh chị|cô bác|chú bác|em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím) ơi(?! là)[,!.]?",
+      "template": "$1",
+      "atClauseStart": true
+    },
+    {
+      "id": "vocative.bare-oi",
+      "pattern": "ơi[,!.]?",
+      "template": "$1",
+      "atClauseStart": true
+    },
+    {
+      "id": "vocative.clause-end",
+      "pattern": "(?:ông bà|cô chú|anh chị|cô bác|chú bác|em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím) ơi(?=\\s*(?:[,.!?]|$))",
+      "template": ""
+    },
+    {
+      "id": "service.bill",
+      "pattern": "tính tiền(?: (?:đi|nhé|nha|ạ|với|(?:giùm|dùm|giúp|cho) (?:em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím|tôi|mình)|giùm|dùm))*(?=\\s*(?:[,.!?]|$))",
+      "template": "$1 cho tôi thanh toán",
+      "atClauseStart": true
+    },
+    {
+      "id": "price.lay-is-charge",
+      "pattern": "lấy(?= (?:em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím)(?: (?:\\d[\\d.,]*|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín|mười|mươi|mốt|trăm|nghìn|ngàn|triệu|rưỡi|chục|k))*? (?:trăm|nghìn|ngàn|triệu|rưỡi|chục|k|đồng|\\d+[.,]\\d{3}|(?!(?:19|20)\\d\\d(?!\\d))\\d{3,})(?: (?:\\d[\\d.,]*|một|hai|ba|bốn|tư|năm|lăm|sáu|bảy|tám|chín|mười|mươi|mốt|trăm|nghìn|ngàn|triệu|rưỡi|chục|k))*(?=\\s*(?:thôi|nhé|nha|đi|ạ|à|[,.!?]|$)))",
+      "template": "tính"
+    },
+    {
+      "id": "number.tram-ruoi",
+      "pattern": "trăm rưỡi",
+      "template": "trăm năm mươi"
+    },
+    {
+      "id": "number.nghin-ruoi",
+      "pattern": "(?:nghìn|ngàn) rưỡi",
+      "template": "nghìn năm trăm"
+    },
+    {
+      "id": "number.trieu-ruoi",
+      "pattern": "triệu rưỡi",
+      "template": "triệu năm trăm nghìn"
+    },
+    {
+      "id": "price.mac-is-expensive",
+      "pattern": "mắc(?= (?:quá|ghê|vậy|thế))",
+      "template": "đắt",
+      "context": "giá|tiền|bớt|đắt|rẻ|mua|bán|nghìn|ngàn|triệu|đồng|\\d"
+    },
+    {
+      "id": "bargain.bot-chut",
+      "pattern": "bớt (?:cho (?:em|anh|chị|cô|chú|bác|ông|bà|bạn|cháu|con|dì|cậu|mợ|thím|tôi|mình) )?(?:một )?(?:chút xíu|chút|tí|ít)(?=\\s*(?:đi|nha|nhé|được không|[,.!?]|$))",
+      "template": "giảm giá chút"
+    },
+    {
+      "id": "idiom.de-bung",
+      "pattern": "đừng để bụng",
+      "template": "đừng giận"
+    },
+    {
+      "id": "idiom.an-qua",
+      "pattern": "ăn quả nhớ kẻ trồng cây|uống nước nhớ nguồn",
+      "template": "hãy biết ơn những người đã giúp đỡ mình"
+    },
+    {
+      "id": "idiom.di-dau-voi-vang",
+      "pattern": "đi đâu mà vội mà vàng",
+      "template": "sao phải vội vàng thế"
+    }
+  ],
+  "terms": [],
+  "hints": []
+}

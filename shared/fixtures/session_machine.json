@@ -1,0 +1,2101 @@
+{
+  "description": "Session state machine (app/lib/engine/session_machine.dart, ARCHITECTURE section 3): next(state, event) and advance(session, event).",
+  "missingKinds": [
+    "speechModel",
+    "translation",
+    "ttsVoice"
+  ],
+  "transitions": [
+    {
+      "name": "loading + saved offered -> checking",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "loading + no saved -> choosing",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": null,
+        "offered": [
+          "ja"
+        ]
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "loading + saved not offered -> choosing(unavailable)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "de",
+        "offered": [
+          "ja"
+        ]
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": "unavailable"
+      }
+    },
+    {
+      "name": "choosing + pick -> checking",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "ja"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + all present -> preparing",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "checking + missing -> needsDownload",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ]
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + download -> downloading",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "needsDownload + pick -> checking",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "downloading + done -> checking (re-check)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + error -> needsDownload with error",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [],
+        "error": "offline"
+      }
+    },
+    {
+      "name": "preparing + started -> running",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + started keeps restarts",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 1
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 1
+      }
+    },
+    {
+      "name": "preparing + startFailed -> failed",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "boom"
+      }
+    },
+    {
+      "name": "running + pick other -> switching",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "running + pick same -> unchanged",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "ja"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + recognizerDied first -> preparing(restarts 1)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 1
+      }
+    },
+    {
+      "name": "running + recognizerDied second -> failed",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 1
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "recognizer stopped"
+      }
+    },
+    {
+      "name": "switching + ready -> preparing(to)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "fr",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "switching + missing -> needsDownload(to)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "checked",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "fr"
+          }
+        ]
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "fr",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "fr"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "failed + retry -> checking",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "failed + pick -> checking",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "unlisted: loading + started leaves the state unchanged",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "unlisted: running + downloadDone leaves the state unchanged",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "unlisted: downloading + picked leaves the state unchanged",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "unlisted: choosing + retry leaves the state unchanged",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "unlisted: failed + recognizerDied leaves the state unchanged",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    }
+  ],
+  "generations": [
+    {
+      "name": "increments exactly on entering switching",
+      "start": {
+        "state": {
+          "type": "running",
+          "code": "ja",
+          "restarts": 0
+        },
+        "generation": 0
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "fr"
+          },
+          "state": {
+            "type": "switching",
+            "from": "ja",
+            "to": "fr"
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "checked",
+            "missing": []
+          },
+          "state": {
+            "type": "preparing",
+            "code": "fr",
+            "restarts": 0
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "started"
+          },
+          "state": {
+            "type": "running",
+            "code": "fr",
+            "restarts": 0
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "picked",
+            "code": "ko"
+          },
+          "state": {
+            "type": "switching",
+            "from": "fr",
+            "to": "ko"
+          },
+          "generation": 2
+        }
+      ]
+    },
+    {
+      "name": "no increment when pick equals current",
+      "start": {
+        "state": {
+          "type": "running",
+          "code": "ja",
+          "restarts": 0
+        },
+        "generation": 3
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "ja"
+          },
+          "state": {
+            "type": "running",
+            "code": "ja",
+            "restarts": 0
+          },
+          "generation": 3
+        }
+      ]
+    },
+    {
+      "name": "an unlisted event while switching keeps the generation",
+      "start": {
+        "state": {
+          "type": "switching",
+          "from": "ja",
+          "to": "fr"
+        },
+        "generation": 5
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "ko"
+          },
+          "state": {
+            "type": "switching",
+            "from": "ja",
+            "to": "fr"
+          },
+          "generation": 5
+        }
+      ]
+    }
+  ],
+  "matrix": [
+    {
+      "name": "loading + catalogReady",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "loading + picked (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + checked (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + downloadTapped (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + downloadDone (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + downloadFailed (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + started (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + startFailed (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + recognizerDied (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "loading + retry (unchanged)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "choosing + catalogReady (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + picked",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "choosing + checked (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + downloadTapped (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + downloadDone (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + downloadFailed (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + started (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + startFailed (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + recognizerDied (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "choosing + retry (unchanged)",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "checking + catalogReady (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + picked (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + checked",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "checking + downloadTapped (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + downloadDone (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + downloadFailed (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + started (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + startFailed (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + recognizerDied (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + retry (unchanged)",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "needsDownload + catalogReady (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + picked",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "needsDownload + checked (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + downloadTapped",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "needsDownload + downloadDone (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + downloadFailed (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + started (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + startFailed (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + recognizerDied (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + retry (unchanged)",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "downloading + catalogReady (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + picked (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + checked (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + downloadTapped (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + downloadDone",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + downloadFailed",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [],
+        "error": "offline"
+      }
+    },
+    {
+      "name": "downloading + started (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + startFailed (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + recognizerDied (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + retry (unchanged)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "preparing + catalogReady (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + picked (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + checked (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + downloadTapped (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + downloadDone (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + downloadFailed (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + started",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + startFailed",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "boom"
+      }
+    },
+    {
+      "name": "preparing + recognizerDied (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + retry (unchanged)",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + catalogReady (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + picked",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "running + checked (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + downloadTapped (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + downloadDone (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + downloadFailed (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + started (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + startFailed (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + recognizerDied",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 1
+      }
+    },
+    {
+      "name": "running + retry (unchanged)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "switching + catalogReady (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + picked (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + checked",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "fr",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "switching + downloadTapped (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + downloadDone (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + downloadFailed (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + started (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + startFailed (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + recognizerDied (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "switching + retry (unchanged)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "failed + catalogReady (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + picked",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "failed + checked (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + downloadTapped (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + downloadDone (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + downloadFailed (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + started (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + startFailed (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + recognizerDied (unchanged)",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    },
+    {
+      "name": "failed + retry",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    }
+  ]
+}
