@@ -12,9 +12,29 @@ Map<String, dynamic> loadFixture(String name) =>
     jsonDecode(File('$sharedDir/fixtures/$name.json').readAsStringSync())
         as Map<String, dynamic>;
 
-/// The cases of [group] in a fixture, as JSON objects (absent -> empty).
-List<Map<String, dynamic>> casesOf(Map<String, dynamic> fixture, String group) =>
-    [for (final c in (fixture[group] as List?) ?? const []) c as Map<String, dynamic>];
+/// A fixture that does not have the shape a test expects.
+class FixtureError extends Error {
+  FixtureError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'FixtureError: $message';
+}
+
+/// The cases of [group] in a fixture, as JSON objects. Throws [FixtureError]
+/// when the key is missing or null, so a typo cannot silently skip cases.
+List<Map<String, dynamic>> casesOf(Map<String, dynamic> fixture, String group) {
+  final list = fixture[group];
+  if (list == null) {
+    throw FixtureError('missing "$group" (keys: ${fixture.keys.join(', ')})');
+  }
+  return [for (final c in list as List) c as Map<String, dynamic>];
+}
+
+/// Like [casesOf] for a list a case may leave out (absent -> empty).
+List<Map<String, dynamic>> optionalCasesOf(Map<String, dynamic> fixture, String group) =>
+    fixture[group] == null ? const [] : casesOf(fixture, group);
 
 /// Reads `shared/languages/<code>.json`.
 LanguagePack sharedPack(String code) =>

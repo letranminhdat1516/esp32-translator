@@ -165,7 +165,7 @@ void main() {
       test(c['name'] as String, () async {
         final store = await open();
         final existing = <Term>[
-          for (final e in casesOf(c, 'existing'))
+          for (final e in optionalCasesOf(c, 'existing'))
             await store.add(text: e['text'] as String, variants: strings(e['variants']), fixed: stringMap(e['fixed'])),
         ];
         final input = c['input'] as Map<String, dynamic>?;

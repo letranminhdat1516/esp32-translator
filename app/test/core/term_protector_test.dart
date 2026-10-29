@@ -26,7 +26,7 @@ void main() {
       final m = run();
       expect(m.text, c['masked']);
       if (c['isEmpty'] != null) expect(m.isEmpty, c['isEmpty']);
-      for (final r in casesOf(c, 'restores')) {
+      for (final r in optionalCasesOf(c, 'restores')) {
         expect(protector.restore(r['translated'] as String, m), r['expected'], reason: r['translated'] as String);
       }
     });

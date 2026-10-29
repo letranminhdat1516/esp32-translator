@@ -58,7 +58,7 @@ void main() {
       for (final turn in (want['emptyTurns'] as List?) ?? const []) {
         expect(byTurn[turn] ?? '', '', reason: 'turn $turn');
       }
-      for (final r in casesOf(want, 'requestCounts')) {
+      for (final r in optionalCasesOf(want, 'requestCounts')) {
         final n = fake.requests.where((q) => q == r['text']).length;
         if (r['exactly'] != null) expect(n, r['exactly'], reason: r['text'] as String);
         if (r['max'] != null) expect(n, lessThanOrEqualTo(r['max'] as int), reason: r['text'] as String);
