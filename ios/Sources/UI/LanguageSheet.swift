@@ -113,6 +113,7 @@ struct ChipView: View {
     }
 }
 
+#if DEBUG
 #Preview("Language sheet") {
     LanguageSheet(ui: .sampleChoosing())
 }
@@ -120,3 +121,4 @@ struct ChipView: View {
 #Preview("Language sheet, online opt-in") {
     LanguageSheet(ui: .sampleOnlineOptIn())
 }
+#endif

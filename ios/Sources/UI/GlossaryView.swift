@@ -10,6 +10,8 @@ struct GlossaryView: View {
     @State private var addError: String?
     @State private var editText = ""
     @State private var editError: String?
+    /// A refused delete: shown on the row, not under the add field
+    @State private var rowError: (id: String, message: String)?
     @State private var editingId: String?
     @FocusState private var editFocused: Bool
 
@@ -73,6 +75,7 @@ struct GlossaryView: View {
     private func field(_ hint: String, text: Binding<String>, error: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             TextField("", text: text, prompt: Text(hint).foregroundStyle(Palette.faint))
+                .accessibilityLabel(hint.isEmpty ? "Sửa từ" : hint)
                 .modifier(PlainTextInput())
                 .submitLabel(.done)
                 .padding(.horizontal, 16)
@@ -108,6 +111,11 @@ struct GlossaryView: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottomLeading) {
+            if let e = rowError, e.id == term.id {
+                Text(e.message).font(.system(size: 12)).foregroundStyle(Self.errorColor).padding(.horizontal, 20)
+            }
+        }
     }
 
     private func editRow(_ term: Term) -> some View {
@@ -164,10 +172,16 @@ struct GlossaryView: View {
     }
 
     private func delete(_ id: String) {
-        do { try ui.glossaryDelete(id) } catch { addError = message(error) }
+        do {
+            try ui.glossaryDelete(id)
+            rowError = nil
+        } catch {
+            rowError = (id, message(error))
+        }
     }
 }
 
+#if DEBUG
 #Preview("Glossary") {
     GlossaryView(ui: .sampleGlossary())
 }
@@ -188,6 +202,8 @@ extension GlossaryView {
         _addError = State(initialValue: GlossaryMessages.tooLong)
     }
 }
+
+#endif
 
 /// No capitalisation or autocorrect for terms (iOS only, so the Mac preview still compiles).
 private struct PlainTextInput: ViewModifier {

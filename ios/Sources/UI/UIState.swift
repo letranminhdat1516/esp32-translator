@@ -98,16 +98,6 @@ enum ReadinessText {
     static func failureReason(_ reason: String) -> String {
         reason == "recognizer stopped" ? "Bộ nhận giọng đã dừng." : reason
     }
-
-    /// Text under the spinner for the transient states.
-    static func spinner(_ state: SessionState, names: [String: String]) -> String? {
-        switch state {
-        case .checking: "Đang kiểm tra…"
-        case .preparing: "Đang chuẩn bị…"
-        case let .switching(_, to): "Đang chuyển sang \(name(to, names))…"
-        default: nil
-        }
-    }
 }
 
 /// The footer of the language list: why a language is missing, and the online opt-in.
@@ -205,8 +195,10 @@ final class UIState {
 
     var hasHistory: Bool { !lines.isEmpty }
 
+    /// Empty while the engine drives the screen (`session == nil`): the status line already says it.
     var chips: [StatusChip] {
-        StatusChip.visible(online: online, micRoute: micRoute, listening: listening, board: board)
+        guard session != nil else { return [] }
+        return StatusChip.visible(online: online, micRoute: micRoute, listening: listening, board: board)
     }
 
     var readiness: ReadinessKind { session.map(ReadinessKind.of) ?? .none }

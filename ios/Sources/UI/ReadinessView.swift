@@ -18,7 +18,7 @@ struct ReadinessView: View {
         case let .failed(_, reason):
             failed(reason)
         case .loading, .checking, .preparing, .running, .switching:
-            spinner(ReadinessText.spinner(state, names: ui.languageNames))
+            spinner(nil)
         }
     }
 
@@ -129,6 +129,7 @@ struct ReadinessView: View {
     }
 }
 
+#if DEBUG
 @MainActor private func readinessPreview(_ configure: (UIState) -> Void) -> some View {
     let ui = UIState.sampleChoosing()
     configure(ui)
@@ -158,3 +159,4 @@ struct ReadinessView: View {
 #Preview("Failed") {
     readinessPreview { $0.session = .failed("ja", reason: "recognizer stopped") }
 }
+#endif

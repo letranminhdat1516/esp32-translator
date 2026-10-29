@@ -57,12 +57,9 @@ final class UIStateTests: XCTestCase {
         XCTAssertEqual(ReadinessText.button(failed: true), "Thử lại")
     }
 
-    func testFailureReasonAndSpinnerText() {
+    func testFailureReason() {
         XCTAssertEqual(ReadinessText.failureReason("recognizer stopped"), "Bộ nhận giọng đã dừng.")
         XCTAssertEqual(ReadinessText.failureReason("mic busy"), "mic busy")
-        XCTAssertEqual(ReadinessText.spinner(.switching(from: "en", to: "ja"), names: ["ja": "日本語"]),
-                       "Đang chuyển sang 日本語…")
-        XCTAssertNil(ReadinessText.spinner(.loading, names: [:]))
     }
 
     func testFooterText() {
@@ -87,6 +84,18 @@ final class UIStateTests: XCTestCase {
         XCTAssertEqual(ui.chips, [])
         XCTAssertFalse(ui.hasHistory)
         XCTAssertEqual(ui.languageLabel, "English")
+    }
+
+    @MainActor
+    func testChipsAreEmptyWhileTheEngineDrivesTheScreen() {
+        let ui = UIState()
+        ui.online = true
+        ui.listening = true
+        ui.micRoute = .phoneMic
+        ui.board = .off
+        XCTAssertEqual(ui.chips, [])
+        ui.session = .running("en")
+        XCTAssertEqual(ui.chips, [.online, .phoneMic, .noBoard])
     }
 
     @MainActor

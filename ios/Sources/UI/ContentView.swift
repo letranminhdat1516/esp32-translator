@@ -66,8 +66,7 @@ struct ContentView: View {
                     hasHistory: !engine.theirLines.isEmpty || !engine.myLines.isEmpty, board: board,
                     boardMicOn: engine.boardMicOn, lines: lines, theirPartial: engine.theirPartial,
                     myPartial: engine.myPartial, label: ui.languageLabel,
-                    chips: StatusChip.visible(online: ui.online, micRoute: ui.micRoute, listening: engine.listening,
-                                              board: board))
+                    chips: [])
     }
 
     private func startStop() {
@@ -197,7 +196,10 @@ private struct Header: View {
                 Menu {
                     Button("Ngôn ngữ", systemImage: "globe") { showLanguages = true }
                         .disabled(ui.offeredPacks.isEmpty)
-                    Button("Từ điển riêng", systemImage: "character.book.closed") { showGlossary = true }
+                    // Without a controller the glossary has nothing to edit
+                    if ui.session != nil {
+                        Button("Từ điển riêng", systemImage: "character.book.closed") { showGlossary = true }
+                    }
                     Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
                     Button("Xoá hội thoại", systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(!live.running || !live.hasHistory)
@@ -210,13 +212,15 @@ private struct Header: View {
                 }
                 .accessibilityLabel("Cài đặt")
             }
-            HStack(spacing: 8) {
+            FlowLayout(spacing: 8, runSpacing: 6) {
+                HStack(spacing: 8) {
                 Circle()
                     .fill(live.listening ? Palette.accentLight : Palette.faint)
                     .frame(width: 8, height: 8)
                 Text(live.listening ? "Đang nghe" : "Đang chờ")
                     .fontWeight(.semibold)
                     .foregroundStyle(live.listening ? Palette.text : Palette.muted)
+                }
                 Text("· \(boardText)").foregroundStyle(Palette.muted)
                 ForEach(live.chips, id: \.self) { chip in
                     ChipView(text: chip.text).accessibilityLabel(chip.accessibilityText)
@@ -475,3 +479,38 @@ private struct UIStatePreview: View {
     }())
 }
 #endif
+
+/// Children flow left to right and wrap to the next line (the Dart `Wrap`).
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var runSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = place(proposal.width ?? .infinity, subviews)
+        return CGSize(width: rows.width, height: rows.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (i, origin) in place(bounds.width, subviews).origins.enumerated() {
+            subviews[i].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
+        }
+    }
+
+    private func place(_ maxWidth: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], width: CGFloat, height: CGFloat) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, width: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + runSpacing
+                rowHeight = 0
+            }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            width = max(width, x - spacing)
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (origins, width, y + rowHeight)
+    }
+}
