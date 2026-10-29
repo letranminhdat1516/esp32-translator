@@ -41,5 +41,13 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "codegenConfig": {
+    "name": "VoiceEngineSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/engine",
+    "android": {
+      "javaPackageName": "vn.cicca.livetranslator.engine"
+    }
   }
 }
