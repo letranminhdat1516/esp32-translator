@@ -2,11 +2,23 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Voice engine: mic for my voice (P7), the foreground service that keeps the conversation and the JS
+         thread running (P6), its notification; audio routing for the Bluetooth headset (SCO) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Model downloads (R3); the translator path itself stays offline (R17) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- BLE (react-native-ble-plx): legacy permissions up to API 30, new ones from API 31 -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <!-- BLUETOOTH_CONNECT: the board (BLE) and the headset (SCO) from API 31 -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
@@ -31,5 +43,18 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <service
+        android:name="vn.cicca.livetranslator.engine.VoiceService"
+        android:exported="false"
+        android:foregroundServiceType="microphone" />
     </application>
+    <queries>
+        <!-- Speech recognizers and TTS engines (package visibility, API 30+) -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 </manifest>
