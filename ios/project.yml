@@ -10,7 +10,9 @@ targets:
   ESPTranslator:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources:
+      - Sources
+      - {path: ../shared/copy, type: folder, buildPhase: resources}
     dependencies: [{ package: ClaudeRelay }]
     info:
       path: Sources/Info.plist
