@@ -14,7 +14,7 @@ let package = Package(
             path: "Sources",
             exclude: ["Info.plist", "UI/ContentView.swift", "UI/RelayView.swift", "UI/LanguageSheet.swift",
                       "UI/ReadinessView.swift", "UI/GlossaryView.swift", "UI/UISamples.swift", "BLE/ESPLink.swift", "Relay", "App/ESPTranslatorApp.swift",
-                      "App/ConversationEngine.swift", "Audio/ESPAudioSource.swift",
+                      "Audio/ESPAudioSource.swift",
                       "Translate/Translator.swift", "Engine/AudioSession.swift", "Engine/Speaker.swift",
                       "Engine/TranslationSheet.swift", "Engine/AppleVoiceEngine+Live.swift"],
             // Language mode 5 as in the app; complete concurrency checking so data-race diagnostics show up here
