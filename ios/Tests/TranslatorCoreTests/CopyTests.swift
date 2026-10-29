@@ -53,9 +53,16 @@ final class CopyTests: XCTestCase {
 
     func testEveryKeyInTheFileIsUsedByOneOfTheApps() throws {
         var used = try swiftKeys()
-        let ui = root.appendingPathComponent("android/src/ui")
-        for name in try FileManager.default.contentsOfDirectory(atPath: ui.path) where name.hasSuffix(".ts") || name.hasSuffix(".tsx") {
-            used.formUnion(matches(#"['"`]([a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)['"`]"#, in: try text(ui.appendingPathComponent(name))))
+        // The same folders the Android copy test scans: screens, the controller and the composition root.
+        var androidFiles = [root.appendingPathComponent("android/src/engine/ConversationController.ts")]
+        for dir in ["android/src/ui", "android/src/app"] {
+            let url = root.appendingPathComponent(dir)
+            for name in try FileManager.default.contentsOfDirectory(atPath: url.path) where name.hasSuffix(".ts") || name.hasSuffix(".tsx") {
+                androidFiles.append(url.appendingPathComponent(name))
+            }
+        }
+        for file in androidFiles {
+            used.formUnion(matches(#"['"`]([a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)['"`]"#, in: try text(file)))
         }
         XCTAssertEqual(try jsonKeys().subtracting(used).sorted(), [])
     }
