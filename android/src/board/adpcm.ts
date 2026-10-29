@@ -54,24 +54,27 @@ export class ADPCMDecoder {
 
     const out = new Int16Array(silence + samplesPerPacket);
     let o = silence;
+    // One IMA ADPCM step: updates predictor and index, returns the sample.
+    const decodeNibble = (code: number): number => {
+      const step = adpcmStepTable[index];
+      let delta = step >> 3;
+      if (code & 4) {
+        delta += step;
+      }
+      if (code & 2) {
+        delta += step >> 1;
+      }
+      if (code & 1) {
+        delta += step >> 2;
+      }
+      predictor = clamp(predictor + (code & 8 ? -delta : delta), -32768, 32767);
+      index = clamp(index + adpcmIndexTable[code], 0, 88);
+      return predictor;
+    };
     for (let i = 5; i < packet.length; i++) {
       const byte = packet[i];
-      for (const code of [byte & 0x0f, byte >> 4]) {
-        const step = adpcmStepTable[index];
-        let delta = step >> 3;
-        if (code & 4) {
-          delta += step;
-        }
-        if (code & 2) {
-          delta += step >> 1;
-        }
-        if (code & 1) {
-          delta += step >> 2;
-        }
-        predictor = clamp(predictor + (code & 8 ? -delta : delta), -32768, 32767);
-        index = clamp(index + adpcmIndexTable[code], 0, 88);
-        out[o++] = predictor;
-      }
+      out[o++] = decodeNibble(byte & 0x0f); // low nibble first
+      out[o++] = decodeNibble(byte >> 4);
     }
     return out;
   }
