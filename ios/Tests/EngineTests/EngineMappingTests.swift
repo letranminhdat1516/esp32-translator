@@ -65,6 +65,7 @@ final class EngineMappingTests: XCTestCase {
     }
 
     /// Events sent from any thread reach every subscriber, each stream in the order it was sent
+    @MainActor
     func testEventsFromAnyThreadArriveInOrderPerStream() async {
         let sink = EngineEventSink()
         let first = EventRecorder(sink), second = EventRecorder(sink)
@@ -77,7 +78,7 @@ final class EngineMappingTests: XCTestCase {
                 done.resume()
             }
         }
-        await settle()
+        await until { first.all.count == 53 && second.all.count == 53 }
         for recorder in [first, second] {
             let starts = recorder.all.compactMap { if case .ttsStart(let id) = $0 { return id } else { return nil } }
             let gates = recorder.all.compactMap { if case .gate(let open) = $0 { return open } else { return nil } }

@@ -71,6 +71,7 @@ final class RecognizerPairTests: XCTestCase {
         x1.emit(.final("from the loser", confidence: 0.9, audio: 1))
         home1.emit(.final("loser mine", confidence: nil, audio: 1))
         x2.emit(.final("from the winner", confidence: 0.9, audio: 1))
+        await until { !theirTexts().isEmpty }
         await settle()
         XCTAssertEqual(theirTexts(), ["from the winner@2"])
         XCTAssertFalse(recorder.all.contains { if case .mine = $0 { return true } else { return false } })
@@ -86,7 +87,7 @@ final class RecognizerPairTests: XCTestCase {
         XCTAssertFalse(x.stopped)
         XCTAssertEqual(x.hints.last, ["Bến Thành"], "a same-language start updates the hints")
         x.emit(.final("hello", confidence: 0.8, audio: 1))
-        await settle()
+        await until { !theirTexts().isEmpty }
         XCTAssertEqual(theirTexts(), ["hello@5"])
     }
 
@@ -95,7 +96,7 @@ final class RecognizerPairTests: XCTestCase {
         let engine = pair(["en": x, "vi": home])
         _ = try await engine.start(PairMsg(home: "vi", other: "en", generation: 1), hints: [])
         engine.stop()
-        await settle()
+        await until { x.stopped && home.stopped }
         XCTAssertTrue(x.stopped && home.stopped)
         x.emit(.final("after stop", confidence: 0.9, audio: 1))
         await settle()
@@ -115,7 +116,7 @@ final class RecognizerPairTests: XCTestCase {
         _ = try await engine.start(PairMsg(home: "vi", other: "en", generation: 1), hints: [])
         home.emit(.partial("xin", audio: 0.5))
         home.emit(.final("xin chào", confidence: nil, audio: 1))
-        await settle()
+        await until { recorder.all.count >= 2 }
         let mine = recorder.all.compactMap { if case .mine(let m) = $0 { return m } else { return nil } }
         XCTAssertEqual(mine.map(\.kind), [.partial, .finalText])
         XCTAssertEqual(mine.map(\.text), ["xin", "xin chào"])

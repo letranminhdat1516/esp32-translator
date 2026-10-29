@@ -26,7 +26,8 @@ final class SubtitleTranslator {
     private var turns: [Int: TurnState] = [:]
     private var finalJobs: [(turn: Int, index: Int, text: String)] = []
     private var partialJob: (turn: Int, text: String)?
-    private var running = false
+    /// The task working through the queue, nil when idle
+    private var worker: Task<Void, Never>?
 
     /// `translate` is the VI→EN translator (`Translator.translate`; a stub in tests)
     init(translate: @escaping (String) async throws -> String,
@@ -82,10 +83,14 @@ final class SubtitleTranslator {
         run()
     }
 
+    /// Returns once every queued request has been handled (tests await this instead of sleeping)
+    func idle() async {
+        while let worker { await worker.value }
+    }
+
     private func run() {
-        guard !running else { return }
-        running = true
-        Task {
+        guard worker == nil else { return }
+        worker = Task {
             while true {
                 if !finalJobs.isEmpty {
                     let job = finalJobs.removeFirst()
@@ -106,7 +111,7 @@ final class SubtitleTranslator {
                     break
                 }
             }
-            running = false
+            worker = nil
         }
     }
 

@@ -115,7 +115,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         XCTAssertTrue(mic.started)
         mic.onSpeechStart()
         mic.onSpeechEnd()
-        await settle()
+        await until { recorder.all.count >= 2 }
         XCTAssertEqual(home.finalized, 1, "the gate closing finalizes the phrase")
         XCTAssertEqual(recorder.all.filter { if case .gate = $0 { return true } else { return false } },
                        [.gate(true), .gate(false)])
@@ -152,7 +152,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         r.micFails = true
         try await r.engine.start(pair: PairMsg(home: "vi", other: "ja", generation: 2), recognizerX: onDevice,
                                  hints: [])
-        await settle()
+        await until { recorder.all.contains(.audioSession(AudioSessionMsg(kind: .interrupted))) }
         XCTAssertTrue(recorder.all.contains(.audioSession(AudioSessionMsg(kind: .interrupted))))
         XCTAssertEqual(Array(r.log.calls.suffix(2)), ["session.startSilence", "speaker.warmUp"],
                        "idle silence on, then the voice warmed up")
@@ -180,7 +180,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         try await r.engine.micOn(true)
         r.session.onChange?(.interruptionBegan)
         r.session.onChange?(.interruptionEnded(shouldResume: true))
-        await settle()
+        await until { recorder.all.count >= 2 }
         XCTAssertEqual(r.mics.count, 2, "the mic is rebuilt")
         let sessionEvents = recorder.all.compactMap { if case .audioSession(let m) = $0 { return m } else { return nil } }
         XCTAssertEqual(sessionEvents, [AudioSessionMsg(kind: .interrupted),
@@ -201,8 +201,45 @@ final class AppleVoiceEngineTests: XCTestCase {
         let r = rig()
         let recorder = EventRecorder(r.engine.events())
         r.session.onChange?(.routeChanged(.phoneMic))
-        await settle()
+        await until { !recorder.all.isEmpty }
         XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .routeChanged, route: .phoneMic))])
+    }
+
+    /// A media services reset kills the audio engines: a wanted mic is rebuilt (then `resumed`), an idle engine
+    /// only gets its silence back; with no pair nothing happens
+    func testMediaServicesResetRebuildsAWantedMic() async throws {
+        let r = rig()
+        let recorder = EventRecorder(r.engine.events())
+        r.session.onChange?(.mediaServicesReset)
+        XCTAssertEqual(r.log.calls, [], "nothing runs before start")
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        r.session.onChange?(.mediaServicesReset)
+        XCTAssertEqual(r.mics.count, 2, "the mic is rebuilt")
+        XCTAssertTrue(r.mics[1].started)
+        await until { !recorder.all.isEmpty }
+        XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .resumed, route: .headset))])
+    }
+
+    func testMediaServicesResetWhileIdleRestartsTheSilence() async throws {
+        let r = rig()
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        r.session.onChange?(.mediaServicesReset)
+        XCTAssertEqual(r.log.calls.last, "session.startSilence")
+        XCTAssertTrue(r.mics.isEmpty)
+    }
+
+    /// The mic cannot be rebuilt after a reset: the engine is idle (silence on) and reports an interruption
+    func testMediaServicesResetWithAFailingMicReportsAnInterruption() async throws {
+        let r = rig()
+        let recorder = EventRecorder(r.engine.events())
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        r.micFails = true
+        r.session.onChange?(.mediaServicesReset)
+        XCTAssertEqual(r.log.calls.last, "session.startSilence")
+        await until { !recorder.all.isEmpty }
+        XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .interrupted))])
     }
 
     // MARK: Speech output and translation
@@ -216,7 +253,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         XCTAssertEqual(speaker.spoken.map(\.1), [7])
         speaker.onStart?(7)
         speaker.onEnd?(7)
-        await settle()
+        await until { recorder.all.count >= 2 }
         XCTAssertEqual(recorder.all, [.ttsStart(7), .ttsEnd(7)])
         try await r.engine.stopSpeaking()
         XCTAssertEqual(r.log.calls.last, "speaker.stop")
@@ -273,7 +310,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         let r = rig()
         _ = try await r.engine.capabilities(home: "vi")
         try await r.engine.downloadItem(MissingMsg(kind: .translation, language: "en", from: "en", to: "vi"))
-        await settle()
+        await until { r.capabilityHomes.get.count >= 2 }
         XCTAssertEqual(r.capabilityHomes.get, ["vi", "vi"])
     }
 
@@ -284,7 +321,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         let item = MissingMsg(kind: .speechModel, language: "en")
         let error = await engineError { try await r.engine.downloadItem(item) }
         XCTAssertEqual(error, .downloadFailed)
-        await settle()
+        await until { recorder.all.count >= 2 }
         XCTAssertEqual(recorder.all.last, .download(DownloadMsg(item: item, progress: 0, done: true, error: "no network")))
     }
 
@@ -298,7 +335,7 @@ final class AppleVoiceEngineTests: XCTestCase {
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
         try await r.engine.feedTheirAudio([Int16](repeating: 100, count: 320), sampleRate: 16_000)
         XCTAssertGreaterThan(x.fedFrames, 0)
-        try await Task.sleep(for: .milliseconds(400))
+        await until { x.finalized >= 1 }
         XCTAssertEqual(x.finalized, 1, "a pause in board audio finalizes the phrase")
     }
 

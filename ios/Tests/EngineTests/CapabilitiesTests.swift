@@ -83,7 +83,20 @@ final class MissingAssemblyTests: XCTestCase {
 
 @MainActor
 final class DownloadsTests: XCTestCase {
-    private struct Cancelled: Error {}
+    private struct Described: LocalizedError {
+        var errorDescription: String? { "The network connection was lost." }
+    }
+
+    /// `DownloadMsg.error` is readable text: the reason of a DownloadFailure, "cancelled", or the error's
+    /// localized description, never `String(describing:)` ("Cancelled()")
+    func testDownloadErrorMessagesAreReadable() {
+        XCTAssertEqual(Downloads.message(for: DownloadFailure("no window to show the download sheet")),
+                       "no window to show the download sheet")
+        XCTAssertEqual(Downloads.message(for: CancellationError()), "cancelled")
+        XCTAssertEqual(Downloads.message(for: NSError(domain: NSCocoaErrorDomain, code: NSUserCancelledError)),
+                       "cancelled")
+        XCTAssertEqual(Downloads.message(for: Described()), "The network connection was lost.")
+    }
 
     private func recorder() -> (EngineEventSink, () -> [DownloadMsg]) {
         let sink = EngineEventSink()
@@ -102,7 +115,7 @@ final class DownloadsTests: XCTestCase {
             onDone: { refreshed += 1 })
         let item = MissingMsg(kind: .translation, language: "en", from: "en", to: "vi")
         try await downloads.download(item)
-        await settle()
+        await until { got().count >= 2 }
         XCTAssertEqual(asked, ["en>vi"])
         XCTAssertEqual(got(), [DownloadMsg(item: item, progress: 0, done: false),
                                DownloadMsg(item: item, progress: 1, done: true)])
@@ -131,7 +144,7 @@ final class DownloadsTests: XCTestCase {
         let (queue, got) = recorder()
         var refreshed = 0
         let downloads = Downloads(events: queue, work: .init(
-            translation: { _, _ in throw Cancelled() }, speech: { _, _ in }, voice: {}),
+            translation: { _, _ in throw CancellationError() }, speech: { _, _ in }, voice: {}),
             onDone: { refreshed += 1 })
         let item = MissingMsg(kind: .translation, language: "en", from: "vi", to: "en")
         do {
@@ -142,11 +155,11 @@ final class DownloadsTests: XCTestCase {
         } catch {
             XCTFail("unexpected \(error)")
         }
-        await settle()
+        await until { got().count >= 2 }
         let events = got()
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(events.last?.done, true)
-        XCTAssertNotNil(events.last?.error)
+        XCTAssertEqual(events.last?.error, "cancelled", "a readable reason, not a Swift dump")
         XCTAssertFalse(events.contains { $0.done && $0.error == nil })
         XCTAssertEqual(refreshed, 1, "capabilities are re-read after a failed download too")
     }
@@ -163,7 +176,7 @@ final class DownloadsTests: XCTestCase {
             onDone: {})
         let item = MissingMsg(kind: .speechModel, language: "en")
         try await downloads.download(item)
-        await settle()
+        await until { got().count >= 3 }
         XCTAssertEqual(got().map(\.progress), [0, 0.5, 1])
         XCTAssertEqual(got().map(\.done), [false, false, true])
     }
@@ -174,7 +187,7 @@ final class DownloadsTests: XCTestCase {
         let downloads = Downloads(events: queue, work: .init(
             translation: { _, _ in }, speech: { _, _ in }, voice: { opened += 1 }), onDone: {})
         try await downloads.download(MissingMsg(kind: .ttsVoice, language: "vi"))
-        await settle()
+        await until { got().count >= 2 }
         XCTAssertEqual(opened, 1)
         XCTAssertEqual(got().last?.done, true)
     }
@@ -243,6 +256,7 @@ final class CapabilitiesCacheTests: XCTestCase {
         }
         let first = Task { await cache.get(home: "vi") }
         let second = Task { await cache.get(home: "vi") }
+        await eventually { gate.calls >= 1 }
         try? await Task.sleep(for: .milliseconds(100))
         // Both callers are suspended (no thread blocked) on the one gather in flight
         XCTAssertEqual(gate.calls, 1, "the second caller joins the gather in flight")
@@ -276,7 +290,7 @@ final class CapabilitiesCacheTests: XCTestCase {
             return CapabilitiesMsg(recognizers: [], translatable: n == 1 ? ["stale"] : ["fresh"], vietnameseVoice: true)
         }
         cache.refresh(home: "vi")
-        try? await Task.sleep(for: .milliseconds(50))
+        await eventually { gate.calls >= 1 }  // the first gather is running
         cache.invalidate()  // a download finished while the first gather was running
         cache.refresh(home: "vi")
         let got4 = await cache.get(home: "vi")

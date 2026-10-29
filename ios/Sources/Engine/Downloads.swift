@@ -53,8 +53,8 @@ final class Downloads {
                 try await work.voice()
             }
         } catch {
-            let message = String(describing: error)
-            Diag.log("download \(item) failed: \(message)")
+            let message = Self.message(for: error)
+            Diag.log("download \(item) failed: \(message) (\(error))")
             onDone()
             events.send(.download(DownloadMsg(item: item, progress: reported.withLock { $0 }, done: true,
                                               error: message)))
@@ -63,5 +63,16 @@ final class Downloads {
         Diag.log("download \(item) done")
         onDone()
         events.send(.download(DownloadMsg(item: item, progress: 1, done: true)))
+    }
+
+    /// The readable reason in `DownloadMsg.error`: a `DownloadFailure`'s text, "cancelled" for a cancelled task
+    /// or sheet, else the error's localized description
+    nonisolated static func message(for error: Error) -> String {
+        if let failure = error as? DownloadFailure { return failure.description }
+        let ns = error as NSError
+        if error is CancellationError || (ns.domain == NSCocoaErrorDomain && ns.code == NSUserCancelledError) {
+            return "cancelled"
+        }
+        return error.localizedDescription
     }
 }

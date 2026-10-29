@@ -237,16 +237,24 @@ final class EventRecorder: @unchecked Sendable {
     deinit { tasks.forEach { $0.cancel() } }
 }
 
-/// Lets queued tasks and stream deliveries run
+/// Lets queued tasks and stream deliveries run. Only before asserting that something did NOT happen: a check
+/// that something did happen waits for it with `until`, so a loaded machine cannot make it fail.
 func settle() async {
     for _ in 0..<20 { await Task.yield() }
     try? await Task.sleep(for: .milliseconds(50))
 }
 
-/// Polls `condition` for up to a second
+/// Polls `condition` until it holds, for up to 10 s (then the assertion that follows reports the failure)
 @MainActor
 func until(_ condition: () -> Bool) async {
-    for _ in 0..<200 where !condition() { try? await Task.sleep(for: .milliseconds(5)) }
+    let deadline = ContinuousClock.now + .seconds(10)
+    while !condition() && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+}
+
+/// `until` for nonisolated tests: polls a Sendable condition for up to 10 s
+func eventually(_ condition: @Sendable () -> Bool) async {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while !condition() && ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
 }
 
 /// The `EngineError` a call throws, nil when it returns
