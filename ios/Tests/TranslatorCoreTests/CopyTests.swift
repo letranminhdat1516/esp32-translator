@@ -28,7 +28,8 @@ final class CopyTests: XCTestCase {
         let namespaces = Set(try jsonKeys().map { String($0.split(separator: ".")[0]) })
         let literal = #""([a-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)""#
         var keys = Set<String>()
-        for url in uiFiles {
+        // The conversation controller speaks and shows a few texts of its own (the unclear cue)
+        for url in uiFiles + [root.appendingPathComponent("ios/Sources/App/ConversationController.swift")] {
             let code = try text(url)
             keys.formUnion(matches(#"Copy\.t\("([A-Za-z0-9.]+)""#, in: code))
             keys.formUnion(matches(literal, in: code).filter { namespaces.contains(String($0.split(separator: ".")[0])) })

@@ -53,7 +53,7 @@ struct GlossaryView: View {
 
     private var addRow: some View {
         HStack(alignment: .top, spacing: 12) {
-            field(Copy.t("glossary.addHint"), text: $addText, error: addError)
+            field(Copy.t("glossary.addHint"), text: $addText, error: addError ?? ui.glossaryError)
                 .onSubmit(add)
                 .onChange(of: addText) { addError = nil }
             Button(action: add) {

@@ -1,5 +1,4 @@
 import SwiftUI
-import Translation
 
 /// "Phụ đề" style: black, text first, one blue accent (the board's) that lights only while listening.
 enum Palette {
@@ -12,8 +11,7 @@ enum Palette {
     static let accentLight = Color(red: 0x4C / 255, green: 0x8F / 255, blue: 0xE8 / 255)
 }
 
-/// What the conversation part of the screen shows: from the `UIState` once a controller drives it (`ui.session` set),
-/// from the `ConversationEngine` until then (EN ↔ VI).
+/// What the conversation part of the screen shows, from the `UIState` the conversation controller fills.
 private struct Live {
     var running: Bool
     var listening: Bool
@@ -28,53 +26,26 @@ private struct Live {
 }
 
 struct ContentView: View {
-    let engine: ConversationEngine
     let relay: RelayModel
-    /// Filled by the conversation controller (P2.2); with the defaults the engine drives everything.
+    /// Filled by the conversation controller (fields and intents).
     let ui: UIState
     @State private var showRelay = false
     @State private var confirmClear = false
     @State private var showLanguages = false
     @State private var showGlossary = false
 
-    @MainActor init(engine: ConversationEngine, relay: RelayModel, ui: UIState? = nil) {
-        self.engine = engine
+    @MainActor init(ui: UIState, relay: RelayModel) {
+        self.ui = ui
         self.relay = relay
-        self.ui = ui ?? UIState()
     }
+
+    /// `loading` until the controller has set the session.
+    private var session: SessionState { ui.session ?? .loading }
 
     private var live: Live {
-        if ui.session != nil {
-            return Live(running: ReadinessKind.of(ui.session!) == .none, listening: ui.listening,
-                        hasHistory: ui.hasHistory, board: ui.board, boardMicOn: ui.boardMicOn,
-                        lines: ui.lines.sorted { $0.at < $1.at }, theirPartial: ui.theirPartial,
-                        myPartial: ui.myPartial, label: ui.languageLabel, chips: ui.chips)
-        }
-        let board: BoardState = switch engine.board {
-        case .off: .off
-        case .scanning: .scanning
-        case .connecting: .connecting
-        case .ready: .ready
-        }
-        let lines = (engine.theirLines.map { UILine(id: $0.id.uuidString, mine: false, source: $0.source,
-                                                    target: $0.target, unclear: $0.unclear, at: $0.at) } +
-                     engine.myLines.filter { !$0.source.isEmpty }.map {
-                         UILine(id: $0.id.uuidString, mine: true, source: $0.source, target: $0.target,
-                                unclear: $0.unclear, at: $0.at)
-                     }).sorted { $0.at < $1.at }
-        return Live(running: engine.phase == .running, listening: engine.listening,
-                    hasHistory: !engine.theirLines.isEmpty || !engine.myLines.isEmpty, board: board,
-                    boardMicOn: engine.boardMicOn, lines: lines, theirPartial: engine.theirPartial,
-                    myPartial: engine.myPartial, label: ui.languageLabel,
-                    chips: [])
-    }
-
-    private func startStop() {
-        if ui.session != nil { ui.startStop() } else if engine.listening { engine.stopConversation() } else { engine.startConversation() }
-    }
-
-    private func toggleBoardMic() {
-        if ui.session != nil { ui.toggleBoardMic() } else { engine.toggleBoardMic() }
+        Live(running: ReadinessKind.of(session) == .none, listening: ui.listening, hasHistory: ui.hasHistory,
+             board: ui.board, boardMicOn: ui.boardMicOn, lines: ui.lines.sorted { $0.at < $1.at },
+             theirPartial: ui.theirPartial, myPartial: ui.myPartial, label: ui.languageLabel, chips: ui.chips)
     }
 
     var body: some View {
@@ -93,45 +64,24 @@ struct ContentView: View {
         .sheet(isPresented: $showGlossary) { GlossaryView(ui: ui) }
         // The trash sits next to the listen button: a stray tap must not wipe the conversation
         .confirmationDialog(Copy.t("dialog.clearTitle"), isPresented: $confirmClear, titleVisibility: .visible) {
-            Button(Copy.t("dialog.clearConfirm"), role: .destructive) { if ui.session != nil { ui.clear() } else { engine.clearHistory() } }
+            Button(Copy.t("dialog.clearConfirm"), role: .destructive) { ui.clear() }
             Button(Copy.t("dialog.cancel"), role: .cancel) {}
         }
     }
 
     @ViewBuilder
     private func content(_ live: Live) -> some View {
-        if let session = ui.session {
-            if ReadinessKind.of(session) == .none {
-                conversation(live)
-            } else {
-                ReadinessView(ui: ui, state: session)
-            }
+        if ReadinessKind.of(session) == .none {
+            conversation(live)
         } else {
-            switch engine.phase {
-            case .needsTranslationModels:
-                ModelDownloadView(engine: engine)
-            case .preparing(let message):
-                Spacer()
-                ProgressView(message).tint(Palette.muted).foregroundStyle(Palette.muted)
-                Spacer()
-            case .failed(let message):
-                Spacer()
-                ContentUnavailableView(Copy.t("failed.title"), systemImage: "exclamationmark.triangle",
-                                       description: Text(message))
-                Button(Copy.t("failed.retry")) { Task { await engine.start() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Palette.accent)
-                Spacer()
-            case .idle, .running:
-                conversation(live)
-            }
+            ReadinessView(ui: ui, state: session)
         }
     }
 
     @ViewBuilder
     private func conversation(_ live: Live) -> some View {
         ConversationView(live: live)
-        ControlBar(live: live, confirmClear: $confirmClear, startStop: startStop, toggleBoardMic: toggleBoardMic)
+        ControlBar(live: live, confirmClear: $confirmClear, startStop: ui.startStop, toggleBoardMic: ui.toggleBoardMic)
     }
 }
 
@@ -382,62 +332,6 @@ private struct ControlBar: View {
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 8)
-    }
-}
-
-/// Downloads the English ↔ Vietnamese translation models once (system download sheet), then works offline
-private struct ModelDownloadView: View {
-    let engine: ConversationEngine
-    @State private var config: TranslationSession.Configuration?
-    @State private var step = 0
-    /// The download was cancelled or failed (no network): the button retries the step that failed
-    @State private var failed = false
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(Palette.accentLight)
-            Text(Copy.t("legacy.modelsTitle")).font(.system(size: 18, weight: .semibold))
-            Text(Copy.t("readiness.needsDownloadNote"))
-                .font(.system(size: 15))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(Palette.muted)
-            if failed {
-                Text(Copy.t("readiness.downloadFailed"))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Palette.accentLight)
-            }
-            Button(Copy.t(failed ? "readiness.retry" : "legacy.modelsButton")) {
-                failed = false
-                if config == nil {
-                    step = 1
-                    config = .init(source: ConversationEngine.english, target: ConversationEngine.vietnamese)
-                } else {
-                    config?.invalidate()
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Palette.accent)
-            .disabled(step != 0 && !failed)
-            Spacer()
-        }
-        .padding(24)
-        .translationTask(config) { session in
-            do {
-                try await session.prepareTranslation()
-            } catch {
-                await MainActor.run { failed = true }
-                return
-            }
-            await MainActor.run {
-                if step == 1 {
-                    step = 2
-                    config = .init(source: ConversationEngine.vietnamese, target: ConversationEngine.english)
-                } else {
-                    engine.translationModelsReady()
-                }
-            }
-        }
     }
 }
 
