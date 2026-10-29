@@ -131,6 +131,31 @@ describe('GlossaryScreen', () => {
     expect(screen.queryByLabelText('Xoá iPhone')).toBeNull();
   });
 
+  it('a non-validation error from an async handler shows "Không lưu được", never an unhandled rejection', async () => {
+    const boom = async () => {
+      throw new Error('disk full');
+    };
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    await render(
+      <GlossaryScreen terms={[alpha]} onBack={() => {}} onAdd={boom} onUpdate={boom} onDelete={boom} />,
+    );
+    await fireEvent.changeText(screen.getByTestId('glossaryField'), 'x');
+    await fireEvent.press(screen.getByText('Thêm'));
+    expect(await screen.findByText('Không lưu được')).toBeTruthy();
+    expect(screen.getByTestId('glossaryField').props.value).toBe('x');
+    await fireEvent.press(screen.getByLabelText('Sửa Zorvik'));
+    await fireEvent.press(screen.getByText('Lưu'));
+    expect(await screen.findAllByText('Không lưu được')).toHaveLength(2);
+    expect(screen.getByTestId('glossaryEditField')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Huỷ'));
+    await fireEvent.press(screen.getByLabelText('Xoá Zorvik'));
+    expect(await screen.findByText('Không lưu được')).toBeTruthy();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
   it('snapshot: glossary', async () => {
     const r = await render(<Host initial={[alpha, beta, builtIn]} />);
     expect(r.toJSON()).toMatchSnapshot();

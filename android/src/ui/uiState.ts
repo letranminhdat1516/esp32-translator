@@ -6,6 +6,7 @@ import type {BoardState} from '../board/BoardLink';
 import type {LanguagePack, Term} from '../core/model';
 import type {AudioRoute} from '../engine/VoiceEngine';
 import type {SessionState} from '../engine/sessionMachine';
+import {t} from './copy';
 
 export type {BoardState, AudioRoute, SessionState};
 
@@ -24,7 +25,10 @@ export type UiPhase =
 
 /** One line of the conversation (theirs or mine). */
 export interface UiLine {
-  /** Stable key across renders. */
+  /**
+   * Stable key across renders. Ids are per side: a their-line and a my-line may share an id (the
+   * screen keys them `t:<id>` / `m:<id>`), but must be unique within `theirLines` / `myLines`.
+   */
   readonly id: string;
   readonly source: string;
   readonly target: string;
@@ -34,14 +38,6 @@ export interface UiLine {
   readonly at: number;
 }
 
-/** How ready a listed language is (the marks of the language sheet). */
-export interface LanguageMark {
-  /** Models and voices are on the device: usable now. */
-  readonly ready: boolean;
-  /** Recognition goes over the network (the opt-in "online" recognizer). */
-  readonly online: boolean;
-}
-
 export interface UiState {
   readonly phase: UiPhase;
   /** Status text for `preparing`, reason for `failed`. */
@@ -49,8 +45,6 @@ export interface UiState {
   /** Rendered by the readiness view for `needsDownload` (carries the missing items). */
   readonly session: SessionState | null;
   readonly board: BoardState;
-  /** The phone runs without a board: shows the "không có board" chip. */
-  readonly noBoard: boolean;
   readonly boardMicOn: boolean;
   readonly theirLines: readonly UiLine[];
   readonly myLines: readonly UiLine[];
@@ -68,10 +62,12 @@ export interface UiState {
   readonly micRoute: AudioRoute;
   /** Languages listed while the session is choosing and in the language sheet. */
   readonly offeredPacks: readonly LanguagePack[];
-  /** Readiness / online mark per offered language code. */
-  readonly languageMarks: Readonly<Record<string, LanguageMark>>;
-  /** The user opted in to the online recognizer (footer switch of the language sheet). */
-  readonly onlineOptIn: boolean;
+  /** Offered only through the online recognizer (marked "online" in the list). */
+  readonly onlineCodes: readonly string[];
+  /** Not offered, but would work with the online recognizer: the footer lists them with the opt-in. */
+  readonly onlineCandidates: readonly LanguagePack[];
+  /** Languages the user allowed the online recognizer for. */
+  readonly onlineAllowed: readonly string[];
   /** Display name per language code, including the home language: used in "Bản dịch A → B". */
   readonly languageNames: Readonly<Record<string, string>>;
   /** 0..1 while downloading; null when the platform reports none. */
@@ -87,7 +83,6 @@ export const emptyUiState: UiState = {
   message: '',
   session: null,
   board: 'off',
-  noBoard: false,
   boardMicOn: true,
   theirLines: [],
   myLines: [],
@@ -99,9 +94,10 @@ export const emptyUiState: UiState = {
   onlineRecognizer: false,
   micRoute: 'headset',
   offeredPacks: [],
-  languageMarks: {},
-  onlineOptIn: false,
-  languageNames: {vi: 'Tiếng Việt'},
+  onlineCodes: [],
+  onlineCandidates: [],
+  onlineAllowed: [],
+  languageNames: {vi: t('header.home')},
   downloadProgress: null,
   ttsVoiceMissing: false,
   glossaryTerms: [],
@@ -118,15 +114,14 @@ export class GlossaryValidationError extends Error {
   }
 }
 
-/** The Vietnamese validation messages (Dart `GlossaryMessages`). */
+/** The Vietnamese validation messages (shared/copy/vi.json; Dart `GlossaryMessages` + two more). */
 export const GlossaryMessages = {
-  empty: 'Từ không được để trống',
-  tooLong: 'Tối đa 64 ký tự',
-  tooMany: 'Tối đa 500 từ',
-  badCharacters: 'Có ký tự không hợp lệ',
-  // Not in the Dart screen (it never mapped these two store errors); added for the same store.
-  duplicate: 'Từ này đã có trong từ điển',
-  tooManyVariants: 'Tối đa 8 cách viết khác',
+  empty: t('glossary.error.empty'),
+  tooLong: t('glossary.error.tooLong'),
+  tooMany: t('glossary.error.tooMany'),
+  badCharacters: t('glossary.error.badCharacters'),
+  duplicate: t('glossary.error.duplicate'),
+  tooManyVariants: t('glossary.error.tooManyVariants'),
 } as const;
 
 /** Maps a store rejection (error names of shared/fixtures/glossary.json) to its message. */
@@ -162,7 +157,8 @@ export interface UiIntents {
   onRetry(): void;
   /** A language picked in the sheet or in the readiness view. */
   pickLanguage(code: string): void;
-  setOnlineOptIn(on: boolean): void;
+  /** Allows or forbids the online recognizer for one language (footer of the language sheet). */
+  setOnlineAllowed(code: string, on: boolean): void;
   /** Opens the system text-to-speech settings (TTS-voice banner). */
   openTtsSettings(): void;
   /** May throw `GlossaryValidationError`. */
@@ -181,7 +177,7 @@ export const noopIntents: UiIntents = {
   onDownload: noop,
   onRetry: noop,
   pickLanguage: noop,
-  setOnlineOptIn: noop,
+  setOnlineAllowed: noop,
   openTtsSettings: noop,
   addTerm: noop,
   updateTerm: noop,

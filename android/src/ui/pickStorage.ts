@@ -1,6 +1,7 @@
-// Persists the picked language code (AsyncStorage). Failures are swallowed: a pick that is not
-// saved only means the language sheet opens again next time. The module is required lazily so
-// the screens work (and are testable) where the native storage module is absent.
+// Persists the picked language code (AsyncStorage). Failures never reach the caller: a pick that is
+// not saved only means the language sheet opens again next time. In development they are logged.
+// The module is required lazily so the screens work (and are testable) where the native storage
+// module is absent.
 const KEY = 'pickedLanguage';
 
 type Storage = {
@@ -8,11 +9,18 @@ type Storage = {
   setItem(key: string, value: string): Promise<void>;
 };
 
+function warn(what: string, e: unknown): void {
+  if (__DEV__) {
+    console.warn(`pickStorage: ${what} failed`, e);
+  }
+}
+
 function storage(): Storage | null {
   try {
     const mod = require('@react-native-async-storage/async-storage');
     return (mod.default ?? mod) as Storage;
-  } catch {
+  } catch (e) {
+    warn('loading AsyncStorage', e);
     return null;
   }
 }
@@ -20,7 +28,8 @@ function storage(): Storage | null {
 export async function loadPickedLanguage(): Promise<string | null> {
   try {
     return (await storage()?.getItem(KEY)) ?? null;
-  } catch {
+  } catch (e) {
+    warn('read', e);
     return null;
   }
 }
@@ -28,7 +37,7 @@ export async function loadPickedLanguage(): Promise<string | null> {
 export async function savePickedLanguage(code: string): Promise<void> {
   try {
     await storage()?.setItem(KEY, code);
-  } catch {
-    // see above
+  } catch (e) {
+    warn('write', e);
   }
 }

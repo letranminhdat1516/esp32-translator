@@ -4,6 +4,7 @@ import React, {useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, TextInput, View} from 'react-native';
 import type {Term} from '../core/model';
 import {PrimaryButton, TextButton, Txt} from './components';
+import {t} from './copy';
 import {Palette, Spacing, Type, fontFamily} from './theme';
 import {GlossaryValidationError} from './uiState';
 
@@ -24,15 +25,16 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
   const [editError, setEditError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  /** A validation message as is; any other failure of a handler (storage, ...) is the generic text. */
+  const messageOf = (e: unknown) =>
+    e instanceof GlossaryValidationError ? e.message : t('glossary.saveFailed');
+
   const add = async () => {
     try {
       await onAdd(addText);
     } catch (e) {
-      if (e instanceof GlossaryValidationError) {
-        setAddError(e.message);
-        return;
-      }
-      throw e;
+      setAddError(messageOf(e));
+      return;
     }
     setAddText('');
     setAddError(null);
@@ -42,11 +44,8 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
     try {
       await onUpdate(id, editText);
     } catch (e) {
-      if (e instanceof GlossaryValidationError) {
-        setEditError(e.message);
-        return;
-      }
-      throw e;
+      setEditError(messageOf(e));
+      return;
     }
     setEditingId(null);
     setEditError(null);
@@ -56,11 +55,7 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
     try {
       await onDelete(id);
     } catch (e) {
-      if (e instanceof GlossaryValidationError) {
-        setAddError(e.message);
-        return;
-      }
-      throw e;
+      setAddError(messageOf(e));
     }
   };
 
@@ -73,34 +68,37 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
   return (
     <View style={styles.screen}>
       <View style={styles.bar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Quay lại" onPress={onBack} style={styles.back}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('glossary.back')} onPress={onBack} style={styles.back}>
           <Txt style={styles.backText}>←</Txt>
         </Pressable>
-        <Txt style={styles.barTitle}>Từ điển riêng</Txt>
+        <Txt style={styles.barTitle}>{t('glossary.title')}</Txt>
       </View>
       <View style={styles.addRow}>
         <View style={styles.fieldBox}>
           <TextInput
             testID="glossaryField"
             value={addText}
-            onChangeText={t => {
-              setAddText(t);
+            onChangeText={value => {
+              setAddText(value);
               if (addError !== null) {
                 setAddError(null);
               }
             }}
             onSubmitEditing={add}
-            placeholder="Thêm từ giữ nguyên"
+            placeholder={t('glossary.addHint')}
+            accessibilityLabel={t('glossary.addHint')}
             placeholderTextColor={Palette.faint}
             style={styles.input}
           />
-          {addError !== null ? <Txt style={styles.error}>{addError}</Txt> : null}
+          {addError !== null ? <Txt style={styles.error} accessibilityLabel={t('glossary.errorLabel', {error: addError})}>
+              {addError}
+            </Txt> : null}
         </View>
-        <PrimaryButton text="Thêm" onPress={add} style={styles.addButton} />
+        <PrimaryButton text={t('glossary.add')} onPress={add} style={styles.addButton} />
       </View>
       {terms.length === 0 ? (
         <View style={styles.empty}>
-          <Txt style={styles.emptyText}>Chưa có từ nào</Txt>
+          <Txt style={styles.emptyText}>{t('glossary.empty')}</Txt>
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
@@ -109,10 +107,11 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
               <View key={term.id} style={styles.editRow}>
                 <TextInput
                   testID="glossaryEditField"
+                  accessibilityLabel={t('glossary.editLabel')}
                   value={editText}
                   autoFocus
-                  onChangeText={t => {
-                    setEditText(t);
+                  onChangeText={value => {
+                    setEditText(value);
                     if (editError !== null) {
                       setEditError(null);
                     }
@@ -120,16 +119,18 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
                   onSubmitEditing={() => save(term.id)}
                   style={styles.input}
                 />
-                {editError !== null ? <Txt style={styles.error}>{editError}</Txt> : null}
+                {editError !== null ? <Txt style={styles.error} accessibilityLabel={t('glossary.errorLabel', {error: editError})}>
+                  {editError}
+                </Txt> : null}
                 <View style={styles.editButtons}>
                   <TextButton
-                    text="Huỷ"
+                    text={t('glossary.cancel')}
                     onPress={() => {
                       setEditingId(null);
                       setEditError(null);
                     }}
                   />
-                  <TextButton text="Lưu" onPress={() => save(term.id)} />
+                  <TextButton text={t('glossary.save')} onPress={() => save(term.id)} />
                 </View>
               </View>
             ) : (
@@ -144,14 +145,14 @@ export function GlossaryScreen({terms, onAdd, onUpdate, onDelete, onBack}: Gloss
                   <View style={styles.termActions}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`Sửa ${term.text}`}
+                      accessibilityLabel={t('glossary.edit', {term: term.text})}
                       onPress={() => startEdit(term)}
                       style={styles.iconButton}>
                       <Txt style={styles.iconText}>✎</Txt>
                     </Pressable>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`Xoá ${term.text}`}
+                      accessibilityLabel={t('glossary.delete', {term: term.text})}
                       onPress={() => remove(term.id)}
                       style={styles.iconButton}>
                       <Txt style={styles.iconText}>🗑</Txt>

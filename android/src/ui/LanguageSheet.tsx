@@ -1,55 +1,54 @@
-// Port of app/lib/ui/language_sheet.dart, plus the readiness / "online" marks and the footer that
-// explains why a language may be missing (the online recognizer is an opt-in).
-import React from 'react';
+// Port of app/lib/ui/language_sheet.dart with the footer of ios/Sources/UI/LanguageSheet.swift:
+// the "online" chip on online-only languages, why a language is missing, and the online opt-in.
+import React, {useContext} from 'react';
 import {Modal, Pressable, ScrollView, StyleSheet, Switch, View} from 'react-native';
+import {SafeAreaInsetsContext} from 'react-native-safe-area-context';
 import type {LanguagePack} from '../core/model';
 import {Chip, Txt} from './components';
+import {t} from './copy';
 import {Palette, Spacing, Type} from './theme';
-import type {LanguageMark} from './uiState';
 
 export interface LanguageListProps {
   packs: readonly LanguagePack[];
   currentCode: string | null;
   onPick: (code: string) => void;
-  marks?: Readonly<Record<string, LanguageMark>>;
+  /** Codes marked with the "online" chip. */
+  onlineCodes?: readonly string[];
 }
 
 /** The list itself, shared with the "Chọn ngôn ngữ" step of the readiness view. */
-export function LanguageList({packs, currentCode, onPick, marks = {}}: LanguageListProps) {
+export function LanguageList({packs, currentCode, onPick, onlineCodes = []}: LanguageListProps) {
   return (
     <ScrollView contentContainerStyle={styles.list}>
-      {packs.map(p => {
-        const mark = marks[p.code];
-        return (
-          <Pressable
-            key={p.code}
-            testID={`language-${p.code}`}
-            accessibilityRole="button"
-            accessibilityLabel={p.label}
-            onPress={() => onPick(p.code)}
-            style={styles.row}>
-            <View style={styles.rowText}>
+      {packs.map(p => (
+        <Pressable
+          key={p.code}
+          testID={`language-${p.code}`}
+          accessibilityRole="button"
+          accessibilityLabel={p.label}
+          accessibilityState={{selected: p.code === currentCode}}
+          onPress={() => onPick(p.code)}
+          style={styles.row}>
+          <View style={styles.rowText}>
+            <View style={styles.rowTitleLine}>
               <Txt style={styles.rowTitle}>{p.label}</Txt>
-              {p.labelLatin !== p.label ? <Txt style={styles.rowSub}>{p.labelLatin}</Txt> : null}
+              {onlineCodes.includes(p.code) ? <Chip text={t('chip.online')} /> : null}
             </View>
-            {mark?.online ? <Chip text="online" /> : null}
-            {mark ? (
-              <Txt style={[styles.mark, !mark.ready && styles.markNeeds]}>
-                {mark.ready ? 'sẵn sàng' : 'cần tải'}
-              </Txt>
-            ) : null}
-            {p.code === currentCode ? <Txt style={styles.tick}>✓</Txt> : null}
-          </Pressable>
-        );
-      })}
+            {p.labelLatin !== p.label ? <Txt style={styles.rowSub}>{p.labelLatin}</Txt> : null}
+          </View>
+          {p.code === currentCode ? <Txt style={styles.tick}>✓</Txt> : null}
+        </Pressable>
+      ))}
     </ScrollView>
   );
 }
 
 export interface LanguageSheetProps extends LanguageListProps {
   visible: boolean;
-  onlineOptIn: boolean;
-  onSetOnlineOptIn: (on: boolean) => void;
+  /** Not offered, but possible with the online recognizer: listed in the footer with a switch each. */
+  onlineCandidates: readonly LanguagePack[];
+  onlineAllowed: readonly string[];
+  onSetOnlineAllowed: (code: string, on: boolean) => void;
   /** Called before `onPick` when a language is picked, and on back / tap outside. */
   onClose: () => void;
 }
@@ -59,45 +58,52 @@ export function LanguageSheet({
   visible,
   packs,
   currentCode,
-  marks,
-  onlineOptIn,
-  onSetOnlineOptIn,
+  onlineCodes,
+  onlineCandidates,
+  onlineAllowed,
+  onSetOnlineAllowed,
   onPick,
   onClose,
 }: LanguageSheetProps) {
+  const bottom = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Đóng" />
-      <View style={styles.sheet}>
-        <Txt style={styles.title}>Ngôn ngữ</Txt>
-        <View style={styles.listBox}>
+    <Modal visible={visible} transparent statusBarTranslucent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel={t('language.close')} />
+      <View style={[styles.sheet, {paddingBottom: Spacing.l + bottom}]}>
+        <Txt style={styles.title}>{t('language.sheetTitle')}</Txt>
+        <ScrollView style={styles.scroll}>
           <LanguageList
             packs={packs}
             currentCode={currentCode}
-            marks={marks}
+            onlineCodes={onlineCodes}
             onPick={code => {
               onClose();
               onPick(code);
             }}
           />
-        </View>
-        <View style={styles.footer}>
-          <Txt style={styles.footerText}>
-            Không thấy ngôn ngữ cần dùng? Máy chỉ liệt kê các ngôn ngữ nhận giọng được ngay trên máy.
-            Bật nhận giọng online để thêm các ngôn ngữ khác: âm thanh sẽ được gửi qua mạng và ngôn
-            ngữ đó được đánh dấu "online".
-          </Txt>
-          <View style={styles.optIn}>
-            <Txt style={styles.optInText}>Nhận giọng online</Txt>
-            <Switch
-              accessibilityLabel="Nhận giọng online"
-              value={onlineOptIn}
-              onValueChange={onSetOnlineOptIn}
-              trackColor={{false: Palette.faint, true: Palette.accent}}
-              thumbColor={Palette.white}
-            />
-          </View>
-        </View>
+          {onlineCandidates.length > 0 ? (
+            <View style={styles.footer}>
+              <Txt style={styles.footerText}>
+                {t('language.why', {names: onlineCandidates.map(p => p.label).join(', ')})}
+              </Txt>
+              <Txt style={styles.optInTitle}>{t('language.optInTitle')}</Txt>
+              <Txt style={styles.footerText}>{t('language.optInNote')}</Txt>
+              {onlineCandidates.map(p => (
+                <View key={p.code} style={styles.optIn}>
+                  <Txt style={styles.optInText}>{p.label}</Txt>
+                  <Switch
+                    testID={`online-${p.code}`}
+                    accessibilityLabel={p.label}
+                    value={onlineAllowed.includes(p.code)}
+                    onValueChange={on => onSetOnlineAllowed(p.code, on)}
+                    trackColor={{false: Palette.faint, true: Palette.accent}}
+                    thumbColor={Palette.white}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -110,7 +116,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     maxHeight: '80%',
-    paddingBottom: Spacing.l,
   },
   title: {
     fontSize: Type.title,
@@ -118,7 +123,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.s,
   },
-  listBox: {flexShrink: 1},
+  scroll: {flexGrow: 0},
   list: {paddingBottom: Spacing.m},
   row: {
     flexDirection: 'row',
@@ -128,13 +133,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.m,
   },
   rowText: {flex: 1},
+  rowTitleLine: {flexDirection: 'row', alignItems: 'center', gap: Spacing.s},
   rowTitle: {fontSize: Type.row},
   rowSub: {fontSize: Type.secondary, color: Palette.muted},
-  mark: {fontSize: Type.small, color: Palette.muted},
-  markNeeds: {color: Palette.accentLight},
   tick: {fontSize: Type.row, color: Palette.accentLight},
-  footer: {paddingHorizontal: Spacing.xl, paddingTop: Spacing.s, gap: Spacing.s},
+  footer: {paddingHorizontal: Spacing.xl, paddingTop: Spacing.l, gap: 10},
   footerText: {fontSize: Type.small, color: Palette.muted},
+  optInTitle: {fontSize: Type.body, marginTop: Spacing.xs},
   optIn: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   optInText: {fontSize: Type.body},
 });

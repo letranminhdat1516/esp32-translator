@@ -216,24 +216,50 @@ describe('ConversationScreen', () => {
     }
   });
 
-  it('"không có board" chip and a disabled board mic without a board', async () => {
-    const a = await setup(state());
-    expect(screen.queryByText('không có board')).toBeNull();
-    await a.unmount();
-    const b = await setup(state({noBoard: true, board: 'off'}));
-    expect(screen.getByText('không có board')).toBeTruthy();
-    expect(screen.queryByText('· Bluetooth đang tắt')).toBeNull();
+  it('"không có board" chip only while listening without a ready board (as the Swift app)', async () => {
+    for (const [listening, board, shown] of [
+      [true, 'off', true],
+      [true, 'scanning', true],
+      [true, 'connecting', true],
+      [false, 'off', false],
+      [true, 'ready', false],
+    ] as const) {
+      const r = await setup(state({listening, board}));
+      expect(screen.queryByText('không có board') !== null).toBe(shown);
+      await r.unmount();
+    }
+  });
+
+  it('chips carry the accessibility texts of the Swift app', async () => {
+    await setup(state({listening: true, board: 'off', onlineRecognizer: true, micRoute: 'phoneMic'}));
+    expect(screen.getByLabelText('Đang nhận giọng qua mạng')).toBeTruthy();
+    expect(screen.getByLabelText('Đang dùng mic điện thoại')).toBeTruthy();
+    expect(screen.getByLabelText('Chưa kết nối board')).toBeTruthy();
+  });
+
+  it('the board mic is disabled without a ready board', async () => {
+    const b = await setup(state({board: 'off'}));
     await fireEvent.press(screen.getByLabelText('Tắt mic của board'));
     expect(b.log).toEqual([]);
   });
 
+  it('a my-line and a their-line with the same id both render', async () => {
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await setup(
+      state({theirLines: [line('1', 'hello', 'xin chào', 1)], myLines: [line('1', 'chào', 'hi', 2)]}),
+    );
+    expect(screen.getAllByTestId('bubbleTarget')).toHaveLength(2);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
   it('TTS banner explains and opens the system settings', async () => {
     const a = await setup(state());
-    expect(screen.queryByText('Mở cài đặt giọng nói')).toBeNull();
+    expect(screen.queryByText('Mở cài đặt')).toBeNull();
     await a.unmount();
     const b = await setup(state({ttsVoiceMissing: true}));
-    expect(screen.getByText(/giọng đọc tiếng Việt/)).toBeTruthy();
-    await fireEvent.press(screen.getByText('Mở cài đặt giọng nói'));
+    expect(screen.getByText('Chưa có giọng đọc tiếng Việt. Bản dịch chỉ hiện dạng chữ.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Mở cài đặt'));
     expect(b.log).toEqual(['tts']);
   });
 

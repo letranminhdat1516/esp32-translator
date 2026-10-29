@@ -1,9 +1,9 @@
 // Port of app/lib/ui/conversation_screen.dart ("Phụ đề"; ios/Sources/UI/ContentView.swift):
 // header (language pair, settings, status line with chips), the stream of lines, the control bar.
 import React, {useMemo, useRef, useState} from 'react';
-import {Modal, Pressable, ScrollView, StyleSheet, View} from 'react-native';
-import {ActivityIndicator} from 'react-native';
+import {ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, View} from 'react-native';
 import {Chip, PrimaryButton, TextButton, Txt} from './components';
+import {t} from './copy';
 import {ReadinessView} from './ReadinessView';
 import {Layout, Palette, Spacing, Type} from './theme';
 import {UiIntents, UiLine, UiState, hasHistory} from './uiState';
@@ -36,6 +36,7 @@ export function ConversationScreen({state, intents, onOpenLanguages, onOpenGloss
             onDownload={intents.onDownload}
             onRetry={intents.onRetry}
             offered={state.offeredPacks}
+            onlineCodes={state.onlineCodes}
             onPick={intents.pickLanguage}
             labels={state.languageNames}
             progress={state.downloadProgress}
@@ -54,9 +55,9 @@ export function ConversationScreen({state, intents, onOpenLanguages, onOpenGloss
       body = (
         <View style={styles.centerFill}>
           <Txt style={styles.warnIcon}>⚠</Txt>
-          <Txt style={styles.failedTitle}>Không khởi động được</Txt>
+          <Txt style={styles.failedTitle}>{t('failed.title')}</Txt>
           <Txt style={styles.failedReason}>{state.message}</Txt>
-          <PrimaryButton text="Thử lại" onPress={intents.onRetry} style={styles.retry} />
+          <PrimaryButton text={t('failed.retry')} onPress={intents.onRetry} style={styles.retry} />
         </View>
       );
       break;
@@ -82,14 +83,19 @@ export function ConversationScreen({state, intents, onOpenLanguages, onOpenGloss
       />
       {state.ttsVoiceMissing ? <TtsBanner onOpen={intents.openTtsSettings} /> : null}
       {body}
-      <Modal visible={confirmClear} transparent animationType="fade" onRequestClose={() => setConfirmClear(false)}>
+      <Modal
+        visible={confirmClear}
+        transparent
+        statusBarTranslucent
+        animationType="fade"
+        onRequestClose={() => setConfirmClear(false)}>
         <View style={styles.dialogBackdrop}>
           <View style={styles.dialog}>
-            <Txt style={styles.dialogTitle}>Xoá toàn bộ hội thoại?</Txt>
+            <Txt style={styles.dialogTitle}>{t('dialog.clearTitle')}</Txt>
             <View style={styles.dialogActions}>
-              <TextButton text="Huỷ" onPress={() => setConfirmClear(false)} />
+              <TextButton text={t('dialog.cancel')} onPress={() => setConfirmClear(false)} />
               <TextButton
-                text="Xoá"
+                text={t('dialog.clearConfirm')}
                 color={Palette.destructive}
                 onPress={() => {
                   setConfirmClear(false);
@@ -107,11 +113,8 @@ export function ConversationScreen({state, intents, onOpenLanguages, onOpenGloss
 function TtsBanner({onOpen}: {onOpen: () => void}) {
   return (
     <View style={styles.banner}>
-      <Txt style={styles.bannerText}>
-        Máy chưa có giọng đọc tiếng Việt nên bạn chưa nghe được bản dịch. Cài giọng tiếng Việt trong
-        cài đặt chuyển văn bản thành giọng nói.
-      </Txt>
-      <TextButton text="Mở cài đặt giọng nói" onPress={onOpen} />
+      <Txt style={styles.bannerText}>{t('banner.text')}</Txt>
+      <TextButton text={t('banner.open')} onPress={onOpen} />
     </View>
   );
 }
@@ -119,13 +122,13 @@ function TtsBanner({onOpen}: {onOpen: () => void}) {
 function boardText(state: UiState): string {
   switch (state.board) {
     case 'off':
-      return 'Bluetooth đang tắt';
+      return t('board.off');
     case 'scanning':
-      return 'Đang tìm board…';
+      return t('board.scanning');
     case 'connecting':
-      return 'Đang kết nối…';
+      return t('board.connecting');
     case 'ready':
-      return state.boardMicOn ? 'Board đã kết nối' : 'Board đã kết nối · mic tắt';
+      return state.boardMicOn ? t('board.ready') : t('board.readyMicOff');
   }
 }
 
@@ -154,16 +157,16 @@ function Header({
       <View style={styles.headerRow}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Tiếng Việt sang ${state.languageLabel}`}
+          accessibilityLabel={t('header.pair', {label: state.languageLabel})}
           onPress={onOpenLanguages}
           style={styles.pill}>
-          <Txt style={styles.pillText}>Tiếng Việt</Txt>
+          <Txt style={styles.pillText}>{t('header.home')}</Txt>
           <Txt style={styles.swap}>⇄</Txt>
           <Txt style={styles.pillText}>{state.languageLabel}</Txt>
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Cài đặt"
+          accessibilityLabel={t('settings.label')}
           onPress={() => setMenu(m => !m)}
           style={styles.settings}>
           <Txt style={styles.settingsIcon}>⋮</Txt>
@@ -171,10 +174,10 @@ function Header({
       </View>
       {menu ? (
         <View style={styles.menu}>
-          <MenuRow text="Ngôn ngữ" onPress={choose(onOpenLanguages)} />
-          <MenuRow text="Từ điển riêng" onPress={choose(onOpenGlossary)} />
+          <MenuRow text={t('menu.languages')} onPress={choose(onOpenLanguages)} />
+          <MenuRow text={t('menu.glossary')} onPress={choose(onOpenGlossary)} />
           <MenuRow
-            text="Xoá hội thoại"
+            text={t('menu.clear')}
             disabled={!canClear}
             color={canClear ? Palette.destructive : Palette.faint}
             onPress={choose(onClear)}
@@ -185,12 +188,19 @@ function Header({
         <View style={styles.statusLeft}>
           <View style={[styles.dot, {backgroundColor: listening ? Palette.accentLight : Palette.faint}]} />
           <Txt style={[styles.statusText, {color: listening ? Palette.text : Palette.muted}]}>
-            {listening ? 'Đang nghe' : 'Đang chờ'}
+            {listening ? t('status.listening') : t('status.waiting')}
           </Txt>
         </View>
-        {state.noBoard ? <Chip text="không có board" /> : <Txt style={styles.boardText}>{`· ${boardText(state)}`}</Txt>}
-        {state.onlineRecognizer ? <Chip text="online" /> : null}
-        {listening && state.micRoute === 'phoneMic' ? <Chip text="mic điện thoại" /> : null}
+        <Txt style={styles.boardText}>{`· ${boardText(state)}`}</Txt>
+        {state.onlineRecognizer ? (
+          <Chip text={t('chip.online')} accessibilityText={t('chip.online.a11y')} />
+        ) : null}
+        {listening && state.micRoute === 'phoneMic' ? (
+          <Chip text={t('chip.phoneMic')} accessibilityText={t('chip.phoneMic.a11y')} />
+        ) : null}
+        {listening && state.board !== 'ready' ? (
+          <Chip text={t('chip.noBoard')} accessibilityText={t('chip.noBoard.a11y')} />
+        ) : null}
       </View>
     </View>
   );
@@ -236,7 +246,7 @@ export function entriesOf(s: UiState): Entry[] {
 }
 
 function ConversationView({state}: {state: UiState}) {
-  const scroll = useRef<{scrollToEnd: (o?: {animated?: boolean}) => void}>(null);
+  const scroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const entries = useMemo(() => entriesOf(state), [state]);
   const empty = entries.length === 0 && state.theirPartial === '' && state.myPartial === '';
   return (
@@ -250,7 +260,9 @@ function ConversationView({state}: {state: UiState}) {
       onContentSizeChange={() => scroll.current?.scrollToEnd({animated: true})}>
       {empty ? <EmptyHint listening={state.listening} /> : null}
       {entries.map(e => (
-        <Bubble key={e.line.id} label={e.mine ? 'Bạn nói' : 'Họ nói'} line={e.line} mine={e.mine} />
+        <Bubble
+          key={`${e.mine ? 'm' : 't'}:${e.line.id}`}
+          label={e.mine ? t('bubble.mine') : t('bubble.theirs')} line={e.line} mine={e.mine} />
       ))}
       {state.theirPartial !== '' ? <PartialLine text={state.theirPartial} mine={false} /> : null}
       {state.myPartial !== '' ? <PartialLine text={state.myPartial} mine /> : null}
@@ -287,11 +299,8 @@ function PartialLine({text, mine}: {text: string; mine: boolean}) {
 function EmptyHint({listening}: {listening: boolean}) {
   return (
     <View style={styles.emptyHint}>
-      <Txt style={styles.emptyTitle}>{listening ? 'Cứ nói đi' : 'Chạm "Bắt đầu nghe" trước khi nói'}</Txt>
-      <Txt style={styles.emptyBody}>
-        Người đối diện nói vào board, bạn nghe tiếng Việt qua AirPods. Bạn nói tiếng Việt, họ đọc
-        phụ đề trên board.
-      </Txt>
+      <Txt style={styles.emptyTitle}>{listening ? t('hint.listening') : t('hint.idle')}</Txt>
+      <Txt style={styles.emptyBody}>{t('hint.body')}</Txt>
     </View>
   );
 }
@@ -311,12 +320,12 @@ function ControlBar({
   const micOn = state.boardMicOn;
   const running = state.phase === 'running';
   const listening = state.listening;
-  const micEnabled = state.board === 'ready' && !state.noBoard;
+  const micEnabled = state.board === 'ready';
   return (
     <View style={styles.controls}>
       <RoundButton
         icon={micOn ? '🎤' : '🔇'}
-        label={micOn ? 'Tắt mic của board' : 'Bật mic của board'}
+        label={micOn ? t('control.micOff') : t('control.micOn')}
         ring={micOn}
         enabled={micEnabled}
         onPress={intents.toggleBoardMic}
@@ -324,7 +333,7 @@ function ControlBar({
       <Pressable
         testID="listenButton"
         accessibilityRole="button"
-        accessibilityLabel={listening ? 'Dừng nghe' : 'Bắt đầu nghe'}
+        accessibilityLabel={listening ? t('control.stop') : t('control.start')}
         accessibilityState={{disabled: !running}}
         disabled={!running}
         onPress={listening ? intents.stopListening : intents.startListening}
@@ -335,9 +344,9 @@ function ControlBar({
         ]}>
         {/* The header already says "Đang nghe": the button says what a tap does. */}
         <Txt style={styles.listenIcon}>{listening ? '■' : '●'}</Txt>
-        <Txt style={styles.listenText}>{listening ? 'Dừng nghe' : 'Bắt đầu nghe'}</Txt>
+        <Txt style={styles.listenText}>{listening ? t('control.stop') : t('control.start')}</Txt>
       </Pressable>
-      <RoundButton icon="🗑" label="Xoá hội thoại" enabled={canClear} onPress={onClear} />
+      <RoundButton icon="🗑" label={t('control.clear')} enabled={canClear} onPress={onClear} />
     </View>
   );
 }

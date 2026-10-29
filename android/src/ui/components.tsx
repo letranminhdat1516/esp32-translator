@@ -18,9 +18,9 @@ export function Txt({style, ...rest}: TextProps) {
 }
 
 /** Small outlined tag in the status line. */
-export function Chip({text}: {text: string}) {
+export function Chip({text, accessibilityText}: {text: string; accessibilityText?: string}) {
   return (
-    <View style={styles.chip}>
+    <View style={styles.chip} accessible={accessibilityText !== undefined} accessibilityLabel={accessibilityText}>
       <Txt style={styles.chipText}>{text}</Txt>
     </View>
   );

@@ -114,6 +114,7 @@ exports[`GlossaryScreen snapshot: glossary 1`] = `
       }
     >
       <TextInput
+        accessibilityLabel="Thêm từ giữ nguyên"
         onChangeText={[Function]}
         onSubmitEditing={[Function]}
         placeholder="Thêm từ giữ nguyên"

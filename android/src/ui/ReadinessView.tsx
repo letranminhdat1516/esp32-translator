@@ -6,6 +6,7 @@ import type {LanguagePack} from '../core/model';
 import type {MissingMsg} from '../engine/VoiceEngine';
 import type {SessionState} from '../engine/sessionMachine';
 import {PrimaryButton, Txt} from './components';
+import {t} from './copy';
 import {LanguageList} from './LanguageSheet';
 import {Palette, Spacing, Type} from './theme';
 
@@ -16,10 +17,17 @@ export interface ReadinessViewProps {
   /** Packs listed while choosing. */
   offered?: readonly LanguagePack[];
   onPick?: (code: string) => void;
+  /** Codes marked "online" in the list. */
+  onlineCodes?: readonly string[];
   /** Display name per language code, used in "Bản dịch A → B". A missing code is shown as is. */
   labels?: Readonly<Record<string, string>>;
   /** 0..1 while downloading; null when the platform reports none. */
   progress?: number | null;
+}
+
+/** The machine's own reason for a dead recognizer is English; show the Vietnamese text (as Swift). */
+export function failureReason(reason: string): string {
+  return reason === 'recognizer stopped' ? t('failed.recognizerStopped') : reason;
 }
 
 export function ReadinessView({
@@ -28,6 +36,7 @@ export function ReadinessView({
   onRetry,
   offered = [],
   onPick,
+  onlineCodes = [],
   labels = {},
   progress = null,
 }: ReadinessViewProps) {
@@ -37,11 +46,11 @@ export function ReadinessView({
   const missingText = (m: MissingMsg): string => {
     switch (m.kind) {
       case 'speechModel':
-        return 'Mô hình nhận giọng';
+        return t('missing.speechModel');
       case 'translation':
-        return `Bản dịch ${label(m.from ?? m.language)} → ${label(m.to)}`;
+        return t('missing.translation', {from: label(m.from ?? m.language), to: label(m.to)});
       case 'ttsVoice':
-        return 'Giọng đọc tiếng Việt';
+        return t('missing.ttsVoice');
     }
   };
 
@@ -50,14 +59,17 @@ export function ReadinessView({
       return (
         <View style={styles.fill}>
           <View style={styles.chooseHead}>
-            <Txt style={styles.title}>Chọn ngôn ngữ</Txt>
+            <Txt style={styles.title}>{t('readiness.choose')}</Txt>
             {state.reason === 'unavailable' ? (
-              <Txt style={styles.hintAccent}>
-                Ngôn ngữ đã chọn trước đó không còn dùng được trên máy này.
-              </Txt>
+              <Txt style={styles.hintAccent}>{t('readiness.unavailable')}</Txt>
             ) : null}
           </View>
-          <LanguageList packs={offered} currentCode={null} onPick={onPick ?? (() => {})} />
+          <LanguageList
+            packs={offered}
+            currentCode={null}
+            onlineCodes={onlineCodes}
+            onPick={onPick ?? (() => {})}
+          />
         </View>
       );
     case 'needsDownload': {
@@ -65,7 +77,7 @@ export function ReadinessView({
       return (
         <Centered>
           <Txt style={styles.bigIcon}>⭳</Txt>
-          <Txt style={[styles.title, styles.center]}>Cần tải về trước khi dùng</Txt>
+          <Txt style={[styles.title, styles.center]}>{t('readiness.needsDownloadTitle')}</Txt>
           <View style={styles.gap12} />
           {state.missing.map((m, i) => (
             <Txt key={i} style={[styles.item, styles.center]}>
@@ -74,19 +86,19 @@ export function ReadinessView({
           ))}
           <View style={styles.gap12} />
           <Txt style={[styles.item, styles.center]}>
-            Tải một lần, sau đó dịch hoàn toàn trên máy: không cần mạng và nhanh hơn.
+            {t('readiness.needsDownloadNote')}
           </Txt>
           {failed ? (
             <>
               <View style={styles.gap12} />
               <Txt style={[styles.hintAccent, styles.center]}>
-                Chưa tải xong. Kiểm tra mạng rồi thử lại.
+                {t('readiness.downloadFailed')}
               </Txt>
               {state.error ? <Txt style={[styles.errorDetail, styles.center]}>{state.error}</Txt> : null}
             </>
           ) : null}
           <View style={styles.gap16} />
-          <PrimaryButton text={failed ? 'Thử lại' : 'Tải về'} onPress={onDownload} />
+          <PrimaryButton text={failed ? t('readiness.retry') : t('readiness.download')} onPress={onDownload} />
         </Centered>
       );
     }
@@ -107,7 +119,9 @@ export function ReadinessView({
           </View>
           <View style={styles.gap16} />
           <Txt style={styles.item}>
-            {progress === null ? 'Đang tải…' : `Đang tải… ${Math.round(progress * 100)}%`}
+            {progress === null
+              ? t('readiness.downloading')
+              : t('readiness.downloadingPercent', {percent: Math.round(progress * 100)})}
           </Txt>
         </Centered>
       );
@@ -116,11 +130,11 @@ export function ReadinessView({
       return (
         <Centered>
           <Txt style={styles.bigIcon}>⚠</Txt>
-          <Txt style={styles.title}>Không khởi động được</Txt>
+          <Txt style={styles.title}>{t('failed.title')}</Txt>
           <View style={styles.gap8} />
-          <Txt style={[styles.item, styles.center]}>{state.reason}</Txt>
+          <Txt style={[styles.item, styles.center]}>{failureReason(state.reason)}</Txt>
           <View style={styles.gap16} />
-          <PrimaryButton text="Thử lại" onPress={onRetry} />
+          <PrimaryButton text={t('failed.retry')} onPress={onRetry} />
         </Centered>
       );
     case 'loading':

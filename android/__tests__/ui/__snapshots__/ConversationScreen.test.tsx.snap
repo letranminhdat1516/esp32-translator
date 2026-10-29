@@ -251,6 +251,8 @@ exports[`ConversationScreen snapshot: conversation, listening, online, phone mic
         · Board đã kết nối
       </Text>
       <View
+        accessibilityLabel="Đang nhận giọng qua mạng"
+        accessible={true}
         style={
           {
             "borderColor": "rgba(76,143,232,0.6)",
@@ -279,6 +281,8 @@ exports[`ConversationScreen snapshot: conversation, listening, online, phone mic
         </Text>
       </View>
       <View
+        accessibilityLabel="Đang dùng mic điện thoại"
+        accessible={true}
         style={
           {
             "borderColor": "rgba(76,143,232,0.6)",

@@ -63,8 +63,8 @@ export function makeIntents() {
     pickLanguage: c => {
       log.push(`pick ${c}`);
     },
-    setOnlineOptIn: on => {
-      log.push(`optin ${on}`);
+    setOnlineAllowed: (code, on) => {
+      log.push(`online ${code} ${on}`);
     },
     openTtsSettings: () => {
       log.push('tts');

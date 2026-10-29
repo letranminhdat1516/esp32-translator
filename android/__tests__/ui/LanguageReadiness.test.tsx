@@ -3,17 +3,19 @@ import {fireEvent, render, screen, within} from '@testing-library/react-native';
 import {LanguageSheet} from '../../src/ui/LanguageSheet';
 import {ReadinessView} from '../../src/ui/ReadinessView';
 import {SessionState} from '../../src/ui/uiState';
-import {packs} from './helpers';
+import type {LanguagePack} from '../../src/core/model';
+import {pack, packs} from './helpers';
 
 describe('LanguageSheet', () => {
   const base = {
     visible: true,
     packs,
     currentCode: 'ja' as string | null,
-    onlineOptIn: false,
-    marks: {},
+    onlineCodes: [] as string[],
+    onlineCandidates: [] as LanguagePack[],
+    onlineAllowed: [] as string[],
     onPick: () => {},
-    onSetOnlineOptIn: () => {},
+    onSetOnlineAllowed: () => {},
     onClose: () => {},
   };
 
@@ -44,29 +46,37 @@ describe('LanguageSheet', () => {
     expect(screen.queryByText('Ngôn ngữ')).toBeNull();
   });
 
-  it('marks readiness and the online recognizer per language', async () => {
+  it('marks only the online-only languages with the online chip', async () => {
+    await render(<LanguageSheet {...base} onlineCodes={['fr']} />);
+    expect(within(screen.getByTestId('language-fr')).getByText('online')).toBeTruthy();
+    expect(within(screen.getByTestId('language-en')).queryByText('online')).toBeNull();
+    expect(screen.queryByText('sẵn sàng')).toBeNull();
+  });
+
+  it('no footer when every language is offered', async () => {
+    await render(<LanguageSheet {...base} />);
+    expect(screen.queryByText('Nhận giọng qua mạng')).toBeNull();
+  });
+
+  it('footer names the missing languages and toggles the online opt-in per language', async () => {
+    const calls: string[] = [];
     await render(
       <LanguageSheet
         {...base}
-        marks={{
-          en: {ready: true, online: false},
-          ja: {ready: false, online: false},
-          fr: {ready: true, online: true},
-        }}
+        onlineCandidates={[pack('de', 'Deutsch', 'German'), pack('ko', '한국어', 'Korean')]}
+        onlineAllowed={['ko']}
+        onSetOnlineAllowed={(c, on) => calls.push(`${c} ${on}`)}
       />,
     );
-    expect(within(screen.getByTestId('language-en')).getByText('sẵn sàng')).toBeTruthy();
-    expect(within(screen.getByTestId('language-ja')).getByText('cần tải')).toBeTruthy();
-    expect(within(screen.getByTestId('language-fr')).getByText('online')).toBeTruthy();
-    expect(within(screen.getByTestId('language-en')).queryByText('online')).toBeNull();
-  });
-
-  it('footer explains missing languages and toggles the online opt-in', async () => {
-    const calls: boolean[] = [];
-    await render(<LanguageSheet {...base} onSetOnlineOptIn={on => calls.push(on)} />);
-    expect(screen.getByText(/Không thấy ngôn ngữ cần dùng/)).toBeTruthy();
-    await fireEvent(screen.getByLabelText('Nhận giọng online'), 'valueChange', true);
-    expect(calls).toEqual([true]);
+    expect(
+      screen.getByText('Chưa có: Deutsch, 한국어. Máy này chưa nhận giọng ngoại tuyến được các ngôn ngữ này.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Nhận giọng qua mạng')).toBeTruthy();
+    expect(screen.getByText(/nhãn "online"/)).toBeTruthy();
+    expect(screen.getByTestId('online-de').props.value).toBe(false);
+    expect(screen.getByTestId('online-ko').props.value).toBe(true);
+    await fireEvent(screen.getByTestId('online-de'), 'valueChange', true);
+    expect(calls).toEqual(['de true']);
   });
 });
 
@@ -145,7 +155,7 @@ describe('ReadinessView', () => {
   it('Failed shows the not-ready reason and Thử lại retries', async () => {
     const {log} = await show({type: 'failed', code: 'en', reason: 'recognizer stopped'});
     expect(screen.getByText('Không khởi động được')).toBeTruthy();
-    expect(screen.getByText('recognizer stopped')).toBeTruthy();
+    expect(screen.getByText('Bộ nhận giọng đã dừng.')).toBeTruthy();
     await fireEvent.press(screen.getByText('Thử lại'));
     expect(log).toEqual(['retry']);
   });
