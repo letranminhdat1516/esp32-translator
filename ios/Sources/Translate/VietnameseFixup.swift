@@ -20,7 +20,7 @@ enum VietnameseFixup {
     /// degrades to no fix-ups rather than a crash.
     private static let engine: RuleEngine = {
         do {
-            return try RuleEngine(pack: SharedResources.languagePack("vi"))
+            return try RuleEngine(pack: SharedResources.languagePack(LanguageCatalog.homeCode))
         } catch {
             assertionFailure("vi language pack: \(error)")
             return try! RuleEngine(recognition: [], beforeTranslation: [])
