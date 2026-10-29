@@ -572,7 +572,8 @@ still pending).
 - Using the AirPods microphone switches the AirPods to the call (HFP) profile. Speech output stays clear, but it is not music quality: during a conversation a video in another app also plays in call quality (ducked) until the conversation ends.
 - The ESP32-S3 has BLE only (no Bluetooth Classic), so it cannot stream audio to the AirPods directly. The iPhone handles that leg.
 - The iPhone relay needs Tailscale on both devices and the iPhone app running.
-- Only one language pair (EN ↔ VI) is wired up. Other pairs are a matter of changing the locales in `ConversationEngine`.
+- My side is always Vietnamese; the other language is picked from the packs in `shared/languages/`. Languages are offered only when the phone has a recognizer and offline translation both ways for them.
+- The multi-language flow is not yet proven on devices (the Note 9 and the iPhone parity runs are the next step); the native brand spellings in the ja/ko/th packs have not been reviewed by native speakers.
 
 ## License
 
