@@ -11,11 +11,17 @@ test('tables and gap limit', () => {
   expect(ADPCMDecoder.maxGapPackets).toBe(fixture.maxGapPackets);
 });
 
+test('the fixture has every sequence', () => {
+  expect(casesOf(fixture, 'sequences')).toHaveLength(9);
+});
+
 describe('sequences', () => {
   for (const c of casesOf(fixture, 'sequences')) {
     test(c.name as string, () => {
       const d = new ADPCMDecoder();
-      casesOf(c, 'steps').forEach((step, i) => {
+      const steps = casesOf(c, 'steps');
+      expect(steps.length).toBeGreaterThan(0);
+      steps.forEach((step, i) => {
         if (step.reset === true) {
           d.reset();
           return;

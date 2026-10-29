@@ -68,12 +68,19 @@ function eventOf(kind: string, text: string): TranscriptEvent {
   throw new Error(`unknown kind ${kind}`);
 }
 
+test('the fixture has every scenario and replay', () => {
+  expect(casesOf(fixture, 'scenarios')).toHaveLength(6);
+  expect(casesOf(fixture, 'replays')).toHaveLength(2);
+});
+
 describe('scenarios', () => {
   for (const c of casesOf(fixture, 'scenarios')) {
     test(c.name as string, () => {
       const a = assemblerOf(c);
       const ids = new Set<number>();
-      casesOf(c, 'steps').forEach((step, i) => {
+      const steps = casesOf(c, 'steps');
+      expect(steps.length).toBeGreaterThan(0);
+      steps.forEach((step, i) => {
         if (step.kind === 'reset') {
           a.reset();
         } else {
@@ -115,6 +122,7 @@ describe('recorded replays', () => {
         .readFileSync(path.join(sharedDir, 'fixtures', c.recording as string), 'utf8')
         .split('\n')
         .filter(l => l.trim() !== '');
+      expect(records.length).toBeGreaterThan(0);
       for (const line of records) {
         const d = JSON.parse(line) as {t: number; kind: string; text: string};
         // Whole microseconds, as the Dart test's DateTime.
@@ -126,6 +134,7 @@ describe('recorded replays', () => {
         }
         lines.set(turn.id, turn.text); // Map keeps first-insertion order.
       }
+      expect((c.expectLines as string[]).length).toBeGreaterThan(0);
       expect([...lines.values()]).toEqual(c.expectLines);
     });
   }

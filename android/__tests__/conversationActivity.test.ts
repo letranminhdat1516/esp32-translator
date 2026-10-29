@@ -18,6 +18,10 @@ test('defaults and event names', () => {
   expect([...activityEvents].sort()).toEqual([...(fixture.events as string[])].sort());
 });
 
+test('the fixture has every scenario', () => {
+  expect(casesOf(fixture, 'scenarios')).toHaveLength(20);
+});
+
 describe('scenarios', () => {
   for (const c of casesOf(fixture, 'scenarios')) {
     test(c.name as string, () => {
@@ -27,7 +31,9 @@ describe('scenarios', () => {
         retryDelayMs: config.retryDelayMs as number,
       });
       expect(activity.state).toBe('idle');
-      casesOf(c, 'steps').forEach((step, i) => {
+      const steps = casesOf(c, 'steps');
+      expect(steps.length).toBeGreaterThan(0);
+      steps.forEach((step, i) => {
         const now = t0 + (step.atMs as number);
         if (step.startFailed === true) {
           activity.startFailed(now);

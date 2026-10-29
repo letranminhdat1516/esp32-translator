@@ -29,6 +29,10 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+test('the fixture has every scenario', () => {
+  expect(casesOf(fixture, 'scenarios')).toHaveLength(6);
+});
+
 describe('scenarios', () => {
   for (const c of casesOf(fixture, 'scenarios')) {
     test(c.name as string, async () => {
@@ -42,7 +46,9 @@ describe('scenarios', () => {
         translate: fake.translate,
         onResult: (turn, text) => byTurn.set(turn, text),
       });
-      for (const step of casesOf(c, 'steps')) {
+      const steps = casesOf(c, 'steps');
+      expect(steps.length).toBeGreaterThan(0);
+      for (const step of steps) {
         switch (step.op) {
           case 'partial':
             st.setPartial(step.text as string, step.turn as number);
@@ -61,6 +67,15 @@ describe('scenarios', () => {
         }
       }
       const want = c.expect as JsonObject;
+      // Every scenario checks something (a renamed key would check nothing).
+      expect(
+        ['results', 'emptyTurns', 'requestCounts', 'maxRequestLength', 'wordCounts'].some(
+          k => k in want,
+        ),
+      ).toBe(true);
+      expect(Object.keys(want).every(k =>
+        ['results', 'emptyTurns', 'requestCounts', 'maxRequestLength', 'wordCounts'].includes(k),
+      )).toBe(true);
       for (const [turn, text] of Object.entries((want.results as JsonObject | undefined) ?? {})) {
         expect({turn, text: byTurn.get(Number(turn))}).toEqual({turn, text});
       }
