@@ -37,7 +37,7 @@ final class RecognizerPair {
     /// Current start; bumped by every start and stop
     private var token = 0
     /// Lets the running pair's callbacks through; switched off when it is stopped or superseded
-    private var live = Live()
+    private var live = LiveSwitch()
 
     /// `beforeStart` runs at the beginning of a fresh start (the app asks for the mic permission there)
     init(events: EngineEventSink, factory: @escaping Factory = { await LiveTranscriber.resolve($0) },
@@ -88,7 +88,7 @@ final class RecognizerPair {
         }
 
         generation.value = pair.generation
-        let live = Live()
+        let live = LiveSwitch()
         self.live = live
         let events = self.events, generation = self.generation
         do {
@@ -136,7 +136,7 @@ final class RecognizerPair {
 }
 
 /// A switch read from the recognizers' result tasks
-final class Live: @unchecked Sendable {
+final class LiveSwitch: @unchecked Sendable {
     private let lock = NSLock()
     private var value = true
 

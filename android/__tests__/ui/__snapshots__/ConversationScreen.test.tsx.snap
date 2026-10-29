@@ -1,0 +1,1800 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ConversationScreen snapshot: conversation, listening, online, phone mic 1`] = `
+<View
+  style={
+    {
+      "backgroundColor": "#000000",
+      "flex": 1,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "paddingBottom": 12,
+        "paddingHorizontal": 20,
+        "paddingTop": 8,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Tiếng Việt sang English"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 999,
+            "flexDirection": "row",
+            "gap": 8,
+            "height": 40,
+            "paddingHorizontal": 14,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          Tiếng Việt
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 18,
+              },
+            ]
+          }
+        >
+          ⇄
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          English
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Cài đặt"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 22,
+            "height": 44,
+            "justifyContent": "center",
+            "width": 44,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          ⋮
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "gap": 8,
+          "marginTop": 12,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 4,
+                "height": 8,
+                "width": 8,
+              },
+              {
+                "backgroundColor": "#4C8FE8",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              [
+                {
+                  "fontSize": 13,
+                },
+                {
+                  "color": "#E3EAF0",
+                },
+              ],
+            ]
+          }
+        >
+          Đang nghe
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#8A919C",
+              "fontSize": 13,
+            },
+          ]
+        }
+      >
+        · Board đã kết nối
+      </Text>
+      <View
+        accessibilityLabel="Đang nhận giọng qua mạng"
+        accessible={true}
+        style={
+          {
+            "borderColor": "rgba(76,143,232,0.6)",
+            "borderRadius": 999,
+            "borderWidth": 1,
+            "paddingHorizontal": 8,
+            "paddingVertical": 2,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#4C8FE8",
+                "fontSize": 11,
+              },
+            ]
+          }
+        >
+          online
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Đang dùng mic điện thoại"
+        accessible={true}
+        style={
+          {
+            "borderColor": "rgba(76,143,232,0.6)",
+            "borderRadius": 999,
+            "borderWidth": 1,
+            "paddingHorizontal": 8,
+            "paddingVertical": 2,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#4C8FE8",
+                "fontSize": 11,
+              },
+            ]
+          }
+        >
+          mic điện thoại
+        </Text>
+      </View>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "flex": 1,
+      }
+    }
+  >
+    <RCTScrollView
+      contentContainerStyle={
+        {
+          "gap": 26,
+          "paddingHorizontal": 20,
+          "paddingVertical": 8,
+        }
+      }
+      onContentSizeChange={[Function]}
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <View>
+        <View
+          style={
+            [
+              {
+                "maxWidth": 300,
+              },
+              {
+                "alignItems": "flex-start",
+                "alignSelf": "flex-start",
+              },
+            ]
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                {
+                  "color": "#8A919C",
+                  "fontSize": 12,
+                },
+              ]
+            }
+          >
+            Họ nói
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "color": "#8A919C",
+                    "fontSize": 14,
+                    "marginTop": 4,
+                  },
+                  {
+                    "textAlign": "left",
+                  },
+                ],
+              ]
+            }
+          >
+            Where is the train station?
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "fontSize": 20,
+                    "marginTop": 4,
+                  },
+                  {
+                    "color": "#E3EAF0",
+                    "textAlign": "left",
+                  },
+                ],
+              ]
+            }
+            testID="bubbleTarget"
+          >
+            Ga tàu ở đâu vậy?
+          </Text>
+        </View>
+        <View
+          style={
+            [
+              {
+                "maxWidth": 300,
+              },
+              {
+                "alignItems": "flex-end",
+                "alignSelf": "flex-end",
+              },
+            ]
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                {
+                  "color": "#8A919C",
+                  "fontSize": 12,
+                },
+              ]
+            }
+          >
+            Bạn nói
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "color": "#8A919C",
+                    "fontSize": 14,
+                    "marginTop": 4,
+                  },
+                  {
+                    "textAlign": "right",
+                  },
+                ],
+              ]
+            }
+          >
+            Đi thẳng rồi rẽ phải nhé
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "fontSize": 20,
+                    "marginTop": 4,
+                  },
+                  {
+                    "color": "#E3EAF0",
+                    "textAlign": "right",
+                  },
+                ],
+              ]
+            }
+            testID="bubbleTarget"
+          >
+            Go straight, then turn right.
+          </Text>
+        </View>
+        <View
+          style={
+            [
+              {
+                "maxWidth": 300,
+              },
+              {
+                "alignItems": "flex-start",
+                "alignSelf": "flex-start",
+              },
+            ]
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                {
+                  "color": "#8A919C",
+                  "fontSize": 12,
+                },
+              ]
+            }
+          >
+            Họ nói
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "color": "#8A919C",
+                    "fontSize": 14,
+                    "marginTop": 4,
+                  },
+                  {
+                    "textAlign": "left",
+                  },
+                ],
+              ]
+            }
+          >
+            mumble mumble
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "fontSize": 20,
+                    "marginTop": 4,
+                  },
+                  {
+                    "color": "#5E646D",
+                    "textAlign": "left",
+                  },
+                ],
+              ]
+            }
+            testID="bubbleTarget"
+          >
+            lầm bầm gì đó
+          </Text>
+        </View>
+        <View
+          style={
+            [
+              {
+                "maxWidth": 300,
+              },
+              {
+                "alignSelf": "flex-start",
+              },
+            ]
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "color": "#5E646D",
+                    "fontSize": 14,
+                    "fontStyle": "italic",
+                  },
+                  {
+                    "textAlign": "left",
+                  },
+                ],
+              ]
+            }
+          >
+            and how far is it
+          </Text>
+        </View>
+        <View
+          style={
+            [
+              {
+                "maxWidth": 300,
+              },
+              {
+                "alignSelf": "flex-end",
+              },
+            ]
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                [
+                  {
+                    "color": "#5E646D",
+                    "fontSize": 14,
+                    "fontStyle": "italic",
+                  },
+                  {
+                    "textAlign": "right",
+                  },
+                ],
+              ]
+            }
+          >
+            khoảng năm phút đi bộ
+          </Text>
+        </View>
+      </View>
+    </RCTScrollView>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "paddingBottom": 8,
+          "paddingHorizontal": 20,
+          "paddingTop": 12,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Tắt mic của board"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#16171A",
+              "borderRadius": 26,
+              "height": 52,
+              "justifyContent": "center",
+              "width": 52,
+            },
+            {
+              "borderColor": "#1E6FD9",
+              "borderWidth": 2,
+            },
+            false,
+          ]
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#E3EAF0",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          🎤
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Dừng nghe"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "borderRadius": 999,
+              "flexDirection": "row",
+              "gap": 8,
+              "height": 56,
+              "paddingHorizontal": 28,
+            },
+            {
+              "backgroundColor": "#1E6FD9",
+            },
+            false,
+          ]
+        }
+        testID="listenButton"
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#FFFFFF",
+                "fontSize": 16,
+              },
+            ]
+          }
+        >
+          ■
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#FFFFFF",
+                "fontSize": 16,
+              },
+            ]
+          }
+        >
+          Dừng nghe
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Xoá hội thoại"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#16171A",
+              "borderRadius": 26,
+              "height": 52,
+              "justifyContent": "center",
+              "width": 52,
+            },
+            false,
+            false,
+          ]
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#E3EAF0",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          🗑
+        </Text>
+      </View>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`ConversationScreen snapshot: empty and failed: empty 1`] = `
+<View
+  style={
+    {
+      "backgroundColor": "#000000",
+      "flex": 1,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "paddingBottom": 12,
+        "paddingHorizontal": 20,
+        "paddingTop": 8,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Tiếng Việt sang English"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 999,
+            "flexDirection": "row",
+            "gap": 8,
+            "height": 40,
+            "paddingHorizontal": 14,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          Tiếng Việt
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 18,
+              },
+            ]
+          }
+        >
+          ⇄
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          English
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Cài đặt"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 22,
+            "height": 44,
+            "justifyContent": "center",
+            "width": 44,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          ⋮
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "gap": 8,
+          "marginTop": 12,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 4,
+                "height": 8,
+                "width": 8,
+              },
+              {
+                "backgroundColor": "#5E646D",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              [
+                {
+                  "fontSize": 13,
+                },
+                {
+                  "color": "#8A919C",
+                },
+              ],
+            ]
+          }
+        >
+          Đang chờ
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#8A919C",
+              "fontSize": 13,
+            },
+          ]
+        }
+      >
+        · Board đã kết nối
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "flex": 1,
+      }
+    }
+  >
+    <RCTScrollView
+      contentContainerStyle={
+        {
+          "gap": 26,
+          "paddingHorizontal": 20,
+          "paddingVertical": 8,
+        }
+      }
+      onContentSizeChange={[Function]}
+      style={
+        {
+          "flex": 1,
+        }
+      }
+    >
+      <View>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "paddingHorizontal": 12,
+              "paddingTop": 120,
+            }
+          }
+        >
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                {
+                  "fontSize": 17,
+                  "textAlign": "center",
+                },
+              ]
+            }
+          >
+            Chạm "Bắt đầu nghe" trước khi nói
+          </Text>
+          <Text
+            style={
+              [
+                {
+                  "color": "#E3EAF0",
+                  "fontFamily": "BeVietnamPro-SemiBold",
+                },
+                {
+                  "color": "#8A919C",
+                  "fontSize": 14,
+                  "marginTop": 8,
+                  "textAlign": "center",
+                },
+              ]
+            }
+          >
+            Người đối diện nói vào board, bạn nghe tiếng Việt qua AirPods. Bạn nói tiếng Việt, họ đọc phụ đề trên board.
+          </Text>
+        </View>
+      </View>
+    </RCTScrollView>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "paddingBottom": 8,
+          "paddingHorizontal": 20,
+          "paddingTop": 12,
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Tắt mic của board"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#16171A",
+              "borderRadius": 26,
+              "height": 52,
+              "justifyContent": "center",
+              "width": 52,
+            },
+            {
+              "borderColor": "#1E6FD9",
+              "borderWidth": 2,
+            },
+            false,
+          ]
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#E3EAF0",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          🎤
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Bắt đầu nghe"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": false,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "borderRadius": 999,
+              "flexDirection": "row",
+              "gap": 8,
+              "height": 56,
+              "paddingHorizontal": 28,
+            },
+            {
+              "backgroundColor": "#16171A",
+            },
+            false,
+          ]
+        }
+        testID="listenButton"
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#FFFFFF",
+                "fontSize": 16,
+              },
+            ]
+          }
+        >
+          ●
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#FFFFFF",
+                "fontSize": 16,
+              },
+            ]
+          }
+        >
+          Bắt đầu nghe
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Xoá hội thoại"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": true,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#16171A",
+              "borderRadius": 26,
+              "height": 52,
+              "justifyContent": "center",
+              "width": 52,
+            },
+            false,
+            {
+              "opacity": 0.4,
+            },
+          ]
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#E3EAF0",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          🗑
+        </Text>
+      </View>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`ConversationScreen snapshot: empty and failed: failed 1`] = `
+<View
+  style={
+    {
+      "backgroundColor": "#000000",
+      "flex": 1,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "paddingBottom": 12,
+        "paddingHorizontal": 20,
+        "paddingTop": 8,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <View
+        accessibilityLabel="Tiếng Việt sang English"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 999,
+            "flexDirection": "row",
+            "gap": 8,
+            "height": 40,
+            "paddingHorizontal": 14,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          Tiếng Việt
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 18,
+              },
+            ]
+          }
+        >
+          ⇄
+        </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          English
+        </Text>
+      </View>
+      <View
+        accessibilityLabel="Cài đặt"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "backgroundColor": "#16171A",
+            "borderRadius": 22,
+            "height": 44,
+            "justifyContent": "center",
+            "width": 44,
+          }
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#8A919C",
+                "fontSize": 20,
+              },
+            ]
+          }
+        >
+          ⋮
+        </Text>
+      </View>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "flexWrap": "wrap",
+          "gap": 8,
+          "marginTop": 12,
+        }
+      }
+    >
+      <View
+        style={
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 8,
+          }
+        }
+      >
+        <View
+          style={
+            [
+              {
+                "borderRadius": 4,
+                "height": 8,
+                "width": 8,
+              },
+              {
+                "backgroundColor": "#5E646D",
+              },
+            ]
+          }
+        />
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              [
+                {
+                  "fontSize": 13,
+                },
+                {
+                  "color": "#8A919C",
+                },
+              ],
+            ]
+          }
+        >
+          Đang chờ
+        </Text>
+      </View>
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#8A919C",
+              "fontSize": 13,
+            },
+          ]
+        }
+      >
+        · Bluetooth đang tắt
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "justifyContent": "center",
+        "paddingHorizontal": 24,
+      }
+    }
+  >
+    <Text
+      style={
+        [
+          {
+            "color": "#E3EAF0",
+            "fontFamily": "BeVietnamPro-SemiBold",
+          },
+          {
+            "color": "#8A919C",
+            "fontSize": 40,
+          },
+        ]
+      }
+    >
+      ⚠
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "color": "#E3EAF0",
+            "fontFamily": "BeVietnamPro-SemiBold",
+          },
+          {
+            "fontSize": 20,
+            "marginTop": 12,
+          },
+        ]
+      }
+    >
+      Không khởi động được
+    </Text>
+    <Text
+      style={
+        [
+          {
+            "color": "#E3EAF0",
+            "fontFamily": "BeVietnamPro-SemiBold",
+          },
+          {
+            "color": "#8A919C",
+            "fontSize": 15,
+            "marginTop": 8,
+            "textAlign": "center",
+          },
+        ]
+      }
+    >
+      Không mở được mic
+    </Text>
+    <View
+      accessibilityLabel="Thử lại"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onBlur={[Function]}
+      onClick={[Function]}
+      onFocus={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        [
+          {
+            "alignItems": "center",
+            "backgroundColor": "#1E6FD9",
+            "borderRadius": 999,
+            "paddingHorizontal": 28,
+            "paddingVertical": 14,
+          },
+          {
+            "marginTop": 16,
+            "paddingHorizontal": 24,
+            "paddingVertical": 12,
+          },
+        ]
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#FFFFFF",
+              "fontSize": 15,
+            },
+          ]
+        }
+      >
+        Thử lại
+      </Text>
+    </View>
+  </View>
+</View>
+`;

@@ -109,6 +109,24 @@
       "expected": [
         "03034e68e1baad74"
       ]
+    },
+    {
+      "name": "Thai SARA AM stays with its consonant when the tail is cut",
+      "text": "กำaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300e280a6616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+      ]
+    },
+    {
+      "name": "a Devanagari conjunct is dropped whole when the tail is cut",
+      "text": "स्तेaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "kind": "subtitle",
+      "maxWrite": 185,
+      "expected": [
+        "0300e280a6616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+      ]
     }
   ],
   "labelText": [
@@ -131,6 +149,26 @@
       "name": "33 ASCII bytes lose the last one",
       "input": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
       "expected": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+    },
+    {
+      "name": "Thai SARA AM is not split from its consonant",
+      "input": "abcdefghiกำกำกำกำ",
+      "expected": "abcdefghiกำกำกำ"
+    },
+    {
+      "name": "a Devanagari conjunct is kept whole",
+      "input": "नमस्तेनमस्ते",
+      "expected": "नमस्तेनम"
+    },
+    {
+      "name": "Lao AM is not split from its consonant",
+      "input": "abcdefghiສຳສຳສຳສຳ",
+      "expected": "abcdefghiສຳສຳສຳ"
+    },
+    {
+      "name": "Hangul leading jamo join the following syllable",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaᄀ하",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     }
   ],
   "boardInfo": [
