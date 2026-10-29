@@ -9,11 +9,11 @@
 #   OFFLINE=1 tool/device_test.sh MlKitTranslatorTest   # airplane-mode test (turn the network off first)
 #
 # Env: SERIAL (default: the only adb device), WHISPER_MODEL (path to ggml-base-q5_1.bin, pushed if the
-# phone has none; default: the copy in the build session's scratchpad, when present).
+# phone has none).
 set -euo pipefail
 cd "$(dirname "$0")/../android"
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
-WHISPER_MODEL="${WHISPER_MODEL:-/private/tmp/claude-501/-Users-cicca-Documents-personal/22463735-b558-4f26-ba35-5d5dd2fd572c/scratchpad/model/ggml-base-q5_1.bin}"
+WHISPER_MODEL="${WHISPER_MODEL:-}"
 ADB=(adb ${SERIAL:+-s "$SERIAL"})
 PKG=vn.cicca.livetranslator
 FILES=/sdcard/Android/data/$PKG/files

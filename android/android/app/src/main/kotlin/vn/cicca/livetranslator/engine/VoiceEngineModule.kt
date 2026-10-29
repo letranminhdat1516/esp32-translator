@@ -12,6 +12,8 @@ import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,14 +83,29 @@ class VoiceEngineModule(context: ReactApplicationContext) : NativeVoiceEngineSpe
 
     // --- calls ------------------------------------------------------------------------------------
 
-    /** Runs [call] on the main thread; its result resolves [promise], a failure rejects with an EngineError code */
+    /**
+     * Runs [call] on the main thread; its result resolves [promise], a failure rejects with an EngineError
+     * code. A call cut short by [invalidate] (scope cancelled, even before it started) rejects with notReady,
+     * so no JS promise is left pending.
+     */
     private fun run(promise: Promise, fallback: String, call: suspend () -> Any?) {
-        scope.launch {
-            try {
-                promise.resolve(call())
+        val settled = AtomicBoolean(false)
+        val job = scope.launch {
+            val result = try {
+                call()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                promise.reject(EngineWire.errorCode(e, fallback), e.message ?: e.javaClass.simpleName, e)
+                if (settled.compareAndSet(false, true)) {
+                    promise.reject(EngineWire.errorCode(e, fallback), e.message ?: e.javaClass.simpleName, e)
+                }
+                return@launch
+            }
+            if (settled.compareAndSet(false, true)) promise.resolve(result)
+        }
+        job.invokeOnCompletion { cause ->
+            if (cause is CancellationException && settled.compareAndSet(false, true)) {
+                promise.reject(NOT_READY, "the voice engine was shut down", cause)
             }
         }
     }

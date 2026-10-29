@@ -73,8 +73,31 @@ function stamp(): string {
   return new Date().toISOString().slice(11, 23);
 }
 
-export function EngineProbe({engine: given, onClose}: {engine?: VoiceEngine; onClose?: () => void}) {
-  const engine = useMemo(() => given ?? new NativeVoiceEngineAdapter(), [given]);
+type OwnedEngine = VoiceEngine & {dispose(): void};
+
+export interface EngineProbeProps {
+  /** An engine owned by the caller (tests); otherwise the probe creates one and disposes it on unmount. */
+  engine?: VoiceEngine;
+  createEngine?: () => OwnedEngine;
+  onClose?: () => void;
+}
+
+export function EngineProbe({
+  engine: given,
+  createEngine = () => new NativeVoiceEngineAdapter(),
+  onClose,
+}: EngineProbeProps) {
+  const [engine, owned] = useMemo<[VoiceEngine, OwnedEngine | null]>(() => {
+    if (given) {
+      return [given, null];
+    }
+    const created = createEngine();
+    return [created, created];
+    // createEngine is read once: a new function on every render must not rebuild the engine
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [given]);
+  /** A session this probe started and has not stopped: stopped on unmount. */
+  const sessionStarted = useRef(false);
   const [lines, setLines] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
@@ -105,8 +128,13 @@ export function EngineProbe({engine: given, onClose}: {engine?: VoiceEngine; onC
     return () => {
       mounted.current = false;
       subs.forEach(unsubscribe => unsubscribe());
+      if (sessionStarted.current) {
+        sessionStarted.current = false;
+        engine.stop().catch(e => console.warn(`EngineProbe: stop on unmount failed: ${String(e)}`));
+      }
+      owned?.dispose();
     };
-  }, [engine, log]);
+  }, [engine, owned, log]);
 
   const run = useCallback(
     async (what: string, task: () => Promise<void>) => {
@@ -125,7 +153,12 @@ export function EngineProbe({engine: given, onClose}: {engine?: VoiceEngine; onC
     [log],
   );
 
-  const onStart = () => run('session', () => probeSession(engine, log));
+  const onStart = () =>
+    run('session', async () => {
+      // Marked before the call: a start still in flight at unmount is stopped too (stop cancels it)
+      sessionStarted.current = true;
+      await probeSession(engine, log);
+    });
   const onMeasure = () =>
     run('measure', async () => {
       const cost = await measureFeed(engine, 500);
@@ -134,6 +167,7 @@ export function EngineProbe({engine: given, onClose}: {engine?: VoiceEngine; onC
       );
     });
   const onStop = () => run('stop', async () => {
+    sessionStarted.current = false;
     await engine.stop();
     log('stopped');
   });
@@ -164,6 +198,7 @@ function Button({label, onPress, disabled}: {label: string; onPress: () => void;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={onPress}
       disabled={disabled}
       style={[styles.button, disabled ? styles.disabled : null]}>

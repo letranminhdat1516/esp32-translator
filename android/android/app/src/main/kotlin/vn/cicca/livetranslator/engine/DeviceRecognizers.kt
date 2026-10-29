@@ -81,6 +81,10 @@ class DeviceRecognizers(
 
     override fun mineKind(home: String, recognizerX: String): String = choice().mine(home, recognizerX)
 
+    override fun shutdown() {
+        whisper?.shutdown()
+    }
+
     /** Installed on-device languages (API 33+), asked once at launch */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun queryOnDeviceLanguages() {
@@ -117,4 +121,6 @@ interface WhisperSupport {
     val libraryLoaded: Boolean
     fun modelPresent(): Boolean
     fun create(request: RecognizerRequest): UtteranceRecognizer
+    /** Releases the model (engine shutdown) */
+    fun shutdown() {}
 }

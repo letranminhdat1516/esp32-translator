@@ -83,3 +83,47 @@ describe('EngineProbe screen', () => {
     expect(engine.listenerCount('mine')).toBe(0);
   });
 });
+
+describe('EngineProbe cleanup', () => {
+  async function mount(element: React.ReactElement) {
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => {
+      renderer = ReactTestRenderer.create(element);
+    });
+    return renderer;
+  }
+
+  test('unmounting stops a session it started', async () => {
+    const engine = fakeEngine();
+    const renderer = await mount(<EngineProbe engine={engine} />);
+    const start = renderer.root.find(n => n.props.accessibilityLabel === 'Chạy thử');
+    await act(async () => start.props.onPress());
+    expect(engine.starts).toHaveLength(1);
+    await act(async () => renderer.unmount());
+    expect(engine.stopCount).toBe(1);
+  });
+
+  test('unmounting without a session does not stop the engine', async () => {
+    const engine = fakeEngine();
+    const renderer = await mount(<EngineProbe engine={engine} />);
+    await act(async () => renderer.unmount());
+    expect(engine.stopCount).toBe(0);
+  });
+
+  test('the engine the probe creates itself is disposed on unmount', async () => {
+    const dispose = jest.fn();
+    const created = Object.assign(fakeEngine(), {dispose});
+    const renderer = await mount(<EngineProbe createEngine={() => created} />);
+    await act(async () => renderer.unmount());
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(created.listenerCount('mine')).toBe(0);
+  });
+
+  test('a given engine is not disposed (its owner does that)', async () => {
+    const dispose = jest.fn();
+    const engine = Object.assign(fakeEngine(), {dispose});
+    const renderer = await mount(<EngineProbe engine={engine} />);
+    await act(async () => renderer.unmount());
+    expect(dispose).not.toHaveBeenCalled();
+  });
+});

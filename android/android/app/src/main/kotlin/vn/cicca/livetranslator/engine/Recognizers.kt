@@ -70,6 +70,9 @@ interface RecognizerCatalog {
 
     /** The kind used for the [home] (mic) side when Dart names only the other side's kind */
     fun mineKind(home: String, recognizerX: String): String
+
+    /** Frees what the catalog holds (the Whisper model); called once, by the engine's shutdown */
+    fun shutdown() {}
 }
 
 /**

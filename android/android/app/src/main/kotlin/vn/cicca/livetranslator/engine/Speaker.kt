@@ -66,13 +66,19 @@ class Speaker(
 
     val isReady: Boolean get() = synchronized(lock) { ready }
 
-    /** Makes [language] (a language code; the home language in the app) the voice language and checks it */
-    fun hasVoice(language: String): Boolean = synchronized(lock) {
+    /** Makes [language] (a language code; the home language in the app) the voice language */
+    fun setLanguage(language: String) = synchronized(lock) {
         val wanted = Locale.forLanguageTag(language)
         if (wanted != locale) {
             locale = wanted
             voiceAvailable = false
+            if (ready && checkVoice().also { voiceAvailable = it }) tts.language = wanted
         }
+    }
+
+    /** Makes [language] the voice language ([setLanguage]) and checks it */
+    fun hasVoice(language: String): Boolean = synchronized(lock) {
+        setLanguage(language)
         hasVoice()
     }
 

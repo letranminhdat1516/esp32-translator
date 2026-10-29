@@ -7,6 +7,8 @@ import androidx.annotation.Keep
 import vn.cicca.livetranslator.BuildConfig
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
 
 /** whisper.cpp through JNI (`whisper_jni.cpp`), arm64-v8a only. Kept for R8: see proguard-rules.pro */
 @Keep
@@ -28,13 +30,40 @@ internal object WhisperNative {
     external fun transcribe(handle: Long, samples: FloatArray, language: String, prompt: String?, threads: Int): Array<WhisperSegment>?
 }
 
+/** What [WhisperModel] needs from whisper.cpp: [JniWhisper] on the phone, a fake in JUnit */
+interface WhisperBackend {
+    val loaded: Boolean
+    fun init(modelPath: String): Long
+    fun free(handle: Long)
+    fun systemInfo(): String
+    fun bindingsOk(): Boolean
+    fun transcribe(handle: Long, samples: FloatArray, language: String, prompt: String?, threads: Int): Array<WhisperSegment>?
+}
+
+/** [WhisperBackend] over the JNI library */
+object JniWhisper : WhisperBackend {
+    override val loaded: Boolean get() = WhisperNative.loaded
+    override fun init(modelPath: String) = WhisperNative.init(modelPath)
+    override fun free(handle: Long) = WhisperNative.free(handle)
+    override fun systemInfo() = WhisperNative.systemInfo()
+    override fun bindingsOk() = WhisperNative.bindingsOk()
+    override fun transcribe(handle: Long, samples: FloatArray, language: String, prompt: String?, threads: Int) =
+        WhisperNative.transcribe(handle, samples, language, prompt, threads)
+}
+
 /**
  * The Whisper model, shared by both sides of a conversation. Loaded once (after its SHA-256 check);
- * utterances are transcribed one at a time on one worker thread, in arrival order.
+ * utterances are transcribed one at a time on one worker thread, in arrival order. [close] frees the native
+ * context once the queued work has run (engine shutdown: the module's invalidate() on an RN reload).
  */
-class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
+class WhisperModel(
+    val store: ModelStore,
+    private val threads: Int = 4,
+    private val native: WhisperBackend = JniWhisper,
+) {
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "whisper") }
     @Volatile private var handle = 0L
+    @Volatile private var closed = false
 
     /** Result of one utterance; [rtf] = processing time / audio time */
     data class Transcript(val text: String?, val segments: List<WhisperSegment>, val audioSeconds: Double, val seconds: Double) {
@@ -48,15 +77,16 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
     /** Loads the model if needed (worker thread); false when it is missing or fails its SHA-256 check */
     @Synchronized
     fun load(): Boolean {
+        if (closed) return false
         if (handle != 0L) return true
-        if (!WhisperNative.loaded || !store.verified()) return false
-        if (!WhisperNative.bindingsOk()) {
+        if (!native.loaded || !store.verified()) return false
+        if (!native.bindingsOk()) {
             Log.e(TAG, "Whisper JNI bindings missing (R8?): not loading")
             return false
         }
         val started = SystemClock.elapsedRealtime()
-        handle = WhisperNative.init(store.file.absolutePath)
-        Log.i(TAG, "model ${store.spec.fileName} loaded in ${SystemClock.elapsedRealtime() - started} ms: ${WhisperNative.systemInfo()}")
+        handle = native.init(store.file.absolutePath)
+        Log.i(TAG, "model ${store.spec.fileName} loaded in ${SystemClock.elapsedRealtime() - started} ms: ${native.systemInfo()}")
         return handle != 0L
     }
 
@@ -74,7 +104,7 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
         if (!load()) return Transcript(null, emptyList(), audio, 0.0)
         val started = SystemClock.elapsedRealtime()
         val segments = try {
-            WhisperNative.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
+            native.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
         } catch (e: IllegalStateException) {
             throw EngineErrors.notReady("Whisper: ${e.message}")
         } catch (e: LinkageError) { // a JNI lookup's own NoClassDefFoundError / NoSuchMethodError
@@ -97,11 +127,40 @@ class WhisperModel(val store: ModelStore, private val threads: Int = 4) {
         return t
     }
 
+    /** Queues [task] on the worker; dropped once the model is closed */
     fun submit(task: () -> Unit) {
-        worker.execute {
-            try { task() } catch (e: Exception) { Log.e(TAG, "transcription failed", e) }
+        if (closed) return
+        try {
+            worker.execute {
+                try { task() } catch (e: Exception) { Log.e(TAG, "transcription failed", e) }
+            }
+        } catch (e: RejectedExecutionException) {
+            // closed meanwhile
         }
     }
+
+    /**
+     * Idempotent. No new work or load after this; utterances already queued still run (a transcription
+     * that has not loaded yet finds the model closed), then the native context is freed on the worker and
+     * the worker ends.
+     */
+    fun close() {
+        synchronized(this) {
+            if (closed) return
+            closed = true
+        }
+        worker.execute {
+            val h = synchronized(this) { handle.also { handle = 0L } }
+            if (h != 0L) {
+                native.free(h)
+                Log.i(TAG, "model ${store.spec.fileName} freed")
+            }
+        }
+        worker.shutdown()
+    }
+
+    /** Waits for [close] to finish freeing; true when it did within [ms] */
+    fun awaitClosed(ms: Long): Boolean = worker.awaitTermination(ms, TimeUnit.MILLISECONDS)
 
     companion object {
         const val SAMPLE_RATE = 16_000
@@ -226,4 +285,6 @@ class DeviceWhisper(context: Context, isOnline: () -> Boolean) : WhisperSupport,
     }
 
     override suspend fun download(progress: (Double) -> Unit) = store.download(progress)
+
+    override fun shutdown() = model.close()
 }

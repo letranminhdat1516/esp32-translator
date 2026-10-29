@@ -211,7 +211,7 @@ class NativeVoiceEngine(
         return withContext(Dispatchers.IO) {
             val generation = pair.generation
             val mineKind = recognizers.mineKind(pair.home, recognizerX)
-            speaker.hasVoice(pair.home) // speech output in the pair's home language
+            speaker.setLanguage(pair.home) // speech output in the pair's home language
             val mine = recognizers.create(
                 RecognizerRequest(mineKind, pair.home, hints, mine = true, clock = clock, onResult = { r ->
                     events.mine(
@@ -288,10 +288,12 @@ class NativeVoiceEngine(
 
     fun openTtsSettings() = Speaker.openTtsSettings(context)
 
+    /** Ends the engine for good (the module's invalidate()): the session, TTS, ML Kit and the Whisper model */
     fun shutdown() {
         stop()
         speaker.shutdown()
         translator.close()
+        recognizers.shutdown()
     }
 
     private fun status(): String {
