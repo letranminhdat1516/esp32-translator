@@ -12,15 +12,20 @@
 		0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */; };
 		0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D91563831394399DEB8B628 /* Diagnostics.swift */; };
 		1D5105016B834931A5A0B3F3 /* ConversationActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29F0F18CF126F464BD8D8A2D /* ConversationActivity.swift */; };
+		2C0FBB059547B92688D07BB0 /* LanguageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB71FD8973D12C48BE26D70 /* LanguageSheet.swift */; };
 		2CE863EF151D2B13E62DB271 /* FakeVoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DEB35E5AD6AB7A6FEF5BDF5 /* FakeVoiceEngine.swift */; };
 		2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A95279E4169D54A6DBEF7 /* ContentView.swift */; };
 		329375E9E815700DBFC7C047 /* ClaudeRelay in Frameworks */ = {isa = PBXBuildFile; productRef = 54025D36B309B58EC5EDB7D9 /* ClaudeRelay */; };
 		45527E3AB967869E4DD2248D /* ConversationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8370A481AE6CA850A659C829 /* ConversationEngine.swift */; };
 		56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */; };
 		6754A1297CD5FD3FF64C29A5 /* AudioSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458050A752F26BCC732FE5C8 /* AudioSources.swift */; };
+		71E25858D073606202B1141F /* UIState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D252157535003A9CC36E356B /* UIState.swift */; };
 		818B60BF819786D93A3E1981 /* FakeBoardLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CDC138628E302CED4D5C192 /* FakeBoardLink.swift */; };
+		82A561DF6B2504B7AAEB4CC3 /* UISamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6CACC952B345A7F7DDD1115 /* UISamples.swift */; };
 		8D8DD48FA63E8955CD982577 /* SessionMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A11B6BF22488CF35326ACF /* SessionMachine.swift */; };
+		90CE569D6FB4F2E0750A72C5 /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E63E61E081954788E29BE1 /* GlossaryView.swift */; };
 		938B0BAE72B3BDE145BF127B /* ClaudeRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */; };
+		9C52F34A3F00885788BB0A90 /* ReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */; };
 		A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA56EAB5FB91A561FBBF15AB /* Model.swift */; };
 		AD7E43FD2E68E6630F1396B9 /* BoardVoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */; };
 		ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1746279919516ABC5EF3518 /* Translator.swift */; };
@@ -48,21 +53,26 @@
 		5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VietnameseFixup.swift; sourceTree = "<group>"; };
 		672D6DBE0831DC54A2C1D741 /* BoardLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLink.swift; sourceTree = "<group>"; };
 		6A3BAF0A7DD758B7F0C7AACD /* LiveTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriber.swift; sourceTree = "<group>"; };
+		6DB71FD8973D12C48BE26D70 /* LanguageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSheet.swift; sourceTree = "<group>"; };
 		6DEB35E5AD6AB7A6FEF5BDF5 /* FakeVoiceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeVoiceEngine.swift; sourceTree = "<group>"; };
 		6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceGate.swift; sourceTree = "<group>"; };
+		77E63E61E081954788E29BE1 /* GlossaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlossaryView.swift; sourceTree = "<group>"; };
 		79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPTranslatorApp.swift; sourceTree = "<group>"; };
 		7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnAssembler.swift; sourceTree = "<group>"; };
 		8370A481AE6CA850A659C829 /* ConversationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationEngine.swift; sourceTree = "<group>"; };
 		88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADPCMDecoder.swift; sourceTree = "<group>"; };
+		8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessView.swift; sourceTree = "<group>"; };
 		8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayKeychain.swift; sourceTree = "<group>"; };
 		9CDC138628E302CED4D5C192 /* FakeBoardLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeBoardLink.swift; sourceTree = "<group>"; };
 		9FA9545B10B7FAC6140533DD /* relay */ = {isa = PBXFileReference; lastKnownFileType = folder; name = relay; path = ../relay; sourceTree = SOURCE_ROOT; };
 		A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardVoiceTranscriber.swift; sourceTree = "<group>"; };
 		A1746279919516ABC5EF3518 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A6CACC952B345A7F7DDD1115 /* UISamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UISamples.swift; sourceTree = "<group>"; };
 		A795C7252F826D75749124A8 /* RelayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayView.swift; sourceTree = "<group>"; };
 		B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRelayService.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
+		D252157535003A9CC36E356B /* UIState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIState.swift; sourceTree = "<group>"; };
 		DC3510B8E2D827E396DEBE47 /* SubtitleTranslator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitleTranslator.swift; sourceTree = "<group>"; };
 		E86A95279E4169D54A6DBEF7 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		EA56EAB5FB91A561FBBF15AB /* Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Model.swift; sourceTree = "<group>"; };
@@ -129,7 +139,12 @@
 			isa = PBXGroup;
 			children = (
 				E86A95279E4169D54A6DBEF7 /* ContentView.swift */,
+				77E63E61E081954788E29BE1 /* GlossaryView.swift */,
+				6DB71FD8973D12C48BE26D70 /* LanguageSheet.swift */,
+				8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */,
 				A795C7252F826D75749124A8 /* RelayView.swift */,
+				A6CACC952B345A7F7DDD1115 /* UISamples.swift */,
+				D252157535003A9CC36E356B /* UIState.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -296,8 +311,11 @@
 				DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */,
 				818B60BF819786D93A3E1981 /* FakeBoardLink.swift in Sources */,
 				2CE863EF151D2B13E62DB271 /* FakeVoiceEngine.swift in Sources */,
+				90CE569D6FB4F2E0750A72C5 /* GlossaryView.swift in Sources */,
+				2C0FBB059547B92688D07BB0 /* LanguageSheet.swift in Sources */,
 				EB13438B37F3D21803EDEE59 /* LiveTranscriber.swift in Sources */,
 				A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */,
+				9C52F34A3F00885788BB0A90 /* ReadinessView.swift in Sources */,
 				56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */,
 				DB0E8D30749EB97DF109410F /* RelayView.swift in Sources */,
 				8D8DD48FA63E8955CD982577 /* SessionMachine.swift in Sources */,
@@ -305,6 +323,8 @@
 				0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */,
 				ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */,
 				BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */,
+				82A561DF6B2504B7AAEB4CC3 /* UISamples.swift in Sources */,
+				71E25858D073606202B1141F /* UIState.swift in Sources */,
 				02486F5EB1F5D6A464567D5B /* VietnameseFixup.swift in Sources */,
 				B822E2794A5E5177939B83EF /* VoiceEngine.swift in Sources */,
 				C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */,
