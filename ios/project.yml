@@ -10,7 +10,16 @@ targets:
   ESPTranslator:
     type: application
     platform: iOS
-    sources: [Sources]
+    sources:
+      - Sources
+      # Shared with the Android app, loaded at run time (SharedResources): folder references keep the
+      # languages/ and board_glyphs/ directories in the bundle
+      - path: ../shared/languages
+        type: folder
+        buildPhase: resources
+      - path: ../shared/board_glyphs
+        type: folder
+        buildPhase: resources
     dependencies: [{ package: ClaudeRelay }]
     info:
       path: Sources/Info.plist
