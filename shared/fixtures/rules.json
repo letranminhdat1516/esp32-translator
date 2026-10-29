@@ -1,0 +1,645 @@
+{
+  "description": "RuleEngine (app/lib/core/rule_engine.dart). Replaces Swift VietnameseFixup: every VietnameseFixupTests case is here (engine vi). Each case runs fn on input with the named engine and compares to expected exactly.",
+  "engines": {
+    "vi": {
+      "pack": "vi"
+    },
+    "en": {
+      "pack": "en"
+    },
+    "context": {
+      "recognition": [],
+      "beforeTranslation": [
+        {
+          "id": "t",
+          "pattern": "mắc",
+          "template": "đắt",
+          "context": "giá"
+        }
+      ]
+    },
+    "clauseStart": {
+      "recognition": [],
+      "beforeTranslation": [
+        {
+          "id": "t",
+          "pattern": "xin",
+          "template": "$1 YO",
+          "atClauseStart": true
+        }
+      ]
+    },
+    "wholeWord": {
+      "recognition": [
+        {
+          "id": "t",
+          "pattern": "ok",
+          "template": "OK"
+        }
+      ],
+      "beforeTranslation": []
+    }
+  },
+  "cases": [
+    {
+      "name": "fixes \"Tôi đang đợi xe Grant out trước cửa khách sạn\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Tôi đang đợi xe Grant out trước cửa khách sạn",
+      "expected": "Tôi đang đợi xe Grab trước cửa khách sạn"
+    },
+    {
+      "name": "fixes \"Tôi đang đợi xe Gran out trước cửa khách sạn\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Tôi đang đợi xe Gran out trước cửa khách sạn",
+      "expected": "Tôi đang đợi xe Grab trước cửa khách sạn"
+    },
+    {
+      "name": "fixes \"Tôi đang đợi xe gram trước cửa khách sạn\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Tôi đang đợi xe gram trước cửa khách sạn",
+      "expected": "Tôi đang đợi xe Grab trước cửa khách sạn"
+    },
+    {
+      "name": "fixes \"Bạn có biết mật khẩu hoa phay ở đây không\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Bạn có biết mật khẩu hoa phay ở đây không",
+      "expected": "Bạn có biết mật khẩu Wi-Fi ở đây không"
+    },
+    {
+      "name": "fixes \"Bạn có biết mật khẩu khoai tây ở đây không\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Bạn có biết mật khẩu khoai tây ở đây không",
+      "expected": "Bạn có biết mật khẩu Wi-Fi ở đây không"
+    },
+    {
+      "name": "fixes \"Bạn có biết mật khẩu phai ở đây không\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Bạn có biết mật khẩu phai ở đây không",
+      "expected": "Bạn có biết mật khẩu Wi-Fi ở đây không"
+    },
+    {
+      "name": "fixes \"Ở đây có wifi không em\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Ở đây có wifi không em",
+      "expected": "Ở đây có Wi-Fi không em"
+    },
+    {
+      "name": "fixes \"Mình nhắn tin qua giữa lo cho tiện nhé\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Mình nhắn tin qua giữa lo cho tiện nhé",
+      "expected": "Mình nhắn tin qua Zalo cho tiện nhé"
+    },
+    {
+      "name": "fixes \"Mình nhắn tin qua Zalo lo cho tiện nhé\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Mình nhắn tin qua Zalo lo cho tiện nhé",
+      "expected": "Mình nhắn tin qua Zalo cho tiện nhé"
+    },
+    {
+      "name": "fixes \"1 đối tác ở C nga co nên tháng sau\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "1 đối tác ở C nga co nên tháng sau",
+      "expected": "1 đối tác ở Singapore nên tháng sau"
+    },
+    {
+      "name": "fixes \"1 đối tác ngở Phi Nga to nên tháng sau\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "1 đối tác ngở Phi Nga to nên tháng sau",
+      "expected": "1 đối tác ở Singapore nên tháng sau"
+    },
+    {
+      "name": "fixes \"1 đối tác ở China com nên tháng sau\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "1 đối tác ở China com nên tháng sau",
+      "expected": "1 đối tác ở Singapore nên tháng sau"
+    },
+    {
+      "name": "fixes \"gửi qua phây búc nhé\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "gửi qua phây búc nhé",
+      "expected": "gửi qua Facebook nhé"
+    },
+    {
+      "name": "fixes \"gửi i meo cho chị\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "gửi i meo cho chị",
+      "expected": "gửi email cho chị"
+    },
+    {
+      "name": "fixes \"ô kê mai gặp nhé\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "ô kê mai gặp nhé",
+      "expected": "OK mai gặp nhé"
+    },
+    {
+      "name": "keeps \"Tôi lo lắng giữa lo âu và hy vọng\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Tôi lo lắng giữa lo âu và hy vọng",
+      "expected": "Tôi lo lắng giữa lo âu và hy vọng"
+    },
+    {
+      "name": "keeps \"Tôi mua khoai tây ở chợ\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Tôi mua khoai tây ở chợ",
+      "expected": "Tôi mua khoai tây ở chợ"
+    },
+    {
+      "name": "keeps \"Một gram vàng giá bao nhiêu\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Một gram vàng giá bao nhiêu",
+      "expected": "Một gram vàng giá bao nhiêu"
+    },
+    {
+      "name": "keeps \"Xe ra cổng rồi\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Xe ra cổng rồi",
+      "expected": "Xe ra cổng rồi"
+    },
+    {
+      "name": "keeps \"Bông hoa pha lê đẹp quá\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Bông hoa pha lê đẹp quá",
+      "expected": "Bông hoa pha lê đẹp quá"
+    },
+    {
+      "name": "keeps \"Ngỡ ngàng quá\"",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Ngỡ ngàng quá",
+      "expected": "Ngỡ ngàng quá"
+    },
+    {
+      "name": "rewrites \"Em ơi, tính tiền!\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em ơi, tính tiền!",
+      "expected": "Cho tôi thanh toán!"
+    },
+    {
+      "name": "rewrites \"Em ơi tính tiền\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em ơi tính tiền",
+      "expected": "Cho tôi thanh toán"
+    },
+    {
+      "name": "rewrites \"Cái áo này giá ba trăm nghìn, em lấy anh hai trăm rưỡi thôi.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Cái áo này giá ba trăm nghìn, em lấy anh hai trăm rưỡi thôi.",
+      "expected": "Cái áo này giá ba trăm nghìn, em tính anh hai trăm năm mươi thôi."
+    },
+    {
+      "name": "rewrites \"em lấy anh 250.000 thôi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "em lấy anh 250.000 thôi",
+      "expected": "em tính anh 250.000 thôi"
+    },
+    {
+      "name": "rewrites \"Thôi kệ đi, đừng để bụng.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Thôi kệ đi, đừng để bụng.",
+      "expected": "Thôi kệ đi, đừng giận."
+    },
+    {
+      "name": "rewrites \"Ăn quả nhớ kẻ trồng cây.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Ăn quả nhớ kẻ trồng cây.",
+      "expected": "Hãy biết ơn những người đã giúp đỡ mình."
+    },
+    {
+      "name": "rewrites \"Anh ơi, cho em hỏi đường ra bến xe với ạ.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh ơi, cho em hỏi đường ra bến xe với ạ.",
+      "expected": "Cho em hỏi đường ra bến xe với ạ."
+    },
+    {
+      "name": "rewrites \"Mắc quá, bớt chút đi chị.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mắc quá, bớt chút đi chị.",
+      "expected": "Đắt quá, giảm giá chút đi chị."
+    },
+    {
+      "name": "rewrites \"Đi đâu mà vội mà vàng.\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Đi đâu mà vội mà vàng.",
+      "expected": "Sao phải vội vàng thế."
+    },
+    {
+      "name": "rewrites \"Cho em hai ly trà đá nhé chị ơi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Cho em hai ly trà đá nhé chị ơi",
+      "expected": "Cho em hai ly trà đá nhé"
+    },
+    {
+      "name": "rewrites \"mật khẩu hoa phay là gì vậy anh ơi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "mật khẩu hoa phay là gì vậy anh ơi",
+      "expected": "mật khẩu Wi-Fi là gì vậy"
+    },
+    {
+      "name": "rewrites \"Chị ơi, tính tiền giùm em\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Chị ơi, tính tiền giùm em",
+      "expected": "Cho tôi thanh toán"
+    },
+    {
+      "name": "rewrites \"Mắc quá, giá này bớt chút đi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mắc quá, giá này bớt chút đi",
+      "expected": "Đắt quá, giá này giảm giá chút đi"
+    },
+    {
+      "name": "rewrites \"Ông ơi, ông bà ơi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Ông ơi, ông bà ơi",
+      "expected": "Ông ơi, ông bà ơi"
+    },
+    {
+      "name": "rewrites \"Em ơi\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em ơi",
+      "expected": "Em ơi"
+    },
+    {
+      "name": "rewrites \"Em ơi!\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em ơi!",
+      "expected": "Em ơi!"
+    },
+    {
+      "name": "rewrites \"Bà ơi bà ở đâu?\"",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Bà ơi bà ở đâu?",
+      "expected": "Bà ở đâu?"
+    },
+    {
+      "name": "keeps \"Em lấy anh hai cái nhé.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em lấy anh hai cái nhé.",
+      "expected": "Em lấy anh hai cái nhé."
+    },
+    {
+      "name": "keeps \"Anh lấy em nhé, em đồng ý không?\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh lấy em nhé, em đồng ý không?",
+      "expected": "Anh lấy em nhé, em đồng ý không?"
+    },
+    {
+      "name": "keeps \"Tôi bị mắc kẹt trong thang máy.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Tôi bị mắc kẹt trong thang máy.",
+      "expected": "Tôi bị mắc kẹt trong thang máy."
+    },
+    {
+      "name": "keeps \"Bớt chút đường cho tôi.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Bớt chút đường cho tôi.",
+      "expected": "Bớt chút đường cho tôi."
+    },
+    {
+      "name": "keeps \"Tính tiền điện tháng này bao nhiêu?\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Tính tiền điện tháng này bao nhiêu?",
+      "expected": "Tính tiền điện tháng này bao nhiêu?"
+    },
+    {
+      "name": "keeps \"Trời ơi, đẹp quá!\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Trời ơi, đẹp quá!",
+      "expected": "Trời ơi, đẹp quá!"
+    },
+    {
+      "name": "keeps \"Mẹ ơi, con về rồi.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mẹ ơi, con về rồi.",
+      "expected": "Mẹ ơi, con về rồi."
+    },
+    {
+      "name": "keeps \"Ông bà ấy sống ở quê.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Ông bà ấy sống ở quê.",
+      "expected": "Ông bà ấy sống ở quê."
+    },
+    {
+      "name": "keeps \"Để em tính tiền nha.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Để em tính tiền nha.",
+      "expected": "Để em tính tiền nha."
+    },
+    {
+      "name": "keeps \"Anh tính tiền đi.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh tính tiền đi.",
+      "expected": "Anh tính tiền đi."
+    },
+    {
+      "name": "keeps \"Chị tính tiền giúp em được không?\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Chị tính tiền giúp em được không?",
+      "expected": "Chị tính tiền giúp em được không?"
+    },
+    {
+      "name": "keeps \"Em lấy anh năm 1990.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Em lấy anh năm 1990.",
+      "expected": "Em lấy anh năm 1990."
+    },
+    {
+      "name": "keeps \"Anh ấy lấy chị năm 2015.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh ấy lấy chị năm 2015.",
+      "expected": "Anh ấy lấy chị năm 2015."
+    },
+    {
+      "name": "keeps \"Dạo này anh mắc lắm.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Dạo này anh mắc lắm.",
+      "expected": "Dạo này anh mắc lắm."
+    },
+    {
+      "name": "keeps \"Hôm nay tôi mắc quá, mai nói chuyện nhé.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Hôm nay tôi mắc quá, mai nói chuyện nhé.",
+      "expected": "Hôm nay tôi mắc quá, mai nói chuyện nhé."
+    },
+    {
+      "name": "keeps \"Anh ơi là anh!\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh ơi là anh!",
+      "expected": "Anh ơi là anh!"
+    },
+    {
+      "name": "keeps \"Ngở ngàng quá trời.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Ngở ngàng quá trời.",
+      "expected": "Ngở ngàng quá trời."
+    },
+    {
+      "name": "keeps \"Tôi mua da lô cho con.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Tôi mua da lô cho con.",
+      "expected": "Tôi mua da lô cho con."
+    },
+    {
+      "name": "keeps \"Cô ấy đi gia lô về.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Cô ấy đi gia lô về.",
+      "expected": "Cô ấy đi gia lô về."
+    },
+    {
+      "name": "keeps \"Gọi C call cho anh nhé.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Gọi C call cho anh nhé.",
+      "expected": "Gọi C call cho anh nhé."
+    },
+    {
+      "name": "keeps \"Tính tiền thuê nhà tháng này chưa?\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Tính tiền thuê nhà tháng này chưa?",
+      "expected": "Tính tiền thuê nhà tháng này chưa?"
+    },
+    {
+      "name": "keeps \"Mẹ mắc mưa ngoài đường.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mẹ mắc mưa ngoài đường.",
+      "expected": "Mẹ mắc mưa ngoài đường."
+    },
+    {
+      "name": "keeps \"Tôi lấy anh ấy năm 2010.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Tôi lấy anh ấy năm 2010.",
+      "expected": "Tôi lấy anh ấy năm 2010."
+    },
+    {
+      "name": "keeps \"Anh lấy em hai trăm cái bánh nhé.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh lấy em hai trăm cái bánh nhé.",
+      "expected": "Anh lấy em hai trăm cái bánh nhé."
+    },
+    {
+      "name": "keeps \"Bớt nói lại đi.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Bớt nói lại đi.",
+      "expected": "Bớt nói lại đi."
+    },
+    {
+      "name": "keeps \"Chúng ta ở giữa lòng thành phố.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Chúng ta ở giữa lòng thành phố.",
+      "expected": "Chúng ta ở giữa lòng thành phố."
+    },
+    {
+      "name": "keeps \"Nó lo lắng quá.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Nó lo lắng quá.",
+      "expected": "Nó lo lắng quá."
+    },
+    {
+      "name": "keeps \"Ăn quả này đi em.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Ăn quả này đi em.",
+      "expected": "Ăn quả này đi em."
+    },
+    {
+      "name": "keeps \"Uống nước đi.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Uống nước đi.",
+      "expected": "Uống nước đi."
+    },
+    {
+      "name": "keeps \"Đi đâu đó?\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Đi đâu đó?",
+      "expected": "Đi đâu đó?"
+    },
+    {
+      "name": "keeps \"Đừng để quên điện thoại.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Đừng để quên điện thoại.",
+      "expected": "Đừng để quên điện thoại."
+    },
+    {
+      "name": "keeps \"Cho tôi hỏi tiền phòng bao nhiêu.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Cho tôi hỏi tiền phòng bao nhiêu.",
+      "expected": "Cho tôi hỏi tiền phòng bao nhiêu."
+    },
+    {
+      "name": "keeps \"Anh ấy là người Singapore.\" for translation",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Anh ấy là người Singapore.",
+      "expected": "Anh ấy là người Singapore."
+    },
+    {
+      "name": "decomposed (NFD) input is composed before matching",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "ô kê mai gặp nhé",
+      "expected": "OK mai gặp nhé"
+    },
+    {
+      "name": "rules match case-insensitively",
+      "engine": "vi",
+      "fn": "fixRecognition",
+      "input": "Ở ĐÂY CÓ WIFI",
+      "expected": "Ở ĐÂY CÓ Wi-Fi"
+    },
+    {
+      "name": "a pack without rules returns the text untouched (fixRecognition)",
+      "engine": "en",
+      "fn": "fixRecognition",
+      "input": "  hello  there ",
+      "expected": "  hello  there "
+    },
+    {
+      "name": "a pack without rules returns the text untouched (forTranslation)",
+      "engine": "en",
+      "fn": "forTranslation",
+      "input": "  hello  there ",
+      "expected": "  hello  there "
+    },
+    {
+      "name": "a rule with a context applies when the context is present",
+      "engine": "context",
+      "fn": "forTranslation",
+      "input": "giá mắc",
+      "expected": "giá đắt"
+    },
+    {
+      "name": "a rule with a context does nothing without the context",
+      "engine": "context",
+      "fn": "forTranslation",
+      "input": "mắc kẹt",
+      "expected": "mắc kẹt"
+    },
+    {
+      "name": "atClauseStart hands the punctuation back as $1",
+      "engine": "clauseStart",
+      "fn": "forTranslation",
+      "input": "Ok, xin chào",
+      "expected": "Ok, YO chào"
+    },
+    {
+      "name": "whole words only: a letter or digit touching the match blocks it",
+      "engine": "wholeWord",
+      "fn": "fixRecognition",
+      "input": "ok, book, ok2, ok",
+      "expected": "OK, book, ok2, OK"
+    }
+  ],
+  "adversarial": {
+    "minLength": 2048,
+    "maxMsPerRule": 50,
+    "maxMsPipeline": 500,
+    "subjects": [
+      {
+        "name": "a-pairs",
+        "unit": "a ",
+        "prefix": ""
+      },
+      {
+        "name": "a-then-vi",
+        "unit": "a ",
+        "prefix": "ơi ơi ạ ậ ư ờ ẫ ế ệ "
+      },
+      {
+        "name": "vi-letters",
+        "unit": "ơ ư ạ ậ ế ệ ờ ẫ ",
+        "prefix": ""
+      },
+      {
+        "name": "words",
+        "unit": "lấy em một ",
+        "prefix": ""
+      },
+      {
+        "name": "digits",
+        "unit": "1 ",
+        "prefix": "lấy anh "
+      },
+      {
+        "name": "vocative",
+        "unit": "ông bà cô chú anh chị ",
+        "prefix": ""
+      },
+      {
+        "name": "repeats",
+        "unit": "tính tiền giùm ",
+        "prefix": ""
+      },
+      {
+        "name": "no-spaces",
+        "unit": "a",
+        "prefix": ""
+      }
+    ]
+  }
+}

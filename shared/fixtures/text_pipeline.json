@@ -1,0 +1,417 @@
+{
+  "description": "TextPipeline (app/lib/core/text_pipeline.dart): rules of the source pack, then terms (glossary + home pack terms + other pack terms) masked; the reverse after translation.",
+  "defaultPlaceholder": "Zorvik{n}",
+  "packs": {
+    "vi": {
+      "file": "vi"
+    },
+    "en": {
+      "code": "en",
+      "appleLocale": "en-X",
+      "androidLocale": "en-X",
+      "whisperCode": "en",
+      "label": "EN",
+      "labelLatin": "EN",
+      "script": "latin",
+      "recognition": [],
+      "beforeTranslation": [],
+      "terms": [],
+      "hints": []
+    },
+    "ja": {
+      "code": "ja",
+      "appleLocale": "ja-X",
+      "androidLocale": "ja-X",
+      "whisperCode": "ja",
+      "label": "JA",
+      "labelLatin": "JA",
+      "script": "latin",
+      "recognition": [],
+      "beforeTranslation": [],
+      "terms": [],
+      "hints": []
+    },
+    "fr": {
+      "code": "fr",
+      "appleLocale": "fr-X",
+      "androidLocale": "fr-X",
+      "whisperCode": "fr",
+      "label": "FR",
+      "labelLatin": "FR",
+      "script": "latin",
+      "recognition": [],
+      "beforeTranslation": [],
+      "terms": [],
+      "hints": []
+    },
+    "en-builtin-grab": {
+      "code": "en",
+      "appleLocale": "en-X",
+      "androidLocale": "en-X",
+      "whisperCode": "en",
+      "label": "EN",
+      "labelLatin": "EN",
+      "script": "latin",
+      "recognition": [],
+      "beforeTranslation": [],
+      "terms": [
+        {
+          "id": "b",
+          "text": "Grab",
+          "origin": "builtIn"
+        }
+      ],
+      "hints": []
+    },
+    "xx-gonna": {
+      "code": "xx",
+      "appleLocale": "xx-X",
+      "androidLocale": "xx-X",
+      "whisperCode": "xx",
+      "label": "XX",
+      "labelLatin": "XX",
+      "script": "latin",
+      "recognition": [],
+      "beforeTranslation": [
+        {
+          "id": "r",
+          "pattern": "gonna",
+          "template": "going to"
+        }
+      ],
+      "terms": [],
+      "hints": []
+    }
+  },
+  "prepare": [
+    {
+      "name": "mine: loanword and translator rules, then terms restored",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "input": "Em ơi, đi chợ Bến Thành bằng giữa lo",
+      "prepared": "Đi chợ Zorvik1 bằng Zalo",
+      "glossary": [
+        {
+          "id": "g1",
+          "text": "Bến Thành",
+          "fixed": {
+            "en": "Ben Thanh"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "Go to Zorvik1 by Zalo",
+          "expected": "Go to Ben Thanh by Zalo"
+        }
+      ]
+    },
+    {
+      "name": "mine: vocatives are dropped for ja too (tính tiền)",
+      "home": "vi",
+      "other": "ja",
+      "direction": "mine",
+      "input": "Em ơi, tính tiền!",
+      "prepared": "Cho tôi thanh toán!"
+    },
+    {
+      "name": "mine: vocatives are dropped for ja too (trà)",
+      "home": "vi",
+      "other": "ja",
+      "direction": "mine",
+      "input": "Chị ơi, cho em hai ly trà",
+      "prepared": "Cho em hai ly trà"
+    },
+    {
+      "name": "mine: vocatives are dropped for fr too (tính tiền)",
+      "home": "vi",
+      "other": "fr",
+      "direction": "mine",
+      "input": "Em ơi, tính tiền!",
+      "prepared": "Cho tôi thanh toán!"
+    },
+    {
+      "name": "mine: vocatives are dropped for fr too (trà)",
+      "home": "vi",
+      "other": "fr",
+      "direction": "mine",
+      "input": "Chị ơi, cho em hai ly trà",
+      "prepared": "Cho em hai ly trà"
+    },
+    {
+      "name": "mine: vocatives only are kept rather than translating nothing",
+      "home": "vi",
+      "other": "ja",
+      "direction": "mine",
+      "input": "Em ơi",
+      "prepared": "Em ơi"
+    },
+    {
+      "name": "mine: fixed translation chosen by the target (en)",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "input": "Một tô Phở",
+      "prepared": "Một tô Zorvik1",
+      "glossary": [
+        {
+          "id": "pho",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "X Zorvik1",
+          "expected": "X Pho soup"
+        }
+      ]
+    },
+    {
+      "name": "mine: fixed translation chosen by the target (ja)",
+      "home": "vi",
+      "other": "ja",
+      "direction": "mine",
+      "input": "Một tô Phở",
+      "prepared": "Một tô Zorvik1",
+      "glossary": [
+        {
+          "id": "pho",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "X Zorvik1",
+          "expected": "X フォー"
+        }
+      ]
+    },
+    {
+      "name": "mine: fixed translation chosen by the target (fr)",
+      "home": "vi",
+      "other": "fr",
+      "direction": "mine",
+      "input": "Một tô Phở",
+      "prepared": "Một tô Zorvik1",
+      "glossary": [
+        {
+          "id": "pho",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "X Zorvik1",
+          "expected": "X Phở"
+        }
+      ]
+    },
+    {
+      "name": "mine: built-in pack terms are protected and the glossary wins",
+      "home": "vi",
+      "other": "en-builtin-grab",
+      "direction": "mine",
+      "input": "Tôi gọi Grab",
+      "prepared": "Tôi gọi Zorvik1",
+      "glossary": [
+        {
+          "id": "u",
+          "text": "Grab",
+          "fixed": {
+            "en": "Grab Car"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "I call Zorvik1",
+          "expected": "I call Grab Car"
+        }
+      ]
+    },
+    {
+      "name": "theirs: the other pack has no rules, text untouched",
+      "home": "vi",
+      "other": "en",
+      "direction": "theirs",
+      "input": "Hey, how much?",
+      "prepared": "Hey, how much?",
+      "finish": [
+        {
+          "translated": "Này, bao nhiêu?",
+          "expected": "Này, bao nhiêu?"
+        }
+      ]
+    },
+    {
+      "name": "theirs: glossary terms found in the other language are protected",
+      "home": "vi",
+      "other": "en",
+      "direction": "theirs",
+      "input": "Take me to Ben Thanh Market please",
+      "prepared": "Take me to Zorvik1 please",
+      "glossary": [
+        {
+          "id": "g",
+          "text": "Ben Thanh Market",
+          "variants": [
+            "Ben Thanh"
+          ],
+          "fixed": {
+            "vi": "chợ Bến Thành"
+          }
+        }
+      ],
+      "finish": [
+        {
+          "translated": "Đưa tôi đến Zorvik1 nhé",
+          "expected": "Đưa tôi đến chợ Bến Thành nhé"
+        }
+      ]
+    },
+    {
+      "name": "theirs: the other pack's own before-translation rules apply to its speech",
+      "home": "vi",
+      "other": "xx-gonna",
+      "direction": "theirs",
+      "input": "I'm gonna go",
+      "prepared": "I'm going to go"
+    },
+    {
+      "name": "placeholder shape per target language",
+      "home": "vi",
+      "other": "ja",
+      "direction": "mine",
+      "input": "Tôi dùng Zalo",
+      "prepared": "Tôi dùng QX1Z",
+      "glossary": [
+        {
+          "id": "a",
+          "text": "Zalo"
+        }
+      ],
+      "placeholders": {
+        "ja": "QX{n}Z"
+      }
+    },
+    {
+      "name": "placeholder shape falls back to the default for other targets",
+      "home": "vi",
+      "other": "fr",
+      "direction": "mine",
+      "input": "Tôi dùng Zalo",
+      "prepared": "Tôi dùng Zorvik1",
+      "glossary": [
+        {
+          "id": "a",
+          "text": "Zalo"
+        }
+      ],
+      "placeholders": {
+        "ja": "QX{n}Z"
+      }
+    }
+  ],
+  "translate": [
+    {
+      "name": "runs prepare, the translator and finish",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "glossary": [
+        {
+          "id": "g",
+          "text": "Hà Nội",
+          "fixed": {
+            "en": "Hanoi"
+          }
+        }
+      ],
+      "input": "Em ơi, đến Hà Nội",
+      "responses": [
+        "<ĐẾN ZORVIK1>"
+      ],
+      "requests": [
+        "Đến Zorvik1"
+      ],
+      "expected": "<ĐẾN Hanoi>",
+      "lostPlaceholders": 0
+    },
+    {
+      "name": "empty text is not translated",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "input": "  ",
+      "responses": [],
+      "requests": [],
+      "expected": "",
+      "lostPlaceholders": 0
+    },
+    {
+      "name": "a lost placeholder falls back to the unmasked text and repairs fixed terms",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "glossary": [
+        {
+          "id": "g",
+          "text": "Chợ Bến Thành",
+          "fixed": {
+            "en": "Ben Thanh Market"
+          }
+        }
+      ],
+      "input": "Tôi ở Chợ Bến Thành",
+      "responses": [
+        "I am here",
+        "I am at Chợ Bến Thành"
+      ],
+      "requests": [
+        "Tôi ở Zorvik1",
+        "Tôi ở Chợ Bến Thành"
+      ],
+      "expected": "I am at Ben Thanh Market",
+      "lostPlaceholders": 1
+    },
+    {
+      "name": "repair replaces whole words only, same case",
+      "home": "vi",
+      "other": "en",
+      "direction": "mine",
+      "glossary": [
+        {
+          "id": "an",
+          "text": "An",
+          "fixed": {
+            "en": "Mr. An"
+          }
+        }
+      ],
+      "input": "Chào An",
+      "responses": [
+        "Hello",
+        "Hello An, an answer and Anna"
+      ],
+      "requests": [
+        "Chào Zorvik1",
+        "Chào An"
+      ],
+      "expected": "Hello Mr. An, an answer and Anna",
+      "lostPlaceholders": 1
+    }
+  ]
+}

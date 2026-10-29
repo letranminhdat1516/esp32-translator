@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:live_translator/core/glossary.dart';
 import 'package:live_translator/core/model.dart';
 
+import '../shared_fixtures.dart';
+
 void main() {
   late Directory dir;
   late File file;
@@ -130,114 +132,109 @@ void main() {
     });
   });
 
-  group('limits and rejections', () {
-    test('text must not be empty or blank', () async {
-      final store = await open();
-      await expectLater(store.add(text: ''), throwsA(isA<EmptyText>()));
-      await expectLater(store.add(text: '   '), throwsA(isA<EmptyText>()));
-      await expectLater(store.add(text: 'A', variants: ['']), throwsA(isA<EmptyText>()));
-      await expectLater(store.add(text: 'A', fixed: {'en': ' '}), throwsA(isA<EmptyText>()));
-      await expectLater(store.add(text: 'A', fixed: {'': 'x'}), throwsA(isA<EmptyText>()));
+  group('glossary.json cases', () {
+    final fixture = loadFixture('glossary');
+    final limits = fixture['limits'] as Map<String, dynamic>;
+
+    test('limits', () {
+      expect(GlossaryStore.maxTerms, limits['maxTerms']);
+      expect(GlossaryStore.maxLength, limits['maxLength']);
+      expect(GlossaryStore.maxVariants, limits['maxVariants']);
     });
 
-    test('64 characters are allowed, 65 are not (term, variant, fixed)', () async {
-      final store = await open();
-      final ok = 'a' * 64;
-      final long = 'a' * 65;
-      await store.add(text: ok);
-      await expectLater(store.add(text: long), throwsA(isA<TooLong>()));
-      await expectLater(store.add(text: 'B', variants: [long]), throwsA(isA<TooLong>()));
-      await expectLater(store.add(text: 'C', fixed: {'en': long}), throwsA(isA<TooLong>()));
-    });
-
-    test('length counts characters, not UTF-16 units', () async {
-      final store = await open();
-      // 64 letters outside the BMP: 128 UTF-16 units
-      await store.add(text: '\u{1D400}' * 64);
-      await expectLater(store.add(text: '\u{1D400}' * 65), throwsA(isA<TooLong>()));
-    });
-
-    test('8 variants are allowed, 9 are not', () async {
-      final store = await open();
-      await store.add(text: 'A', variants: [for (var i = 0; i < 8; i++) 'v$i']);
-      await expectLater(
-        store.add(text: 'B', variants: [for (var i = 0; i < 9; i++) 'w$i']),
-        throwsA(isA<TooManyVariants>()),
-      );
-    });
-
-    test('500 terms are allowed, the 501st is not', () async {
-      final store = await open();
-      for (var i = 0; i < 500; i++) {
-        await store.add(text: 'term $i');
+    void expectError(Object e, Map<String, dynamic> want) {
+      expect(e, isA<GlossaryError>());
+      expect(e.runtimeType.toString(), want['error']);
+      switch (e) {
+        case EmptyText(:final field):
+          expect(field, want['field']);
+        case TooLong(:final field, :final limit):
+          expect((field, limit), (want['field'], want['limit']));
+        case TooManyVariants(:final limit) || TooManyTerms(:final limit):
+          expect(limit, want['limit']);
+        case ForbiddenCharacter(:final field, :final codePoint):
+          expect((field, codePoint), (want['field'], want['codePoint']));
+        case DuplicateTerm(:final field, :final value):
+          expect((field, value), (want['field'], want['value']));
+        default:
+          break;
       }
-      expect(store.terms.length, 500);
-      await expectLater(store.add(text: 'one more'), throwsA(isA<TooManyTerms>()));
-      expect(store.terms.length, 500);
-    });
+    }
 
-    test('control characters are rejected', () async {
-      final store = await open();
-      for (final c in ['\u0000', '\u0007', '\n', '\t', '\u007f', '\u0085', '\u009f']) {
-        await expectLater(
-          store.add(text: 'a${c}b'),
-          throwsA(isA<ForbiddenCharacter>()),
-          reason: 'U+${c.codeUnitAt(0).toRadixString(16)}',
-        );
+    for (final c in casesOf(fixture, 'cases')) {
+      test(c['name'] as String, () async {
+        final store = await open();
+        final existing = <Term>[
+          for (final e in casesOf(c, 'existing'))
+            await store.add(text: e['text'] as String, variants: strings(e['variants']), fixed: stringMap(e['fixed'])),
+        ];
+        final input = c['input'] as Map<String, dynamic>?;
+        final target = c['targetId'] as String? ?? (c['target'] == null ? null : existing[c['target'] as int].id);
+        final before = file.existsSync() ? file.readAsStringSync() : null;
+        final want = c['expect'] as Map<String, dynamic>;
+        Future<Term?> run() async => switch (c['op']) {
+          'add' => store.add(
+            text: input!['text'] as String,
+            variants: strings(input['variants']),
+            fixed: stringMap(input['fixed']),
+          ),
+          'update' => store.update(
+            target!,
+            text: input!['text'] as String,
+            variants: strings(input['variants']),
+            fixed: stringMap(input['fixed']),
+          ),
+          'remove' => store.remove(target!).then((_) => null),
+          final op => throw StateError('unknown op $op'),
+        };
+        if (want['ok'] == true) {
+          final t = await run();
+          if (want.containsKey('text')) expect(t!.text, want['text']);
+          if (want.containsKey('variants')) expect(t!.variants, strings(want['variants']));
+          if (want.containsKey('fixed')) expect(t!.fixed, stringMap(want['fixed']));
+          if (want.containsKey('allTexts')) expect(store.terms.map((t) => t.text), strings(want['allTexts']));
+          if (t != null) expect(t.origin, TermOrigin.user);
+        } else {
+          Object? caught;
+          try {
+            await run();
+          } catch (e) {
+            caught = e;
+          }
+          expect(caught, isNotNull, reason: 'should throw ${want['error']}');
+          expectError(caught!, want);
+          // A rejected change leaves the list and the file untouched.
+          expect(store.terms, existing);
+          expect(file.existsSync() ? file.readAsStringSync() : null, before);
+        }
+      });
+    }
+
+    group('load', () {
+      for (final c in casesOf(fixture, 'load')) {
+        test(c['name'] as String, () async {
+          final content = c['content'] as String;
+          file.writeAsStringSync(content);
+          final store = await open();
+          expect(store.terms.map((t) => t.text), strings(c['texts']));
+          expect(store.recoveredFromCorruption, c['recovered']);
+          if (c['recovered'] == true) {
+            // Dart-specific: the file is set aside with a time stamp.
+            expect(file.existsSync(), isFalse);
+            final aside = File('${dir.path}/glossary.corrupt-20260304-050607.json');
+            expect(aside.readAsStringSync(), content);
+            // and the store works again
+            await store.add(text: 'A');
+            expect((await open()).terms.single.text, 'A');
+            expect((await open()).recoveredFromCorruption, isFalse);
+          }
+        });
       }
-      await expectLater(store.add(text: 'A', variants: ['x\u0001']), throwsA(isA<ForbiddenCharacter>()));
-      await expectLater(store.add(text: 'A', fixed: {'en': 'x\u0001'}), throwsA(isA<ForbiddenCharacter>()));
     });
+  });
 
-    test('bidi override characters are rejected', () async {
-      final store = await open();
-      final bad = [
-        for (var c = 0x202a; c <= 0x202e; c++) c,
-        for (var c = 0x2066; c <= 0x2069; c++) c,
-      ];
-      for (final c in bad) {
-        await expectLater(
-          store.add(text: 'a${String.fromCharCode(c)}b'),
-          throwsA(isA<ForbiddenCharacter>()),
-          reason: 'U+${c.toRadixString(16)}',
-        );
-      }
-      // neighbours are fine
-      await store.add(text: 'a\u2030b');
-      await store.add(text: 'a\u2065b');
-    });
-
-    test('duplicates are rejected, case-insensitively, across variants', () async {
-      final store = await open();
-      await store.add(text: 'Grab', variants: ['Grab Car']);
-      await expectLater(store.add(text: 'grab'), throwsA(isA<DuplicateTerm>()));
-      await expectLater(store.add(text: 'Other', variants: ['GRAB CAR']), throwsA(isA<DuplicateTerm>()));
-      await expectLater(store.add(text: 'X', variants: ['x']), throwsA(isA<DuplicateTerm>()));
-      await expectLater(store.add(text: 'Y', variants: ['v', 'V']), throwsA(isA<DuplicateTerm>()));
-    });
-
-    test('a term with regex characters is accepted as plain text', () async {
-      final store = await open();
-      final t = await store.add(text: r'C++ (.*)[a-z]$');
-      expect(t.text, r'C++ (.*)[a-z]$');
-    });
-
-    test('errors are typed and name the field', () async {
-      final store = await open();
-      try {
-        await store.add(text: 'ok', variants: ['fine', 'a' * 70]);
-        fail('should throw');
-      } on TooLong catch (e) {
-        expect(e.field, 'variants[1]');
-        expect(e.limit, 64);
-      }
-      try {
-        await store.add(text: 'a\u202eb');
-        fail('should throw');
-      } on ForbiddenCharacter catch (e) {
-        expect(e.field, 'text');
-        expect(e.codePoint, 0x202e);
-      }
+  group('limits and rejections, not fixture-driven', () {
+    test('errors are glossary errors', () {
       expect(const TooManyTerms(500), isA<GlossaryError>());
     });
 
@@ -251,42 +248,18 @@ void main() {
     });
   });
 
-  group('corrupt file', () {
-    for (final (name, content) in [
-      ('not json', '{oops'),
-      ('not a list', '{"a": 1}'),
-      ('empty file', ''),
-      ('not UTF-8', null),
-      ('entry of the wrong type', '[1]'),
-      ('entry missing a field', '[{"id":"a"}]'),
-      (
-        'entry over the limits',
-        '[{"id":"a","text":"${'x' * 100}","variants":[],"fixed":{},"origin":"user"}]',
-      ),
-    ]) {
-      test('$name: renamed aside, empty glossary, flag set', () async {
-        if (content == null) {
-          file.writeAsBytesSync([0xff, 0xfe]);
-        } else {
-          file.writeAsStringSync(content);
-        }
-        final store = await open();
-        expect(store.terms, isEmpty);
-        expect(store.recoveredFromCorruption, isTrue);
-        expect(file.existsSync(), isFalse);
-        final aside = File('${dir.path}/glossary.corrupt-20260304-050607.json');
-        expect(aside.existsSync(), isTrue);
-        if (content != null) {
-          expect(aside.readAsStringSync(), content);
-        } else {
-          expect(aside.readAsBytesSync(), [0xff, 0xfe]);
-        }
-        // and the store works again
-        await store.add(text: 'A');
-        expect((await open()).terms.single.text, 'A');
-        expect((await open()).recoveredFromCorruption, isFalse);
-      });
-    }
+  group('corrupt file, not fixture-driven', () {
+    test('not UTF-8: renamed aside, empty glossary, flag set', () async {
+      file.writeAsBytesSync([0xff, 0xfe]);
+      final store = await open();
+      expect(store.terms, isEmpty);
+      expect(store.recoveredFromCorruption, isTrue);
+      expect(file.existsSync(), isFalse);
+      final aside = File('${dir.path}/glossary.corrupt-20260304-050607.json');
+      expect(aside.readAsBytesSync(), [0xff, 0xfe]);
+      await store.add(text: 'A');
+      expect((await open()).terms.single.text, 'A');
+    });
 
     test('two corrupt files in the same second do not overwrite each other', () async {
       file.writeAsStringSync('first');

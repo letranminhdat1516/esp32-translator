@@ -1,0 +1,1201 @@
+{
+  "description": "TurnAssembler (app/lib/core/turn_assembler.dart): builds the 'You say' turns from recognizer events. Times are ms from an arbitrary t0.",
+  "defaults": {
+    "turnGapMs": 2000,
+    "staleGapMs": 10000,
+    "maxCharacters": 600,
+    "maxDurationMs": 60000
+  },
+  "scenarios": [
+    {
+      "name": "pause after a final starts a new turn",
+      "config": {
+        "turnGapMs": 2000
+      },
+      "steps": [
+        {
+          "kind": "partial",
+          "text": "xin chào",
+          "atMs": 0,
+          "change": {
+            "started": true,
+            "finalText": null
+          }
+        },
+        {
+          "kind": "final",
+          "text": "xin chào",
+          "atMs": 1000,
+          "change": {
+            "started": false,
+            "finalText": "xin chào"
+          }
+        },
+        {
+          "kind": "partial",
+          "text": "anh",
+          "atMs": 2500,
+          "change": {
+            "started": false,
+            "finalText": null
+          }
+        },
+        {
+          "kind": "final",
+          "text": "anh khỏe không",
+          "atMs": 3000,
+          "change": {
+            "started": false,
+            "finalText": "anh khỏe không"
+          },
+          "turnText": "xin chào anh khỏe không"
+        },
+        {
+          "kind": "partial",
+          "text": "cảm ơn",
+          "atMs": 5500,
+          "change": {
+            "started": true,
+            "finalText": null
+          },
+          "turnText": "cảm ơn"
+        }
+      ]
+    },
+    {
+      "name": "waits for a volatile phrase but not forever",
+      "config": {
+        "turnGapMs": 2000,
+        "staleGapMs": 10000
+      },
+      "steps": [
+        {
+          "kind": "partial",
+          "text": "một hai",
+          "atMs": 0
+        },
+        {
+          "kind": "partial",
+          "text": "một hai ba",
+          "atMs": 3000,
+          "change": {
+            "started": false,
+            "finalText": null
+          }
+        },
+        {
+          "kind": "partial",
+          "text": "bốn",
+          "atMs": 14000,
+          "change": {
+            "started": true,
+            "finalText": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "empty result clears the volatile text",
+      "steps": [
+        {
+          "kind": "final",
+          "text": "chào",
+          "atMs": 0
+        },
+        {
+          "kind": "partial",
+          "text": "ừm",
+          "atMs": 500
+        },
+        {
+          "kind": "final",
+          "text": "",
+          "atMs": 1000,
+          "change": {
+            "started": false,
+            "finalText": null
+          },
+          "turnText": "chào"
+        },
+        {
+          "kind": "partial",
+          "text": "",
+          "atMs": 1200,
+          "change": null
+        }
+      ]
+    },
+    {
+      "name": "displayed text has loanwords fixed",
+      "config": {
+        "fixLoanwords": "vi"
+      },
+      "steps": [
+        {
+          "kind": "final",
+          "text": "Mình nhắn tin qua giữa lo cho tiện nhé",
+          "atMs": 0,
+          "turnText": "Mình nhắn tin qua Zalo cho tiện nhé"
+        }
+      ]
+    },
+    {
+      "name": "caps a very long turn",
+      "config": {
+        "turnGapMs": 2000,
+        "maxCharacters": 600,
+        "maxDurationMs": 60000
+      },
+      "steps": [
+        {
+          "kind": "partial",
+          "text": "câu 0",
+          "atMs": 0
+        },
+        {
+          "kind": "final",
+          "text": "câu số 0 hôm nay trời đẹp",
+          "atMs": 500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 1",
+          "atMs": 1000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 1 hôm nay trời đẹp",
+          "atMs": 1500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 2",
+          "atMs": 2000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 2 hôm nay trời đẹp",
+          "atMs": 2500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 3",
+          "atMs": 3000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 3 hôm nay trời đẹp",
+          "atMs": 3500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 4",
+          "atMs": 4000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 4 hôm nay trời đẹp",
+          "atMs": 4500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 5",
+          "atMs": 5000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 5 hôm nay trời đẹp",
+          "atMs": 5500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 6",
+          "atMs": 6000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 6 hôm nay trời đẹp",
+          "atMs": 6500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 7",
+          "atMs": 7000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 7 hôm nay trời đẹp",
+          "atMs": 7500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 8",
+          "atMs": 8000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 8 hôm nay trời đẹp",
+          "atMs": 8500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 9",
+          "atMs": 9000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 9 hôm nay trời đẹp",
+          "atMs": 9500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 10",
+          "atMs": 10000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 10 hôm nay trời đẹp",
+          "atMs": 10500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 11",
+          "atMs": 11000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 11 hôm nay trời đẹp",
+          "atMs": 11500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 12",
+          "atMs": 12000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 12 hôm nay trời đẹp",
+          "atMs": 12500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 13",
+          "atMs": 13000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 13 hôm nay trời đẹp",
+          "atMs": 13500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 14",
+          "atMs": 14000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 14 hôm nay trời đẹp",
+          "atMs": 14500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 15",
+          "atMs": 15000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 15 hôm nay trời đẹp",
+          "atMs": 15500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 16",
+          "atMs": 16000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 16 hôm nay trời đẹp",
+          "atMs": 16500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 17",
+          "atMs": 17000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 17 hôm nay trời đẹp",
+          "atMs": 17500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 18",
+          "atMs": 18000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 18 hôm nay trời đẹp",
+          "atMs": 18500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 19",
+          "atMs": 19000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 19 hôm nay trời đẹp",
+          "atMs": 19500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 20",
+          "atMs": 20000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 20 hôm nay trời đẹp",
+          "atMs": 20500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 21",
+          "atMs": 21000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 21 hôm nay trời đẹp",
+          "atMs": 21500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 22",
+          "atMs": 22000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 22 hôm nay trời đẹp",
+          "atMs": 22500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 23",
+          "atMs": 23000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 23 hôm nay trời đẹp",
+          "atMs": 23500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 24",
+          "atMs": 24000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 24 hôm nay trời đẹp",
+          "atMs": 24500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 25",
+          "atMs": 25000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 25 hôm nay trời đẹp",
+          "atMs": 25500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 26",
+          "atMs": 26000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 26 hôm nay trời đẹp",
+          "atMs": 26500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 27",
+          "atMs": 27000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 27 hôm nay trời đẹp",
+          "atMs": 27500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 28",
+          "atMs": 28000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 28 hôm nay trời đẹp",
+          "atMs": 28500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 29",
+          "atMs": 29000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 29 hôm nay trời đẹp",
+          "atMs": 29500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 30",
+          "atMs": 30000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 30 hôm nay trời đẹp",
+          "atMs": 30500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 31",
+          "atMs": 31000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 31 hôm nay trời đẹp",
+          "atMs": 31500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 32",
+          "atMs": 32000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 32 hôm nay trời đẹp",
+          "atMs": 32500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 33",
+          "atMs": 33000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 33 hôm nay trời đẹp",
+          "atMs": 33500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 34",
+          "atMs": 34000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 34 hôm nay trời đẹp",
+          "atMs": 34500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 35",
+          "atMs": 35000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 35 hôm nay trời đẹp",
+          "atMs": 35500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 36",
+          "atMs": 36000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 36 hôm nay trời đẹp",
+          "atMs": 36500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 37",
+          "atMs": 37000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 37 hôm nay trời đẹp",
+          "atMs": 37500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 38",
+          "atMs": 38000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 38 hôm nay trời đẹp",
+          "atMs": 38500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 39",
+          "atMs": 39000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 39 hôm nay trời đẹp",
+          "atMs": 39500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 40",
+          "atMs": 40000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 40 hôm nay trời đẹp",
+          "atMs": 40500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 41",
+          "atMs": 41000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 41 hôm nay trời đẹp",
+          "atMs": 41500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 42",
+          "atMs": 42000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 42 hôm nay trời đẹp",
+          "atMs": 42500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 43",
+          "atMs": 43000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 43 hôm nay trời đẹp",
+          "atMs": 43500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 44",
+          "atMs": 44000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 44 hôm nay trời đẹp",
+          "atMs": 44500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 45",
+          "atMs": 45000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 45 hôm nay trời đẹp",
+          "atMs": 45500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 46",
+          "atMs": 46000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 46 hôm nay trời đẹp",
+          "atMs": 46500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 47",
+          "atMs": 47000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 47 hôm nay trời đẹp",
+          "atMs": 47500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 48",
+          "atMs": 48000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 48 hôm nay trời đẹp",
+          "atMs": 48500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 49",
+          "atMs": 49000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 49 hôm nay trời đẹp",
+          "atMs": 49500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 50",
+          "atMs": 50000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 50 hôm nay trời đẹp",
+          "atMs": 50500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 51",
+          "atMs": 51000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 51 hôm nay trời đẹp",
+          "atMs": 51500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 52",
+          "atMs": 52000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 52 hôm nay trời đẹp",
+          "atMs": 52500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 53",
+          "atMs": 53000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 53 hôm nay trời đẹp",
+          "atMs": 53500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 54",
+          "atMs": 54000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 54 hôm nay trời đẹp",
+          "atMs": 54500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 55",
+          "atMs": 55000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 55 hôm nay trời đẹp",
+          "atMs": 55500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 56",
+          "atMs": 56000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 56 hôm nay trời đẹp",
+          "atMs": 56500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 57",
+          "atMs": 57000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 57 hôm nay trời đẹp",
+          "atMs": 57500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 58",
+          "atMs": 58000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 58 hôm nay trời đẹp",
+          "atMs": 58500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 59",
+          "atMs": 59000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 59 hôm nay trời đẹp",
+          "atMs": 59500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 60",
+          "atMs": 60000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 60 hôm nay trời đẹp",
+          "atMs": 60500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 61",
+          "atMs": 61000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 61 hôm nay trời đẹp",
+          "atMs": 61500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 62",
+          "atMs": 62000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 62 hôm nay trời đẹp",
+          "atMs": 62500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 63",
+          "atMs": 63000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 63 hôm nay trời đẹp",
+          "atMs": 63500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 64",
+          "atMs": 64000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 64 hôm nay trời đẹp",
+          "atMs": 64500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 65",
+          "atMs": 65000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 65 hôm nay trời đẹp",
+          "atMs": 65500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 66",
+          "atMs": 66000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 66 hôm nay trời đẹp",
+          "atMs": 66500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 67",
+          "atMs": 67000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 67 hôm nay trời đẹp",
+          "atMs": 67500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 68",
+          "atMs": 68000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 68 hôm nay trời đẹp",
+          "atMs": 68500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 69",
+          "atMs": 69000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 69 hôm nay trời đẹp",
+          "atMs": 69500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 70",
+          "atMs": 70000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 70 hôm nay trời đẹp",
+          "atMs": 70500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 71",
+          "atMs": 71000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 71 hôm nay trời đẹp",
+          "atMs": 71500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 72",
+          "atMs": 72000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 72 hôm nay trời đẹp",
+          "atMs": 72500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 73",
+          "atMs": 73000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 73 hôm nay trời đẹp",
+          "atMs": 73500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 74",
+          "atMs": 74000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 74 hôm nay trời đẹp",
+          "atMs": 74500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 75",
+          "atMs": 75000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 75 hôm nay trời đẹp",
+          "atMs": 75500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 76",
+          "atMs": 76000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 76 hôm nay trời đẹp",
+          "atMs": 76500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 77",
+          "atMs": 77000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 77 hôm nay trời đẹp",
+          "atMs": 77500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 78",
+          "atMs": 78000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 78 hôm nay trời đẹp",
+          "atMs": 78500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 79",
+          "atMs": 79000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 79 hôm nay trời đẹp",
+          "atMs": 79500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 80",
+          "atMs": 80000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 80 hôm nay trời đẹp",
+          "atMs": 80500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 81",
+          "atMs": 81000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 81 hôm nay trời đẹp",
+          "atMs": 81500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 82",
+          "atMs": 82000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 82 hôm nay trời đẹp",
+          "atMs": 82500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 83",
+          "atMs": 83000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 83 hôm nay trời đẹp",
+          "atMs": 83500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 84",
+          "atMs": 84000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 84 hôm nay trời đẹp",
+          "atMs": 84500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 85",
+          "atMs": 85000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 85 hôm nay trời đẹp",
+          "atMs": 85500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 86",
+          "atMs": 86000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 86 hôm nay trời đẹp",
+          "atMs": 86500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 87",
+          "atMs": 87000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 87 hôm nay trời đẹp",
+          "atMs": 87500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 88",
+          "atMs": 88000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 88 hôm nay trời đẹp",
+          "atMs": 88500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 89",
+          "atMs": 89000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 89 hôm nay trời đẹp",
+          "atMs": 89500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 90",
+          "atMs": 90000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 90 hôm nay trời đẹp",
+          "atMs": 90500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 91",
+          "atMs": 91000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 91 hôm nay trời đẹp",
+          "atMs": 91500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 92",
+          "atMs": 92000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 92 hôm nay trời đẹp",
+          "atMs": 92500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 93",
+          "atMs": 93000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 93 hôm nay trời đẹp",
+          "atMs": 93500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 94",
+          "atMs": 94000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 94 hôm nay trời đẹp",
+          "atMs": 94500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 95",
+          "atMs": 95000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 95 hôm nay trời đẹp",
+          "atMs": 95500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 96",
+          "atMs": 96000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 96 hôm nay trời đẹp",
+          "atMs": 96500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 97",
+          "atMs": 97000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 97 hôm nay trời đẹp",
+          "atMs": 97500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 98",
+          "atMs": 98000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 98 hôm nay trời đẹp",
+          "atMs": 98500
+        },
+        {
+          "kind": "partial",
+          "text": "câu 99",
+          "atMs": 99000
+        },
+        {
+          "kind": "final",
+          "text": "câu số 99 hôm nay trời đẹp",
+          "atMs": 99500
+        }
+      ],
+      "maxTurnTextLength": 639,
+      "minDistinctTurns": 2
+    },
+    {
+      "name": "reset forgets the turn",
+      "steps": [
+        {
+          "kind": "partial",
+          "text": "xin chào",
+          "atMs": 0
+        },
+        {
+          "kind": "reset",
+          "turnIsNull": true
+        },
+        {
+          "kind": "partial",
+          "text": "anh",
+          "atMs": 500,
+          "change": {
+            "started": true,
+            "finalText": null
+          },
+          "turnText": "anh"
+        }
+      ]
+    }
+  ],
+  "replays": [
+    {
+      "name": "does not split a phrase that is still volatile",
+      "recording": "split_byst12_s20.jsonl",
+      "config": {
+        "fixLoanwords": "vi"
+      },
+      "expectLines": [
+        "Hôm qua tôi đi xem phim với bạn bè ở trung tâm thương mại tôi cần đổi 200 đô la sang tiền Việt chắc phải đợi đây"
+      ]
+    },
+    {
+      "name": "long monologue keeps every word",
+      "recording": "long_monologue.jsonl",
+      "config": {
+        "fixLoanwords": "vi"
+      },
+      "expectLines": [
+        "Hôm qua tôi đi làm về muộn vì công ty có cuộc họp quan trọng với khách hàng từ Hà Nội cuộc họp kéo dài hơn 3 tiếng đồng hồ nên khi về đến nhà thì trời đã tối hẳn rồi vợ tôi đã nấu sẵn cơm và để phần cho tôi 1 bát canh chua cá lóc rất ngon tôi ăn xong thì tắm rửa rồi ngồi xem tin tức 1 lúc sáng nay tôi phải dậy sớm để đưa con đi học sau đó ghé chợ mua ít trái cây và rau xanh cho cả tuần rồi mới đến văn phòng để chuẩn bị báo cáo cho buổi họp chiều nay với giám đốc"
+      ]
+    }
+  ]
+}

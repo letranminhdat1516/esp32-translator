@@ -1,0 +1,570 @@
+{
+  "description": "Session state machine (app/lib/engine/session_machine.dart, ARCHITECTURE section 3): next(state, event) and advance(session, event).",
+  "missingKinds": [
+    "speechModel",
+    "translation",
+    "ttsVoice"
+  ],
+  "transitions": [
+    {
+      "name": "loading + saved offered -> checking",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "ja",
+        "offered": [
+          "ja",
+          "fr"
+        ]
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "loading + no saved -> choosing",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": null,
+        "offered": [
+          "ja"
+        ]
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "loading + saved not offered -> choosing(unavailable)",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "catalogReady",
+        "saved": "de",
+        "offered": [
+          "ja"
+        ]
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": "unavailable"
+      }
+    },
+    {
+      "name": "choosing + pick -> checking",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "ja"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "checking + all present -> preparing",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "checking + missing -> needsDownload",
+      "state": {
+        "type": "checking",
+        "code": "ja"
+      },
+      "event": {
+        "type": "checked",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ]
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "needsDownload + download -> downloading",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "downloadTapped"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "needsDownload + pick -> checking",
+      "state": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "ja"
+          }
+        ],
+        "error": null
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "downloading + done -> checking (re-check)",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "downloading + error -> needsDownload with error",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "downloadFailed",
+        "error": "offline"
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "ja",
+        "missing": [],
+        "error": "offline"
+      }
+    },
+    {
+      "name": "preparing + started -> running",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "preparing + started keeps restarts",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 1
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 1
+      }
+    },
+    {
+      "name": "preparing + startFailed -> failed",
+      "state": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "startFailed",
+        "reason": "boom"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "boom"
+      }
+    },
+    {
+      "name": "running + pick other -> switching",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      }
+    },
+    {
+      "name": "running + pick same -> unchanged",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "picked",
+        "code": "ja"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "running + recognizerDied first -> preparing(restarts 1)",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "ja",
+        "restarts": 1
+      }
+    },
+    {
+      "name": "running + recognizerDied second -> failed",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 1
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "recognizer stopped"
+      }
+    },
+    {
+      "name": "switching + ready -> preparing(to)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "checked",
+        "missing": []
+      },
+      "expected": {
+        "type": "preparing",
+        "code": "fr",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "switching + missing -> needsDownload(to)",
+      "state": {
+        "type": "switching",
+        "from": "ja",
+        "to": "fr"
+      },
+      "event": {
+        "type": "checked",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "fr"
+          }
+        ]
+      },
+      "expected": {
+        "type": "needsDownload",
+        "code": "fr",
+        "missing": [
+          {
+            "kind": "speechModel",
+            "language": "fr"
+          }
+        ],
+        "error": null
+      }
+    },
+    {
+      "name": "failed + retry -> checking",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "failed + pick -> checking",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "checking",
+        "code": "fr"
+      }
+    },
+    {
+      "name": "unlisted: loading + started leaves the state unchanged",
+      "state": {
+        "type": "loading"
+      },
+      "event": {
+        "type": "started"
+      },
+      "expected": {
+        "type": "loading"
+      }
+    },
+    {
+      "name": "unlisted: running + downloadDone leaves the state unchanged",
+      "state": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      },
+      "event": {
+        "type": "downloadDone"
+      },
+      "expected": {
+        "type": "running",
+        "code": "ja",
+        "restarts": 0
+      }
+    },
+    {
+      "name": "unlisted: downloading + picked leaves the state unchanged",
+      "state": {
+        "type": "downloading",
+        "code": "ja"
+      },
+      "event": {
+        "type": "picked",
+        "code": "fr"
+      },
+      "expected": {
+        "type": "downloading",
+        "code": "ja"
+      }
+    },
+    {
+      "name": "unlisted: choosing + retry leaves the state unchanged",
+      "state": {
+        "type": "choosing",
+        "reason": null
+      },
+      "event": {
+        "type": "retry"
+      },
+      "expected": {
+        "type": "choosing",
+        "reason": null
+      }
+    },
+    {
+      "name": "unlisted: failed + recognizerDied leaves the state unchanged",
+      "state": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      },
+      "event": {
+        "type": "recognizerDied"
+      },
+      "expected": {
+        "type": "failed",
+        "code": "ja",
+        "reason": "x"
+      }
+    }
+  ],
+  "generations": [
+    {
+      "name": "increments exactly on entering switching",
+      "start": {
+        "state": {
+          "type": "running",
+          "code": "ja",
+          "restarts": 0
+        },
+        "generation": 0
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "fr"
+          },
+          "state": {
+            "type": "switching",
+            "from": "ja",
+            "to": "fr"
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "checked",
+            "missing": []
+          },
+          "state": {
+            "type": "preparing",
+            "code": "fr",
+            "restarts": 0
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "started"
+          },
+          "state": {
+            "type": "running",
+            "code": "fr",
+            "restarts": 0
+          },
+          "generation": 1
+        },
+        {
+          "event": {
+            "type": "picked",
+            "code": "ko"
+          },
+          "state": {
+            "type": "switching",
+            "from": "fr",
+            "to": "ko"
+          },
+          "generation": 2
+        }
+      ]
+    },
+    {
+      "name": "no increment when pick equals current",
+      "start": {
+        "state": {
+          "type": "running",
+          "code": "ja",
+          "restarts": 0
+        },
+        "generation": 3
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "ja"
+          },
+          "state": {
+            "type": "running",
+            "code": "ja",
+            "restarts": 0
+          },
+          "generation": 3
+        }
+      ]
+    },
+    {
+      "name": "an unlisted event while switching keeps the generation",
+      "start": {
+        "state": {
+          "type": "switching",
+          "from": "ja",
+          "to": "fr"
+        },
+        "generation": 5
+      },
+      "steps": [
+        {
+          "event": {
+            "type": "picked",
+            "code": "ko"
+          },
+          "state": {
+            "type": "switching",
+            "from": "ja",
+            "to": "fr"
+          },
+          "generation": 5
+        }
+      ]
+    }
+  ]
+}
