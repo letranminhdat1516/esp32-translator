@@ -48,6 +48,16 @@
         }
       ],
       "beforeTranslation": []
+    },
+    "wholeMatch": {
+      "recognition": [
+        {
+          "id": "t",
+          "pattern": "o(k)",
+          "template": "[$0|$1|$2]"
+        }
+      ],
+      "beforeTranslation": []
     }
   },
   "cases": [
@@ -631,6 +641,13 @@
       "fn": "fixRecognition",
       "input": "xa ab ba abc",
       "expected": "xa X X abc"
+    },
+    {
+      "name": "template: $0 is the whole match, a group that does not exist is empty",
+      "engine": "wholeMatch",
+      "fn": "fixRecognition",
+      "input": "ok OK oke",
+      "expected": "[ok|k|] [OK|K|] oke"
     }
   ],
   "adversarial": {
