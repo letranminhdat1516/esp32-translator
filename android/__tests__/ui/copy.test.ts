@@ -35,7 +35,18 @@ describe('shared/copy/vi.json', () => {
     }
     const keys = Object.keys(vi);
     expect([...used].filter(k => !keys.includes(k))).toEqual([]);
-    expect(keys.filter(k => !used.has(k))).toEqual([]);
+    // The file is shared with the Swift app: a key only the iPhone screens use is still used.
+    const swiftDir = path.join(__dirname, '../../../ios/Sources/UI');
+    const usedBySwift = new Set<string>();
+    for (const f of fs.readdirSync(swiftDir).filter(n => n.endsWith('.swift'))) {
+      const s = fs.readFileSync(path.join(swiftDir, f), 'utf8');
+      for (const m of s.matchAll(/"((?:[a-zA-Z]+\.)+[a-zA-Z0-9]+)"/g)) {
+        if (m[1] in vi) {
+          usedBySwift.add(m[1]);
+        }
+      }
+    }
+    expect(keys.filter(k => !used.has(k) && !usedBySwift.has(k))).toEqual([]);
   });
 
   it('no screen contains a hard-coded Vietnamese literal', () => {
