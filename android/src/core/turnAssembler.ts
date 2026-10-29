@@ -1,5 +1,8 @@
 // Port of app/lib/core/turn_assembler.dart. Contract: shared/fixtures/turn_assembler.json.
-import {Graphemes, defaultGraphemes} from '../board/protocol';
+import {graphemes} from '../board/protocol';
+
+/** Splits text into grapheme clusters. */
+export type Graphemes = (text: string) => string[];
 
 /**
  * One result of a speech recognizer. `partial` may still change (each one replaces the
@@ -43,7 +46,7 @@ export interface TurnAssemblerOptions {
   maxDurationMs?: number;
   /** Recognition fix-up applied to every event's text (the rule engine's `fixRecognition`). */
   fixLoanwords?: (text: string) => string;
-  /** Grapheme splitter for the length cap (default: Intl.Segmenter or its fallback). */
+  /** Grapheme splitter for the length cap (default: protocol.ts `graphemes`). */
   graphemes?: Graphemes;
 }
 
@@ -77,7 +80,7 @@ export class TurnAssembler {
     this.maxCharacters = options.maxCharacters ?? 600;
     this.maxDurationMs = options.maxDurationMs ?? 60_000;
     this.fixLoanwords = options.fixLoanwords ?? (s => s);
-    this.graphemes = options.graphemes ?? defaultGraphemes;
+    this.graphemes = options.graphemes ?? graphemes;
   }
 
   get turn(): Turn | null {
