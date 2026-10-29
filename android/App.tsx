@@ -8,12 +8,15 @@
  *
  * The picked language is saved on every pick and loaded on mount (src/ui/pickStorage.ts).
  *
+ * Development only: a small "dev" button opens the voice engine probe (src/dev/EngineProbe.tsx, T4).
+ *
  * @format
  */
 
 import React, {useEffect, useMemo, useState} from 'react';
-import {StatusBar, StyleSheet, View} from 'react-native';
+import {Pressable, StatusBar, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
+import {EngineProbe} from './src/dev/EngineProbe';
 import {t} from './src/ui/copy';
 import {ConversationScreen} from './src/ui/ConversationScreen';
 import {GlossaryScreen} from './src/ui/GlossaryScreen';
@@ -57,6 +60,7 @@ function AppContent({
   const {state, update} = useUiState(initialState);
   const [sheet, setSheet] = useState(false);
   const [glossary, setGlossary] = useState(false);
+  const [probe, setProbe] = useState(false);
 
   useEffect(() => {
     if (!given) {
@@ -105,6 +109,9 @@ function AppContent({
     };
   }, [given, update]);
 
+  if (__DEV__ && probe) {
+    return <EngineProbe onClose={() => setProbe(false)} />;
+  }
   return (
     <View style={[styles.container, {paddingTop: insets.top, paddingBottom: insets.bottom}]}>
       {glossary ? (
@@ -134,12 +141,22 @@ function AppContent({
         onClose={() => setSheet(false)}
         onPick={intents.pickLanguage}
       />
+      {__DEV__ ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setProbe(true)}
+          style={[styles.dev, {bottom: insets.bottom + 8}]}>
+          <Text style={styles.devText}>dev</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: Palette.ground},
+  dev: {position: 'absolute', left: 8, paddingVertical: 4, paddingHorizontal: 8, opacity: 0.6},
+  devText: {color: Palette.faint, fontSize: 12},
 });
 
 export default App;

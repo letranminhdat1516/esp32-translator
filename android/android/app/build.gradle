@@ -87,6 +87,35 @@ android {
         ndk {
             abiFilters "arm64-v8a", "armeabi-v7a"
         }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                // Always optimized: a -O0 debug build of ggml is ~10x slower and would distort Whisper's
+                // real-time factor (src/main/cpp/CMakeLists.txt asks the same for its own directory)
+                arguments "-DCMAKE_BUILD_TYPE=Release"
+            }
+        }
+    }
+
+    // RN's libappmodules + whisper.cpp (arm64 only): src/main/jni/CMakeLists.txt
+    externalNativeBuild {
+        cmake {
+            path file("src/main/jni/CMakeLists.txt")
+            version "3.22.1"
+        }
+    }
+
+    // `-PtestBuildType=release` runs the instrumented tests against the R8-minified release build
+    testBuildType = project.findProperty("testBuildType") ?: "debug"
+
+    // BuildConfig.DEBUG: recognized text is logged in debug builds only
+    buildFeatures {
+        buildConfig true
+    }
+
+    // JVM unit tests: android.util.Log and friends return defaults instead of throwing
+    testOptions {
+        unitTests.returnDefaultValues = true
     }
     signingConfigs {
         debug {
@@ -105,7 +134,11 @@ android {
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.debug
             minifyEnabled enableProguardInReleaseBuilds
+            // Keep rules for ML Kit's registrars, the Whisper JNI classes and the TurboModule
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            // The instrumented test APK, when built against release (-PtestBuildType=release)
+            testProguardFiles "test-proguard-rules.pro"
+            if (project.findProperty("testBuildType") == "release") proguardFile "release-under-test.pro"
         }
     }
 }
@@ -119,4 +152,16 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // The voice engine (T4): coroutines, ML Kit on-device translation
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
+    implementation("com.google.mlkit:translate:17.0.3")
+
+    testImplementation("junit:junit:4.13.2")
+
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 }
