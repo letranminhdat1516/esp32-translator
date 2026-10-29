@@ -1,0 +1,806 @@
+{
+  "description": "BoardText (app/lib/core/board_text.dart + translit.dart) and BoardGlyphSets (board_glyphs.dart). Unless a case has `glyphs`, the glyph lists are shared/board_glyphs/{cjk,hangul,thai}.txt. fontSets is the board's bit mask: latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16.",
+  "ranges": [
+    {
+      "name": "latinVI | latinExtA",
+      "fontSets": 3,
+      "expected": [
+        [
+          32,
+          126
+        ],
+        [
+          160,
+          255
+        ],
+        [
+          256,
+          383
+        ],
+        [
+          416,
+          417
+        ],
+        [
+          431,
+          432
+        ],
+        [
+          7840,
+          7929
+        ],
+        [
+          8211,
+          8212
+        ],
+        [
+          8216,
+          8221
+        ],
+        [
+          8230,
+          8230
+        ]
+      ]
+    },
+    {
+      "name": "latinVI alone is the same list with the Vietnamese singles",
+      "fontSets": 1,
+      "expected": [
+        [
+          32,
+          126
+        ],
+        [
+          160,
+          255
+        ],
+        [
+          258,
+          259
+        ],
+        [
+          272,
+          273
+        ],
+        [
+          296,
+          297
+        ],
+        [
+          360,
+          361
+        ],
+        [
+          416,
+          417
+        ],
+        [
+          431,
+          432
+        ],
+        [
+          7840,
+          7929
+        ],
+        [
+          8211,
+          8212
+        ],
+        [
+          8216,
+          8221
+        ],
+        [
+          8230,
+          8230
+        ]
+      ]
+    },
+    {
+      "name": "a board that reports nothing (0) is treated as latinVI",
+      "fontSets": 0,
+      "sameAs": 1
+    },
+    {
+      "name": "small lists: the cjk list is appended after the Latin ranges",
+      "fontSets": 5,
+      "glyphs": {
+        "cjk": [
+          [
+            19968,
+            19969
+          ]
+        ],
+        "hangul": [],
+        "thai": [
+          [
+            3585,
+            3585
+          ]
+        ]
+      },
+      "expectedLast": [
+        19968,
+        19969
+      ]
+    },
+    {
+      "name": "latinVI | latinExtA has nothing at or above U+3000",
+      "fontSets": 3,
+      "noneFrom": 12288
+    }
+  ],
+  "isDrawable": [
+    {
+      "name": "U+4E2D 中 with fontSets 5: drawable",
+      "codePoint": 20013,
+      "fontSets": 5,
+      "expected": true
+    },
+    {
+      "name": "U+3042 あ with fontSets 5: drawable",
+      "codePoint": 12354,
+      "fontSets": 5,
+      "expected": true
+    },
+    {
+      "name": "U+AC00 가 with fontSets 9: drawable",
+      "codePoint": 44032,
+      "fontSets": 9,
+      "expected": true
+    },
+    {
+      "name": "U+0E01 ก with fontSets 17: drawable",
+      "codePoint": 3585,
+      "fontSets": 17,
+      "expected": true
+    },
+    {
+      "name": "U+AC00 가 with fontSets 5: not drawable",
+      "codePoint": 44032,
+      "fontSets": 5,
+      "expected": false
+    },
+    {
+      "name": "U+4E2D 中 with fontSets 9: not drawable",
+      "codePoint": 20013,
+      "fontSets": 9,
+      "expected": false
+    },
+    {
+      "name": "U+0E01 ก with fontSets 9: not drawable",
+      "codePoint": 3585,
+      "fontSets": 9,
+      "expected": false
+    },
+    {
+      "name": "U+4E02 rare Han, in the block, not in the font with fontSets 5: not drawable",
+      "codePoint": 19970,
+      "fontSets": 5,
+      "expected": false
+    },
+    {
+      "name": "U+3040 unassigned with fontSets 5: not drawable",
+      "codePoint": 12352,
+      "fontSets": 5,
+      "expected": false
+    },
+    {
+      "name": "U+D7A3 last syllable, not in KS X 1001 with fontSets 9: not drawable",
+      "codePoint": 55203,
+      "fontSets": 9,
+      "expected": false
+    },
+    {
+      "name": "U+1100 conjoining jamo with fontSets 9: not drawable",
+      "codePoint": 4352,
+      "fontSets": 9,
+      "expected": false
+    },
+    {
+      "name": "U+0E3B unassigned with fontSets 17: not drawable",
+      "codePoint": 3643,
+      "fontSets": 17,
+      "expected": false
+    },
+    {
+      "name": "U+0E5C past Thai with fontSets 17: not drawable",
+      "codePoint": 3676,
+      "fontSets": 17,
+      "expected": false
+    },
+    {
+      "name": "U+1EA1 ạ with fontSets 1: drawable",
+      "codePoint": 7841,
+      "fontSets": 1,
+      "expected": true
+    },
+    {
+      "name": "U+0141 Ł needs Latin Extended-A with fontSets 1: not drawable",
+      "codePoint": 321,
+      "fontSets": 1,
+      "expected": false
+    },
+    {
+      "name": "U+0141 Ł with fontSets 3: drawable",
+      "codePoint": 321,
+      "fontSets": 3,
+      "expected": true
+    },
+    {
+      "name": "U+4E2D 中 with fontSets 1: not drawable",
+      "codePoint": 20013,
+      "fontSets": 1,
+      "expected": false
+    },
+    {
+      "name": "U+20AC euro sign with fontSets 3: not drawable",
+      "codePoint": 8364,
+      "fontSets": 3,
+      "expected": false
+    },
+    {
+      "name": "small lists: U+4E01 in the small list with fontSets 5: drawable",
+      "codePoint": 19969,
+      "fontSets": 5,
+      "expected": true,
+      "glyphs": {
+        "cjk": [
+          [
+            19968,
+            19969
+          ]
+        ],
+        "hangul": [],
+        "thai": [
+          [
+            3585,
+            3585
+          ]
+        ]
+      }
+    },
+    {
+      "name": "small lists: U+4E2D not in the small list with fontSets 5: not drawable",
+      "codePoint": 20013,
+      "fontSets": 5,
+      "expected": false,
+      "glyphs": {
+        "cjk": [
+          [
+            19968,
+            19969
+          ]
+        ],
+        "hangul": [],
+        "thai": [
+          [
+            3585,
+            3585
+          ]
+        ]
+      }
+    },
+    {
+      "name": "small lists: U+0E02 not in the small list with fontSets 17: not drawable",
+      "codePoint": 3586,
+      "fontSets": 17,
+      "expected": false,
+      "glyphs": {
+        "cjk": [
+          [
+            19968,
+            19969
+          ]
+        ],
+        "hangul": [],
+        "thai": [
+          [
+            3585,
+            3585
+          ]
+        ]
+      }
+    },
+    {
+      "name": "small lists: U+AC00 empty hangul list with fontSets 9: not drawable",
+      "codePoint": 44032,
+      "fontSets": 9,
+      "expected": false,
+      "glyphs": {
+        "cjk": [
+          [
+            19968,
+            19969
+          ]
+        ],
+        "hangul": [],
+        "thai": [
+          [
+            3585,
+            3585
+          ]
+        ]
+      }
+    }
+  ],
+  "parseRanges": [
+    {
+      "name": "single points and ranges, blank lines and comments skipped",
+      "input": "0E01-0E3A\n0E3F\n\n# note\n",
+      "expected": [
+        [
+          3585,
+          3642
+        ],
+        [
+          3647,
+          3647
+        ]
+      ]
+    },
+    {
+      "name": "garbage is rejected",
+      "input": "xyz",
+      "error": true
+    },
+    {
+      "name": "a reversed range is rejected",
+      "input": "0E3A-0E01",
+      "error": true
+    }
+  ],
+  "encode": [
+    {
+      "name": "Vietnamese passes through unchanged",
+      "input": "Xin chào, tôi là Việt Nam. Đây là ăn uống: ĩ ũ ơ ư ạ ậ ế ệ ỳ ỹ.",
+      "fontSets": 1,
+      "expected": "Xin chào, tôi là Việt Nam. Đây là ăn uống: ĩ ũ ơ ư ạ ậ ế ệ ỳ ỹ."
+    },
+    {
+      "name": "decomposed input is composed first",
+      "input": "Việt",
+      "fontSets": 1,
+      "expected": "Việt"
+    },
+    {
+      "name": "typographic punctuation the board has is kept",
+      "input": "“Xin chào” – ‘ok’ — hết…",
+      "fontSets": 1,
+      "expected": "“Xin chào” – ‘ok’ — hết…"
+    },
+    {
+      "name": "Latin Extended-A without its bit is folded to ASCII",
+      "input": "Łódź Žižek Ščerbina",
+      "fontSets": 1,
+      "expected": "Lódz Zizek Scerbina"
+    },
+    {
+      "name": "Latin Extended-A with its bit is kept",
+      "input": "Łódź Žižek Ščerbina",
+      "fontSets": 3,
+      "expected": "Łódź Žižek Ščerbina"
+    },
+    {
+      "name": "letters in neither range are folded when they can be",
+      "input": "café Straße æ ø ǎ ħ ŧ ŋ ı",
+      "fontSets": 1,
+      "expected": "café Straße æ ø a h t ng i"
+    },
+    {
+      "name": "symbols with a plain spelling are spelled",
+      "input": "10 € → 5™",
+      "fontSets": 1,
+      "expected": "10 EUR -> 5TM"
+    },
+    {
+      "name": "minus sign becomes a hyphen",
+      "input": "a−b",
+      "fontSets": 1,
+      "expected": "a-b"
+    },
+    {
+      "name": "whitespace and control characters collapse to single spaces",
+      "input": " a \n\n b\t c  ",
+      "fontSets": 1,
+      "expected": "a b c"
+    },
+    {
+      "name": "digits of other scripts become ASCII digits",
+      "input": "١٢٣ १२",
+      "fontSets": 1,
+      "expected": "123 12"
+    },
+    {
+      "name": "Russian: Привет, мир",
+      "input": "Привет, мир",
+      "fontSets": 1,
+      "expected": "Privet, mir"
+    },
+    {
+      "name": "Russian: Москва",
+      "input": "Москва",
+      "fontSets": 1,
+      "expected": "Moskva"
+    },
+    {
+      "name": "Russian: Щука",
+      "input": "Щука",
+      "fontSets": 1,
+      "expected": "Shchuka"
+    },
+    {
+      "name": "Russian: ЖУК",
+      "input": "ЖУК",
+      "fontSets": 1,
+      "expected": "ZHUK"
+    },
+    {
+      "name": "Russian: Ёлка",
+      "input": "Ёлка",
+      "fontSets": 1,
+      "expected": "Yolka"
+    },
+    {
+      "name": "Ukrainian / Serbian: Україна",
+      "input": "Україна",
+      "fontSets": 1,
+      "expected": "Ukrayina"
+    },
+    {
+      "name": "Ukrainian / Serbian: Європа",
+      "input": "Європа",
+      "fontSets": 1,
+      "expected": "Yevropa"
+    },
+    {
+      "name": "Ukrainian / Serbian: Љубљана",
+      "input": "Љубљана",
+      "fontSets": 1,
+      "expected": "Ljubljana"
+    },
+    {
+      "name": "Greek: Καλημέρα κόσμε",
+      "input": "Καλημέρα κόσμε",
+      "fontSets": 1,
+      "expected": "Kalimera kosme"
+    },
+    {
+      "name": "Greek: Ελλάδα",
+      "input": "Ελλάδα",
+      "fontSets": 1,
+      "expected": "Ellada"
+    },
+    {
+      "name": "Greek: ουρανός",
+      "input": "ουρανός",
+      "fontSets": 1,
+      "expected": "ouranos"
+    },
+    {
+      "name": "Greek: Αθήνα",
+      "input": "Αθήνα",
+      "fontSets": 1,
+      "expected": "Athina"
+    },
+    {
+      "name": "Cyrillic is transliterated even with every font",
+      "input": "Привет",
+      "fontSets": 31,
+      "expected": "Privet"
+    },
+    {
+      "name": "Greek is transliterated even with every font",
+      "input": "Αθήνα",
+      "fontSets": 31,
+      "expected": "Athina"
+    },
+    {
+      "name": "kana to romaji without the cjk font: こんにちは",
+      "input": "こんにちは",
+      "fontSets": 1,
+      "expected": "konnichiha"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ありがとう",
+      "input": "ありがとう",
+      "fontSets": 1,
+      "expected": "arigatou"
+    },
+    {
+      "name": "kana to romaji without the cjk font: カタカナ",
+      "input": "カタカナ",
+      "fontSets": 1,
+      "expected": "katakana"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ラーメン",
+      "input": "ラーメン",
+      "fontSets": 1,
+      "expected": "ramen"
+    },
+    {
+      "name": "kana to romaji without the cjk font: きょう",
+      "input": "きょう",
+      "fontSets": 1,
+      "expected": "kyou"
+    },
+    {
+      "name": "kana to romaji without the cjk font: しゃしん",
+      "input": "しゃしん",
+      "fontSets": 1,
+      "expected": "shashin"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ちゃ",
+      "input": "ちゃ",
+      "fontSets": 1,
+      "expected": "cha"
+    },
+    {
+      "name": "kana to romaji without the cjk font: じゅう",
+      "input": "じゅう",
+      "fontSets": 1,
+      "expected": "juu"
+    },
+    {
+      "name": "kana to romaji without the cjk font: がっこう",
+      "input": "がっこう",
+      "fontSets": 1,
+      "expected": "gakkou"
+    },
+    {
+      "name": "kana to romaji without the cjk font: まっちゃ",
+      "input": "まっちゃ",
+      "fontSets": 1,
+      "expected": "matcha"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ほんや",
+      "input": "ほんや",
+      "fontSets": 1,
+      "expected": "hon'ya"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ぱぴぷぺぽ",
+      "input": "ぱぴぷぺぽ",
+      "fontSets": 1,
+      "expected": "papipupepo"
+    },
+    {
+      "name": "kana to romaji without the cjk font: ＡＢＣ",
+      "input": "ＡＢＣ",
+      "fontSets": 1,
+      "expected": "ABC"
+    },
+    {
+      "name": "Han in kana text becomes a dot",
+      "input": "東京に行く",
+      "fontSets": 1,
+      "expected": "·ni·ku"
+    },
+    {
+      "name": "Han in spaced kana text becomes a dot",
+      "input": "東京 に 行く",
+      "fontSets": 1,
+      "expected": "· ni ·ku"
+    },
+    {
+      "name": "Japanese punctuation is spelled",
+      "input": "はい、そうです。",
+      "fontSets": 1,
+      "expected": "hai, soudesu."
+    },
+    {
+      "name": "Japanese quotes are spelled",
+      "input": "「はい」",
+      "fontSets": 1,
+      "expected": "\"hai\""
+    },
+    {
+      "name": "with the cjk font Japanese is left alone",
+      "input": "東京に行く。こんにちは、ラーメン",
+      "fontSets": 5,
+      "expected": "東京に行く。こんにちは、ラーメン"
+    },
+    {
+      "name": "a character the cjk font lacks takes the fallback path (inside)",
+      "input": "中丂文",
+      "fontSets": 5,
+      "expected": "中·文"
+    },
+    {
+      "name": "a character the cjk font lacks takes the fallback path (alone)",
+      "input": "丂",
+      "fontSets": 5,
+      "expected": "·"
+    },
+    {
+      "name": "Han becomes a dot per word",
+      "input": "你好",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "Han words become one dot each",
+      "input": "你好 世界",
+      "fontSets": 1,
+      "expected": "· ·"
+    },
+    {
+      "name": "Hangul becomes a dot per word without its font",
+      "input": "안녕하세요 세계",
+      "fontSets": 1,
+      "expected": "· ·"
+    },
+    {
+      "name": "Thai becomes a dot per word without its font",
+      "input": "สวัสดี ครับ",
+      "fontSets": 1,
+      "expected": "· ·"
+    },
+    {
+      "name": "Hangul with its font is kept",
+      "input": "안녕 세계",
+      "fontSets": 9,
+      "expected": "안녕 세계"
+    },
+    {
+      "name": "Thai with its font is kept",
+      "input": "สวัสดี",
+      "fontSets": 17,
+      "expected": "สวัสดี"
+    },
+    {
+      "name": "a Hangul syllable outside KS X 1001 gets a dot",
+      "input": "안힣녕",
+      "fontSets": 9,
+      "expected": "안·녕"
+    },
+    {
+      "name": "the cjk bit does not help Hangul",
+      "input": "안녕",
+      "fontSets": 5,
+      "expected": "·"
+    },
+    {
+      "name": "the hangul bit does not help Han",
+      "input": "你好",
+      "fontSets": 9,
+      "expected": "·"
+    },
+    {
+      "name": "the thai bit does not help Han",
+      "input": "你好",
+      "fontSets": 17,
+      "expected": "·"
+    },
+    {
+      "name": "Arabic gets a dot",
+      "input": "مرحبا",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "Hebrew gets a dot",
+      "input": "שלום",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "mixed words keep what can be drawn (Hello)",
+      "input": "Hello 世界",
+      "fontSets": 1,
+      "expected": "Hello ·"
+    },
+    {
+      "name": "mixed words keep what can be drawn (Tower)",
+      "input": "東京Tower",
+      "fontSets": 1,
+      "expected": "·Tower"
+    },
+    {
+      "name": "mixed words keep what can be drawn (punctuation)",
+      "input": "你好, thế giới!",
+      "fontSets": 1,
+      "expected": "·, thế giới!"
+    },
+    {
+      "name": "a run of undrawable letters makes one dot",
+      "input": "你好世界吗",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "runs between drawable letters make one dot each",
+      "input": "a你好b世界c",
+      "fontSets": 1,
+      "expected": "a·b·c"
+    },
+    {
+      "name": "fullwidth forms fold to ASCII without the cjk font",
+      "input": "ＡＢＣ１２３！",
+      "fontSets": 1,
+      "expected": "ABC123!"
+    },
+    {
+      "name": "fullwidth forms are kept with the cjk font",
+      "input": "ＡＢＣ",
+      "fontSets": 5,
+      "expected": "ＡＢＣ"
+    },
+    {
+      "name": "an emoji alone gives a dot",
+      "input": "😀",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "symbols alone give a dot",
+      "input": "☃ 🚀",
+      "fontSets": 1,
+      "expected": "·"
+    },
+    {
+      "name": "emoji among words are dropped",
+      "input": "Hi 😀 there",
+      "fontSets": 1,
+      "expected": "Hi there"
+    },
+    {
+      "name": "empty input stays empty",
+      "input": "",
+      "fontSets": 1,
+      "expected": ""
+    },
+    {
+      "name": "blank input stays empty",
+      "input": "  \n ",
+      "fontSets": 1,
+      "expected": ""
+    },
+    {
+      "name": "with the shared lists loaded, a missing Han gets a dot",
+      "input": "中丂文",
+      "fontSets": 29,
+      "expected": "中·文"
+    }
+  ],
+  "encodeInvariants": {
+    "samples": [
+      "Xin chào",
+      "Привет",
+      "Καλημέρα",
+      "こんにちは",
+      "東京",
+      "안녕",
+      "สวัสดี",
+      "مرحبا",
+      "😀",
+      "a\u0000b",
+      "‮",
+      "​",
+      "́",
+      "ǅ",
+      "ﬁ",
+      "①",
+      "½",
+      "ǆ",
+      "￿",
+      "x􏿿",
+      "Ｈｅｌｌｏ",
+      "ｱｲｳ",
+      "€100",
+      "Ελλάς Ελλάδα",
+      "Tiếng Việt – đẹp"
+    ],
+    "fontSets": [
+      1,
+      3,
+      5,
+      31,
+      0
+    ]
+  }
+}

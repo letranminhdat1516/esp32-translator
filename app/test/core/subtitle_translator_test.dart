@@ -1,16 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:live_translator/core/subtitle_translator.dart';
 
+import '../shared_fixtures.dart';
+
 /// A fake translator: upper-cases the text after a delay and records every
 /// request.
 class FakeTranslator {
-  FakeTranslator({this.delay = const Duration(milliseconds: 5)});
+  FakeTranslator({required this.delay, this.failing = const {}});
 
   final Duration delay;
   final List<String> requests = [];
-  final Set<String> failing = {};
-
-  void fail(String text) => failing.add(text);
+  final Set<String> failing;
 
   Future<String> translate(String text) async {
     requests.add(text);
@@ -20,90 +20,57 @@ class FakeTranslator {
   }
 }
 
-Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 200));
-
+/// Cases: shared/fixtures/subtitle_translator.json (see shared/fixtures/README.md).
+/// Waits are real time here; the ports may use fake timers.
 void main() {
-  late FakeTranslator fake;
-  late Map<int, String> byTurn;
+  final fixture = loadFixture('subtitle_translator');
 
-  SubtitleTranslator make([FakeTranslator? f]) {
-    fake = f ?? FakeTranslator();
-    byTurn = {};
-    return SubtitleTranslator(
-      translate: fake.translate,
-      onResult: (turn, text) => byTurn[turn] = text,
-    );
+  for (final c in casesOf(fixture, 'scenarios')) {
+    test(c['name'] as String, () async {
+      final spec = c['translator'] as Map<String, dynamic>;
+      final fake = FakeTranslator(
+        delay: Duration(milliseconds: spec['delayMs'] as int),
+        failing: strings(spec['failing']).toSet(),
+      );
+      final byTurn = <int, String>{};
+      final st = SubtitleTranslator(
+        translate: fake.translate,
+        onResult: (turn, text) => byTurn[turn] = text,
+      );
+      for (final step in casesOf(c, 'steps')) {
+        switch (step['op']) {
+          case 'partial':
+            st.setPartial(step['text'] as String, turn: step['turn'] as int);
+          case 'final':
+            st.addFinal(step['text'] as String, turn: step['turn'] as int);
+          case 'reset':
+            st.reset();
+          case 'wait':
+            await Future<void>.delayed(Duration(milliseconds: step['ms'] as int));
+          case final op:
+            fail('unknown op $op');
+        }
+      }
+      final want = c['expect'] as Map<String, dynamic>;
+      for (final e in ((want['results'] as Map<String, dynamic>?) ?? const {}).entries) {
+        expect(byTurn[int.parse(e.key)], e.value, reason: 'turn ${e.key}');
+      }
+      for (final turn in (want['emptyTurns'] as List?) ?? const []) {
+        expect(byTurn[turn] ?? '', '', reason: 'turn $turn');
+      }
+      for (final r in casesOf(want, 'requestCounts')) {
+        final n = fake.requests.where((q) => q == r['text']).length;
+        if (r['exactly'] != null) expect(n, r['exactly'], reason: r['text'] as String);
+        if (r['max'] != null) expect(n, lessThanOrEqualTo(r['max'] as int), reason: r['text'] as String);
+      }
+      if (want['maxRequestLength'] != null) {
+        final longest = fake.requests.map((r) => r.length).fold(0, (a, b) => a > b ? a : b);
+        expect(longest, lessThanOrEqualTo(want['maxRequestLength'] as int));
+      }
+      for (final e in ((want['wordCounts'] as Map<String, dynamic>?) ?? const {}).entries) {
+        final words = byTurn[int.parse(e.key)]!.split(' ').where((w) => w.isNotEmpty);
+        expect(words.length, e.value);
+      }
+    });
   }
-
-  test('finals are translated once and joined', () async {
-    final st = make();
-    st.setPartial('xin', turn: 1);
-    st.setPartial('xin chào', turn: 1);
-    st.addFinal('xin chào', turn: 1);
-    st.setPartial('', turn: 1);
-    st.setPartial('anh', turn: 1);
-    st.addFinal('anh khỏe không', turn: 1);
-    st.setPartial('', turn: 1);
-    await settle();
-    expect(byTurn[1], 'XIN CHÀO ANH KHỎE KHÔNG');
-    // Each final once; partials only while current (latest wins)
-    expect(fake.requests.where((r) => r == 'xin chào').length, lessThanOrEqualTo(2));
-    expect(fake.requests.where((r) => r == 'anh khỏe không').length, 1);
-  });
-
-  test('late final of an earlier turn lands in that turn', () async {
-    // The old latest-wins translator wrote every result into the last line: a
-    // phrase finalized just before a new turn started lost its translation in
-    // its own line.
-    final st = make(FakeTranslator(delay: const Duration(milliseconds: 50)));
-    st.addFinal('một', turn: 1);
-    st.addFinal('hai', turn: 1);
-    st.setPartial('ba', turn: 2);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(byTurn[1], 'MỘT HAI');
-    expect(byTurn[2], 'BA');
-  });
-
-  test('a failed translation keeps the volatile English', () async {
-    final st = make();
-    fake.fail('bốn năm');
-    st.setPartial('bốn', turn: 1);
-    await settle();
-    st.addFinal('bốn năm', turn: 1);
-    await settle();
-    expect(byTurn[1], 'BỐN');
-  });
-
-  test('request length does not grow with the turn', () async {
-    // Requests stay one phrase long however long the turn gets.
-    final st = make(FakeTranslator(delay: const Duration(milliseconds: 1)));
-    for (var i = 0; i < 30; i++) {
-      st.setPartial('câu số $i', turn: 1);
-      st.addFinal('câu số $i xong', turn: 1);
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-    }
-    await settle();
-    final longest = fake.requests.map((r) => r.length).fold(0, (a, b) => a > b ? a : b);
-    expect(longest, lessThanOrEqualTo('câu số 29 xong'.length));
-    expect(byTurn[1]!.split(' ').where((w) => w.isNotEmpty).length, 30 * 4);
-  });
-
-  test('empty phrases are not translated', () async {
-    final st = make();
-    st.addFinal('một', turn: 1);
-    st.addFinal('', turn: 1);
-    st.addFinal('hai', turn: 1);
-    await settle();
-    expect(fake.requests.contains(''), isFalse);
-    expect(byTurn[1], 'MỘT HAI');
-  });
-
-  test('reset drops pending work', () async {
-    final st = make(FakeTranslator(delay: const Duration(milliseconds: 50)));
-    st.addFinal('một', turn: 1);
-    st.addFinal('hai', turn: 1);
-    st.reset();
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    expect(byTurn[1] == null || byTurn[1] == '', isTrue);
-  });
 }

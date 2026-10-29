@@ -1,0 +1,340 @@
+{
+  "description": "Language pack JSON and FontSets (app/lib/core/model.dart).",
+  "scripts": [
+    "latin",
+    "cjk",
+    "hangul",
+    "thai",
+    "cyrillic",
+    "other"
+  ],
+  "recognizerKinds": [
+    "osOnDevice",
+    "whisper",
+    "osOnline"
+  ],
+  "fontSetBits": {
+    "latinVI": 1,
+    "latinExtA": 2,
+    "cjk": 4,
+    "hangul": 8,
+    "thai": 16
+  },
+  "shippedPacks": {
+    "vi": {
+      "code": "vi",
+      "appleLocale": "vi-VN",
+      "androidLocale": "vi-VN",
+      "whisperCode": "vi",
+      "label": "Tiếng Việt",
+      "labelLatin": "VI",
+      "script": "latin",
+      "minConfidence": null,
+      "hasRecognition": true,
+      "hasBeforeTranslation": true,
+      "termCount": 0,
+      "hintCount": 0
+    },
+    "en": {
+      "code": "en",
+      "appleLocale": "en-US",
+      "androidLocale": "en-US",
+      "whisperCode": "en",
+      "label": "English",
+      "labelLatin": "EN",
+      "script": "latin",
+      "minConfidence": 0.4,
+      "hasRecognition": false,
+      "hasBeforeTranslation": false,
+      "termCount": 0,
+      "hintCount": 0
+    }
+  },
+  "packOk": [
+    {
+      "name": "a full pack with every optional field parses",
+      "base": "en",
+      "set": {
+        "script": "cjk",
+        "recognition": [
+          {
+            "id": "r1",
+            "pattern": "\\bfoo\\b",
+            "template": "bar",
+            "atClauseStart": true,
+            "context": "baz"
+          }
+        ],
+        "beforeTranslation": [
+          {
+            "id": "b1",
+            "pattern": "x",
+            "template": "y"
+          }
+        ],
+        "terms": [
+          {
+            "id": "t1",
+            "text": "Tuan",
+            "variants": [
+              "Tuấn",
+              "Toan"
+            ],
+            "fixed": {
+              "en": "Tuan"
+            },
+            "origin": "user"
+          }
+        ],
+        "hints": [
+          "a",
+          "b"
+        ]
+      },
+      "expect": {
+        "script": "cjk",
+        "recognitionCount": 1,
+        "atClauseStart": true,
+        "termOrigin": "user",
+        "hints": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "optional lists and minConfidence may be absent",
+      "base": "en",
+      "remove": [
+        "recognition",
+        "beforeTranslation",
+        "terms",
+        "hints",
+        "minConfidence"
+      ],
+      "expect": {
+        "minConfidence": null,
+        "recognitionCount": 0
+      }
+    },
+    {
+      "name": "a term without origin is a user term",
+      "base": "en",
+      "set": {
+        "terms": [
+          {
+            "id": "t",
+            "text": "x"
+          }
+        ]
+      },
+      "expect": {
+        "termOrigin": "user"
+      }
+    }
+  ],
+  "packErrors": [
+    {
+      "name": "missing label",
+      "base": "en",
+      "remove": [
+        "label"
+      ],
+      "field": "label"
+    },
+    {
+      "name": "label of the wrong type",
+      "base": "en",
+      "set": {
+        "label": 3
+      },
+      "field": "label"
+    },
+    {
+      "name": "invalid recognition pattern",
+      "base": "en",
+      "set": {
+        "recognition": [
+          {
+            "id": "r",
+            "pattern": "(",
+            "template": "x"
+          }
+        ]
+      },
+      "field": "recognition[0].pattern"
+    },
+    {
+      "name": "invalid beforeTranslation context",
+      "base": "en",
+      "set": {
+        "beforeTranslation": [
+          {
+            "id": "a",
+            "pattern": "a",
+            "template": "b"
+          },
+          {
+            "id": "r",
+            "pattern": "a",
+            "template": "b",
+            "context": "["
+          }
+        ]
+      },
+      "field": "beforeTranslation[1].context"
+    },
+    {
+      "name": "unknown script",
+      "base": "en",
+      "set": {
+        "script": "klingon"
+      },
+      "field": "script"
+    },
+    {
+      "name": "rule missing its template",
+      "base": "en",
+      "set": {
+        "recognition": [
+          {
+            "id": "r",
+            "pattern": "a"
+          }
+        ]
+      },
+      "field": "recognition[0].template"
+    },
+    {
+      "name": "term with an unknown origin",
+      "base": "en",
+      "set": {
+        "terms": [
+          {
+            "id": "t",
+            "text": "x",
+            "origin": "robot"
+          }
+        ]
+      },
+      "field": "terms[0].origin"
+    },
+    {
+      "name": "term fixed value not a string",
+      "base": "en",
+      "set": {
+        "terms": [
+          {
+            "id": "t",
+            "text": "x",
+            "fixed": {
+              "en": 1
+            }
+          }
+        ]
+      },
+      "field": "terms[0].fixed"
+    },
+    {
+      "name": "hints entry not a string",
+      "base": "en",
+      "set": {
+        "hints": [
+          "a",
+          1
+        ]
+      },
+      "field": "hints"
+    },
+    {
+      "name": "recognition entry not an object",
+      "base": "en",
+      "set": {
+        "recognition": [
+          "x"
+        ]
+      },
+      "field": "recognition[0]"
+    }
+  ],
+  "covers": [
+    {
+      "name": "fontSets 1 covers latin",
+      "fontSets": 1,
+      "script": "latin",
+      "expected": true
+    },
+    {
+      "name": "fontSets 2 covers latin",
+      "fontSets": 2,
+      "script": "latin",
+      "expected": true
+    },
+    {
+      "name": "fontSets 4 does not cover latin",
+      "fontSets": 4,
+      "script": "latin",
+      "expected": false
+    },
+    {
+      "name": "fontSets 1 does not cover cjk",
+      "fontSets": 1,
+      "script": "cjk",
+      "expected": false
+    },
+    {
+      "name": "fontSets 4 covers cjk",
+      "fontSets": 4,
+      "script": "cjk",
+      "expected": true
+    },
+    {
+      "name": "fontSets 8 covers hangul",
+      "fontSets": 8,
+      "script": "hangul",
+      "expected": true
+    },
+    {
+      "name": "fontSets 16 covers thai",
+      "fontSets": 16,
+      "script": "thai",
+      "expected": true
+    },
+    {
+      "name": "fontSets 31 does not cover cyrillic",
+      "fontSets": 31,
+      "script": "cyrillic",
+      "expected": false
+    },
+    {
+      "name": "fontSets 31 does not cover other",
+      "fontSets": 31,
+      "script": "other",
+      "expected": false
+    },
+    {
+      "name": "fontSets 0 does not cover latin",
+      "fontSets": 0,
+      "script": "latin",
+      "expected": false
+    },
+    {
+      "name": "fontSets 31 covers latin",
+      "fontSets": 31,
+      "script": "latin",
+      "expected": true
+    },
+    {
+      "name": "fontSets 31 covers cjk",
+      "fontSets": 31,
+      "script": "cjk",
+      "expected": true
+    },
+    {
+      "name": "fontSets 27 does not cover cjk",
+      "fontSets": 27,
+      "script": "cjk",
+      "expected": false
+    }
+  ]
+}

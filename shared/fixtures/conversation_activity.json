@@ -1,0 +1,553 @@
+{
+  "description": "ConversationActivity (app/lib/core/conversation_activity.dart): when the app holds the earbuds mic. Each scenario starts a fresh machine (idle) with config (defaults below) and applies the steps in order.",
+  "defaults": {
+    "idleTimeoutMs": 600000,
+    "retryDelayMs": 30000
+  },
+  "events": [
+    "boardAudio",
+    "gateOpen",
+    "gateClosed",
+    "ttsStart",
+    "ttsEnd",
+    "userStart",
+    "userStop",
+    "stop",
+    "tick"
+  ],
+  "scenarios": [
+    {
+      "name": "starts idle; end events and ticks do nothing",
+      "steps": [
+        {
+          "event": "tick",
+          "atMs": 1000000,
+          "expect": null,
+          "state": "idle"
+        },
+        {
+          "event": "gateClosed",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "ttsEnd",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "stop",
+          "atMs": 1000,
+          "expect": null,
+          "state": "idle"
+        }
+      ]
+    },
+    {
+      "name": "speech or tap starts a conversation: boardAudio",
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start",
+          "state": "active"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 1000,
+          "expect": null,
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "name": "speech or tap starts a conversation: gateOpen",
+      "steps": [
+        {
+          "event": "gateOpen",
+          "atMs": 0,
+          "expect": "start",
+          "state": "active"
+        },
+        {
+          "event": "gateOpen",
+          "atMs": 1000,
+          "expect": null,
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "name": "speech or tap starts a conversation: ttsStart",
+      "steps": [
+        {
+          "event": "ttsStart",
+          "atMs": 0,
+          "expect": "start",
+          "state": "active"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 1000,
+          "expect": null,
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "name": "speech or tap starts a conversation: userStart",
+      "steps": [
+        {
+          "event": "userStart",
+          "atMs": 0,
+          "expect": "start",
+          "state": "active"
+        },
+        {
+          "event": "userStart",
+          "atMs": 1000,
+          "expect": null,
+          "state": "active"
+        }
+      ]
+    },
+    {
+      "name": "ends after ten minutes of silence",
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 599000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 600000,
+          "expect": "stop",
+          "state": "idle"
+        },
+        {
+          "event": "tick",
+          "atMs": 1500000,
+          "expect": null
+        }
+      ]
+    },
+    {
+      "name": "board audio keeps it alive",
+      "steps": [
+        {
+          "event": "userStart",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 100000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 650000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 700000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "open gate never times out; the timeout counts from when the wearer stopped",
+      "steps": [
+        {
+          "event": "gateOpen",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 1000000,
+          "expect": null
+        },
+        {
+          "event": "gateClosed",
+          "atMs": 1000000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 1599000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 1600000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "speaking never times out",
+      "steps": [
+        {
+          "event": "ttsStart",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 1000000,
+          "expect": null
+        },
+        {
+          "event": "ttsEnd",
+          "atMs": 1010000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 1609000,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 1610000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "stop ends right away and clears flags",
+      "steps": [
+        {
+          "event": "gateOpen",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 0,
+          "expect": null
+        },
+        {
+          "event": "stop",
+          "atMs": 1000,
+          "expect": "stop",
+          "state": "idle"
+        },
+        {
+          "event": "userStart",
+          "atMs": 10000,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 610000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "end events while idle do not start or stretch",
+      "steps": [
+        {
+          "event": "userStart",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 600000,
+          "expect": "stop"
+        },
+        {
+          "event": "gateClosed",
+          "atMs": 610000,
+          "expect": null
+        },
+        {
+          "event": "ttsEnd",
+          "atMs": 610000,
+          "expect": null,
+          "state": "idle"
+        }
+      ]
+    },
+    {
+      "name": "custom timeout",
+      "config": {
+        "idleTimeoutMs": 5000
+      },
+      "steps": [
+        {
+          "event": "userStart",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 4900,
+          "expect": null
+        },
+        {
+          "event": "tick",
+          "atMs": 5000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "failed start goes back to idle without stop",
+      "steps": [
+        {
+          "event": "gateOpen",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 0,
+          "expect": null
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "tick",
+          "atMs": 5000,
+          "expect": null
+        },
+        {
+          "event": "stop",
+          "atMs": 5000,
+          "expect": null
+        }
+      ]
+    },
+    {
+      "name": "failed start holds off automatic retries: boardAudio",
+      "config": {
+        "retryDelayMs": 30000
+      },
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 29900,
+          "expect": null,
+          "state": "idle"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 30000,
+          "expect": "start"
+        }
+      ]
+    },
+    {
+      "name": "failed start holds off automatic retries: gateOpen",
+      "config": {
+        "retryDelayMs": 30000
+      },
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "gateOpen",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "gateOpen",
+          "atMs": 29900,
+          "expect": null,
+          "state": "idle"
+        },
+        {
+          "event": "gateOpen",
+          "atMs": 30000,
+          "expect": "start"
+        }
+      ]
+    },
+    {
+      "name": "failed start holds off automatic retries: ttsStart",
+      "config": {
+        "retryDelayMs": 30000
+      },
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 29900,
+          "expect": null,
+          "state": "idle"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 30000,
+          "expect": "start"
+        }
+      ]
+    },
+    {
+      "name": "tap retries right after a failed start and clears the hold-off",
+      "steps": [
+        {
+          "event": "boardAudio",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "userStart",
+          "atMs": 1000,
+          "expect": "start"
+        },
+        {
+          "event": "stop",
+          "atMs": 2000,
+          "expect": "stop"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 3000,
+          "expect": "start"
+        }
+      ]
+    },
+    {
+      "name": "flags from a failed start do not hold the next conversation",
+      "config": {
+        "retryDelayMs": 0
+      },
+      "steps": [
+        {
+          "event": "gateOpen",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 0,
+          "expect": null
+        },
+        {
+          "startFailed": true,
+          "atMs": 0,
+          "state": "idle"
+        },
+        {
+          "event": "userStart",
+          "atMs": 10000,
+          "expect": "start"
+        },
+        {
+          "event": "tick",
+          "atMs": 610000,
+          "expect": "stop"
+        }
+      ]
+    },
+    {
+      "name": "stop tap ends it until the next tap",
+      "steps": [
+        {
+          "event": "userStart",
+          "atMs": 0,
+          "expect": "start"
+        },
+        {
+          "event": "gateOpen",
+          "atMs": 1000,
+          "expect": null
+        },
+        {
+          "event": "userStop",
+          "atMs": 2000,
+          "expect": "stop",
+          "state": "idle"
+        },
+        {
+          "event": "boardAudio",
+          "atMs": 3000,
+          "expect": null
+        },
+        {
+          "event": "ttsStart",
+          "atMs": 10000000,
+          "expect": null,
+          "state": "idle"
+        },
+        {
+          "event": "userStart",
+          "atMs": 10001000,
+          "expect": "start"
+        }
+      ]
+    },
+    {
+      "name": "stop tap while idle does nothing",
+      "steps": [
+        {
+          "event": "userStop",
+          "atMs": 0,
+          "expect": null
+        },
+        {
+          "event": "userStart",
+          "atMs": 1000,
+          "expect": "start"
+        }
+      ]
+    }
+  ]
+}

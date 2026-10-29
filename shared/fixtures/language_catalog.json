@@ -1,0 +1,599 @@
+{
+  "description": "LanguageCatalog (app/lib/core/language_catalog.dart): which other languages are offered for a given device capability report, and the recognizer chain per language.",
+  "homeCode": "vi",
+  "platforms": [
+    "ios",
+    "android"
+  ],
+  "invalidPlatforms": [
+    "web",
+    ""
+  ],
+  "chainOrder": [
+    "osOnDevice",
+    "whisper",
+    "osOnline"
+  ],
+  "packs": [
+    {
+      "code": "vi",
+      "label": "Tiếng Việt"
+    },
+    {
+      "code": "en",
+      "label": "English"
+    },
+    {
+      "code": "ja",
+      "label": "日本語"
+    },
+    {
+      "code": "fr",
+      "label": "Français"
+    },
+    {
+      "code": "de",
+      "label": "Deutsch"
+    }
+  ],
+  "offered": [
+    {
+      "name": "needs a recognizer and translation, and is sorted by label",
+      "caps": {
+        "recognizers": {
+          "vi": [
+            "whisper"
+          ],
+          "en": [
+            "whisper"
+          ],
+          "ja": [
+            "whisper"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "vi",
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "de",
+        "en",
+        "fr",
+        "ja"
+      ]
+    },
+    {
+      "name": "a language without translation is not offered",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "whisper"
+          ],
+          "ja": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "en"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "a language without any usable recognizer is not offered",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "whisper"
+          ],
+          "ja": [],
+          "fr": [
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "a language missing from the recognizers map is not offered",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "en",
+          "ja"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "Vietnamese, the home language, is never offered",
+      "caps": {
+        "recognizers": {
+          "vi": [
+            "whisper"
+          ],
+          "en": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "vi",
+          "en"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "capabilities for languages without a pack are ignored",
+      "caps": {
+        "recognizers": {
+          "xx": [
+            "whisper"
+          ],
+          "en": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "xx",
+          "en"
+        ]
+      },
+      "platform": "android",
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "osOnline without consent does not count",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline"
+          ],
+          "ja": [
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en",
+          "ja"
+        ]
+      },
+      "platform": "android",
+      "expected": []
+    },
+    {
+      "name": "osOnline counts only for the language with consent",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline"
+          ],
+          "ja": [
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en",
+          "ja"
+        ]
+      },
+      "platform": "android",
+      "consent": [
+        "en"
+      ],
+      "expected": [
+        "en"
+      ]
+    },
+    {
+      "name": "osOnline counts for each language with consent",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline"
+          ],
+          "ja": [
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en",
+          "ja"
+        ]
+      },
+      "platform": "android",
+      "consent": [
+        "en",
+        "ja"
+      ],
+      "expected": [
+        "en",
+        "ja"
+      ]
+    },
+    {
+      "name": "osOnline never counts on iOS",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en"
+        ]
+      },
+      "platform": "ios",
+      "consent": [
+        "en"
+      ],
+      "expected": []
+    },
+    {
+      "name": "nothing is offered without capabilities",
+      "caps": {
+        "recognizers": {},
+        "translatable": []
+      },
+      "platform": "android",
+      "expected": []
+    },
+    {
+      "name": "packs sharing a label keep a stable order by code",
+      "packs": [
+        {
+          "code": "b",
+          "label": "Same"
+        },
+        {
+          "code": "a",
+          "label": "Same"
+        }
+      ],
+      "caps": {
+        "recognizers": {
+          "b": [
+            "whisper"
+          ],
+          "a": [
+            "whisper"
+          ]
+        },
+        "translatable": [
+          "a",
+          "b"
+        ]
+      },
+      "platform": "ios",
+      "expected": [
+        "a",
+        "b"
+      ]
+    }
+  ],
+  "chain": [
+    {
+      "name": "order is on-device OS, Whisper, online OS",
+      "platform": "android",
+      "consent": [
+        "en"
+      ],
+      "code": "en",
+      "expected": [
+        "osOnDevice",
+        "whisper",
+        "osOnline"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "online OS only with consent (none)",
+      "platform": "android",
+      "code": "en",
+      "expected": [
+        "osOnDevice",
+        "whisper"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "online OS only with consent for that language (other language consented)",
+      "platform": "android",
+      "consent": [
+        "ja"
+      ],
+      "code": "en",
+      "expected": [
+        "osOnDevice",
+        "whisper"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "online OS with consent for that language",
+      "platform": "android",
+      "consent": [
+        "ja"
+      ],
+      "code": "ja",
+      "expected": [
+        "whisper",
+        "osOnline"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "on iOS the chain never has the online recognizer (en)",
+      "platform": "ios",
+      "consent": [
+        "en",
+        "ja"
+      ],
+      "code": "en",
+      "expected": [
+        "osOnDevice",
+        "whisper"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "on iOS the chain never has the online recognizer (ja)",
+      "platform": "ios",
+      "consent": [
+        "ja"
+      ],
+      "code": "ja",
+      "expected": [
+        "whisper"
+      ],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "a language with no recognizers gives an empty chain",
+      "platform": "android",
+      "code": "de",
+      "expected": [],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "an unknown language gives an empty chain",
+      "platform": "android",
+      "code": "zz",
+      "expected": [],
+      "caps": {
+        "recognizers": {
+          "en": [
+            "osOnline",
+            "whisper",
+            "osOnDevice"
+          ],
+          "ja": [
+            "whisper",
+            "osOnline"
+          ],
+          "fr": [
+            "osOnDevice"
+          ],
+          "de": []
+        },
+        "translatable": [
+          "en",
+          "ja",
+          "fr",
+          "de"
+        ]
+      }
+    },
+    {
+      "name": "the Note 9 case: Whisper first, online last, no on-device",
+      "caps": {
+        "recognizers": {
+          "en": [
+            "whisper",
+            "osOnline"
+          ]
+        },
+        "translatable": [
+          "en"
+        ]
+      },
+      "platform": "android",
+      "consent": [
+        "en"
+      ],
+      "code": "en",
+      "expected": [
+        "whisper",
+        "osOnline"
+      ]
+    }
+  ]
+}

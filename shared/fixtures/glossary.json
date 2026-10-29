@@ -1,0 +1,3742 @@
+{
+  "description": "Glossary validation (app/lib/core/glossary.dart GlossaryStore). Each case starts from an empty store, adds `existing` in order (all valid), then runs `op`.",
+  "limits": {
+    "maxTerms": 500,
+    "maxLength": 64,
+    "maxVariants": 8
+  },
+  "cases": [
+    {
+      "name": "text is trimmed, variants and fixed kept",
+      "op": "add",
+      "input": {
+        "text": "  Bến Thành ",
+        "variants": [
+          "Ben Thanh"
+        ],
+        "fixed": {
+          "en": "Ben Thanh Market"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "text": "Bến Thành",
+        "variants": [
+          "Ben Thanh"
+        ],
+        "fixed": {
+          "en": "Ben Thanh Market"
+        }
+      }
+    },
+    {
+      "name": "empty text",
+      "op": "add",
+      "input": {
+        "text": ""
+      },
+      "expect": {
+        "error": "EmptyText",
+        "field": "text"
+      }
+    },
+    {
+      "name": "blank text",
+      "op": "add",
+      "input": {
+        "text": "   "
+      },
+      "expect": {
+        "error": "EmptyText",
+        "field": "text"
+      }
+    },
+    {
+      "name": "empty variant",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "variants": [
+          ""
+        ]
+      },
+      "expect": {
+        "error": "EmptyText",
+        "field": "variants[0]"
+      }
+    },
+    {
+      "name": "blank fixed translation",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "fixed": {
+          "en": " "
+        }
+      },
+      "expect": {
+        "error": "EmptyText",
+        "field": "fixed.en"
+      }
+    },
+    {
+      "name": "empty fixed language code",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "fixed": {
+          "": "x"
+        }
+      },
+      "expect": {
+        "error": "EmptyText",
+        "field": "fixed"
+      }
+    },
+    {
+      "name": "64 characters are allowed",
+      "op": "add",
+      "input": {
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": {
+        "ok": true,
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "65 characters in the text are too long",
+      "op": "add",
+      "input": {
+        "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "text",
+        "limit": 64
+      }
+    },
+    {
+      "name": "65 characters in a variant are too long",
+      "op": "add",
+      "input": {
+        "text": "B",
+        "variants": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "variants[0]",
+        "limit": 64
+      }
+    },
+    {
+      "name": "65 characters in a fixed translation are too long",
+      "op": "add",
+      "input": {
+        "text": "C",
+        "fixed": {
+          "en": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "fixed.en",
+        "limit": 64
+      }
+    },
+    {
+      "name": "length counts characters, not UTF-16 units (64 allowed)",
+      "op": "add",
+      "input": {
+        "text": "𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀"
+      },
+      "expect": {
+        "ok": true,
+        "text": "𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀"
+      }
+    },
+    {
+      "name": "length counts characters, not UTF-16 units (65 too long)",
+      "op": "add",
+      "input": {
+        "text": "𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀𝐀"
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "text",
+        "limit": 64
+      }
+    },
+    {
+      "name": "the error names the variant index",
+      "op": "add",
+      "input": {
+        "text": "ok",
+        "variants": [
+          "fine",
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ]
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "variants[1]",
+        "limit": 64
+      }
+    },
+    {
+      "name": "8 variants are allowed",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "variants": [
+          "v0",
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6",
+          "v7"
+        ]
+      },
+      "expect": {
+        "ok": true,
+        "variants": [
+          "v0",
+          "v1",
+          "v2",
+          "v3",
+          "v4",
+          "v5",
+          "v6",
+          "v7"
+        ]
+      }
+    },
+    {
+      "name": "9 variants are too many",
+      "op": "add",
+      "input": {
+        "text": "B",
+        "variants": [
+          "w0",
+          "w1",
+          "w2",
+          "w3",
+          "w4",
+          "w5",
+          "w6",
+          "w7",
+          "w8"
+        ]
+      },
+      "expect": {
+        "error": "TooManyVariants",
+        "limit": 8
+      }
+    },
+    {
+      "name": "500 terms are allowed",
+      "op": "add",
+      "input": {
+        "text": "term 499"
+      },
+      "existing": [
+        {
+          "text": "term 0"
+        },
+        {
+          "text": "term 1"
+        },
+        {
+          "text": "term 2"
+        },
+        {
+          "text": "term 3"
+        },
+        {
+          "text": "term 4"
+        },
+        {
+          "text": "term 5"
+        },
+        {
+          "text": "term 6"
+        },
+        {
+          "text": "term 7"
+        },
+        {
+          "text": "term 8"
+        },
+        {
+          "text": "term 9"
+        },
+        {
+          "text": "term 10"
+        },
+        {
+          "text": "term 11"
+        },
+        {
+          "text": "term 12"
+        },
+        {
+          "text": "term 13"
+        },
+        {
+          "text": "term 14"
+        },
+        {
+          "text": "term 15"
+        },
+        {
+          "text": "term 16"
+        },
+        {
+          "text": "term 17"
+        },
+        {
+          "text": "term 18"
+        },
+        {
+          "text": "term 19"
+        },
+        {
+          "text": "term 20"
+        },
+        {
+          "text": "term 21"
+        },
+        {
+          "text": "term 22"
+        },
+        {
+          "text": "term 23"
+        },
+        {
+          "text": "term 24"
+        },
+        {
+          "text": "term 25"
+        },
+        {
+          "text": "term 26"
+        },
+        {
+          "text": "term 27"
+        },
+        {
+          "text": "term 28"
+        },
+        {
+          "text": "term 29"
+        },
+        {
+          "text": "term 30"
+        },
+        {
+          "text": "term 31"
+        },
+        {
+          "text": "term 32"
+        },
+        {
+          "text": "term 33"
+        },
+        {
+          "text": "term 34"
+        },
+        {
+          "text": "term 35"
+        },
+        {
+          "text": "term 36"
+        },
+        {
+          "text": "term 37"
+        },
+        {
+          "text": "term 38"
+        },
+        {
+          "text": "term 39"
+        },
+        {
+          "text": "term 40"
+        },
+        {
+          "text": "term 41"
+        },
+        {
+          "text": "term 42"
+        },
+        {
+          "text": "term 43"
+        },
+        {
+          "text": "term 44"
+        },
+        {
+          "text": "term 45"
+        },
+        {
+          "text": "term 46"
+        },
+        {
+          "text": "term 47"
+        },
+        {
+          "text": "term 48"
+        },
+        {
+          "text": "term 49"
+        },
+        {
+          "text": "term 50"
+        },
+        {
+          "text": "term 51"
+        },
+        {
+          "text": "term 52"
+        },
+        {
+          "text": "term 53"
+        },
+        {
+          "text": "term 54"
+        },
+        {
+          "text": "term 55"
+        },
+        {
+          "text": "term 56"
+        },
+        {
+          "text": "term 57"
+        },
+        {
+          "text": "term 58"
+        },
+        {
+          "text": "term 59"
+        },
+        {
+          "text": "term 60"
+        },
+        {
+          "text": "term 61"
+        },
+        {
+          "text": "term 62"
+        },
+        {
+          "text": "term 63"
+        },
+        {
+          "text": "term 64"
+        },
+        {
+          "text": "term 65"
+        },
+        {
+          "text": "term 66"
+        },
+        {
+          "text": "term 67"
+        },
+        {
+          "text": "term 68"
+        },
+        {
+          "text": "term 69"
+        },
+        {
+          "text": "term 70"
+        },
+        {
+          "text": "term 71"
+        },
+        {
+          "text": "term 72"
+        },
+        {
+          "text": "term 73"
+        },
+        {
+          "text": "term 74"
+        },
+        {
+          "text": "term 75"
+        },
+        {
+          "text": "term 76"
+        },
+        {
+          "text": "term 77"
+        },
+        {
+          "text": "term 78"
+        },
+        {
+          "text": "term 79"
+        },
+        {
+          "text": "term 80"
+        },
+        {
+          "text": "term 81"
+        },
+        {
+          "text": "term 82"
+        },
+        {
+          "text": "term 83"
+        },
+        {
+          "text": "term 84"
+        },
+        {
+          "text": "term 85"
+        },
+        {
+          "text": "term 86"
+        },
+        {
+          "text": "term 87"
+        },
+        {
+          "text": "term 88"
+        },
+        {
+          "text": "term 89"
+        },
+        {
+          "text": "term 90"
+        },
+        {
+          "text": "term 91"
+        },
+        {
+          "text": "term 92"
+        },
+        {
+          "text": "term 93"
+        },
+        {
+          "text": "term 94"
+        },
+        {
+          "text": "term 95"
+        },
+        {
+          "text": "term 96"
+        },
+        {
+          "text": "term 97"
+        },
+        {
+          "text": "term 98"
+        },
+        {
+          "text": "term 99"
+        },
+        {
+          "text": "term 100"
+        },
+        {
+          "text": "term 101"
+        },
+        {
+          "text": "term 102"
+        },
+        {
+          "text": "term 103"
+        },
+        {
+          "text": "term 104"
+        },
+        {
+          "text": "term 105"
+        },
+        {
+          "text": "term 106"
+        },
+        {
+          "text": "term 107"
+        },
+        {
+          "text": "term 108"
+        },
+        {
+          "text": "term 109"
+        },
+        {
+          "text": "term 110"
+        },
+        {
+          "text": "term 111"
+        },
+        {
+          "text": "term 112"
+        },
+        {
+          "text": "term 113"
+        },
+        {
+          "text": "term 114"
+        },
+        {
+          "text": "term 115"
+        },
+        {
+          "text": "term 116"
+        },
+        {
+          "text": "term 117"
+        },
+        {
+          "text": "term 118"
+        },
+        {
+          "text": "term 119"
+        },
+        {
+          "text": "term 120"
+        },
+        {
+          "text": "term 121"
+        },
+        {
+          "text": "term 122"
+        },
+        {
+          "text": "term 123"
+        },
+        {
+          "text": "term 124"
+        },
+        {
+          "text": "term 125"
+        },
+        {
+          "text": "term 126"
+        },
+        {
+          "text": "term 127"
+        },
+        {
+          "text": "term 128"
+        },
+        {
+          "text": "term 129"
+        },
+        {
+          "text": "term 130"
+        },
+        {
+          "text": "term 131"
+        },
+        {
+          "text": "term 132"
+        },
+        {
+          "text": "term 133"
+        },
+        {
+          "text": "term 134"
+        },
+        {
+          "text": "term 135"
+        },
+        {
+          "text": "term 136"
+        },
+        {
+          "text": "term 137"
+        },
+        {
+          "text": "term 138"
+        },
+        {
+          "text": "term 139"
+        },
+        {
+          "text": "term 140"
+        },
+        {
+          "text": "term 141"
+        },
+        {
+          "text": "term 142"
+        },
+        {
+          "text": "term 143"
+        },
+        {
+          "text": "term 144"
+        },
+        {
+          "text": "term 145"
+        },
+        {
+          "text": "term 146"
+        },
+        {
+          "text": "term 147"
+        },
+        {
+          "text": "term 148"
+        },
+        {
+          "text": "term 149"
+        },
+        {
+          "text": "term 150"
+        },
+        {
+          "text": "term 151"
+        },
+        {
+          "text": "term 152"
+        },
+        {
+          "text": "term 153"
+        },
+        {
+          "text": "term 154"
+        },
+        {
+          "text": "term 155"
+        },
+        {
+          "text": "term 156"
+        },
+        {
+          "text": "term 157"
+        },
+        {
+          "text": "term 158"
+        },
+        {
+          "text": "term 159"
+        },
+        {
+          "text": "term 160"
+        },
+        {
+          "text": "term 161"
+        },
+        {
+          "text": "term 162"
+        },
+        {
+          "text": "term 163"
+        },
+        {
+          "text": "term 164"
+        },
+        {
+          "text": "term 165"
+        },
+        {
+          "text": "term 166"
+        },
+        {
+          "text": "term 167"
+        },
+        {
+          "text": "term 168"
+        },
+        {
+          "text": "term 169"
+        },
+        {
+          "text": "term 170"
+        },
+        {
+          "text": "term 171"
+        },
+        {
+          "text": "term 172"
+        },
+        {
+          "text": "term 173"
+        },
+        {
+          "text": "term 174"
+        },
+        {
+          "text": "term 175"
+        },
+        {
+          "text": "term 176"
+        },
+        {
+          "text": "term 177"
+        },
+        {
+          "text": "term 178"
+        },
+        {
+          "text": "term 179"
+        },
+        {
+          "text": "term 180"
+        },
+        {
+          "text": "term 181"
+        },
+        {
+          "text": "term 182"
+        },
+        {
+          "text": "term 183"
+        },
+        {
+          "text": "term 184"
+        },
+        {
+          "text": "term 185"
+        },
+        {
+          "text": "term 186"
+        },
+        {
+          "text": "term 187"
+        },
+        {
+          "text": "term 188"
+        },
+        {
+          "text": "term 189"
+        },
+        {
+          "text": "term 190"
+        },
+        {
+          "text": "term 191"
+        },
+        {
+          "text": "term 192"
+        },
+        {
+          "text": "term 193"
+        },
+        {
+          "text": "term 194"
+        },
+        {
+          "text": "term 195"
+        },
+        {
+          "text": "term 196"
+        },
+        {
+          "text": "term 197"
+        },
+        {
+          "text": "term 198"
+        },
+        {
+          "text": "term 199"
+        },
+        {
+          "text": "term 200"
+        },
+        {
+          "text": "term 201"
+        },
+        {
+          "text": "term 202"
+        },
+        {
+          "text": "term 203"
+        },
+        {
+          "text": "term 204"
+        },
+        {
+          "text": "term 205"
+        },
+        {
+          "text": "term 206"
+        },
+        {
+          "text": "term 207"
+        },
+        {
+          "text": "term 208"
+        },
+        {
+          "text": "term 209"
+        },
+        {
+          "text": "term 210"
+        },
+        {
+          "text": "term 211"
+        },
+        {
+          "text": "term 212"
+        },
+        {
+          "text": "term 213"
+        },
+        {
+          "text": "term 214"
+        },
+        {
+          "text": "term 215"
+        },
+        {
+          "text": "term 216"
+        },
+        {
+          "text": "term 217"
+        },
+        {
+          "text": "term 218"
+        },
+        {
+          "text": "term 219"
+        },
+        {
+          "text": "term 220"
+        },
+        {
+          "text": "term 221"
+        },
+        {
+          "text": "term 222"
+        },
+        {
+          "text": "term 223"
+        },
+        {
+          "text": "term 224"
+        },
+        {
+          "text": "term 225"
+        },
+        {
+          "text": "term 226"
+        },
+        {
+          "text": "term 227"
+        },
+        {
+          "text": "term 228"
+        },
+        {
+          "text": "term 229"
+        },
+        {
+          "text": "term 230"
+        },
+        {
+          "text": "term 231"
+        },
+        {
+          "text": "term 232"
+        },
+        {
+          "text": "term 233"
+        },
+        {
+          "text": "term 234"
+        },
+        {
+          "text": "term 235"
+        },
+        {
+          "text": "term 236"
+        },
+        {
+          "text": "term 237"
+        },
+        {
+          "text": "term 238"
+        },
+        {
+          "text": "term 239"
+        },
+        {
+          "text": "term 240"
+        },
+        {
+          "text": "term 241"
+        },
+        {
+          "text": "term 242"
+        },
+        {
+          "text": "term 243"
+        },
+        {
+          "text": "term 244"
+        },
+        {
+          "text": "term 245"
+        },
+        {
+          "text": "term 246"
+        },
+        {
+          "text": "term 247"
+        },
+        {
+          "text": "term 248"
+        },
+        {
+          "text": "term 249"
+        },
+        {
+          "text": "term 250"
+        },
+        {
+          "text": "term 251"
+        },
+        {
+          "text": "term 252"
+        },
+        {
+          "text": "term 253"
+        },
+        {
+          "text": "term 254"
+        },
+        {
+          "text": "term 255"
+        },
+        {
+          "text": "term 256"
+        },
+        {
+          "text": "term 257"
+        },
+        {
+          "text": "term 258"
+        },
+        {
+          "text": "term 259"
+        },
+        {
+          "text": "term 260"
+        },
+        {
+          "text": "term 261"
+        },
+        {
+          "text": "term 262"
+        },
+        {
+          "text": "term 263"
+        },
+        {
+          "text": "term 264"
+        },
+        {
+          "text": "term 265"
+        },
+        {
+          "text": "term 266"
+        },
+        {
+          "text": "term 267"
+        },
+        {
+          "text": "term 268"
+        },
+        {
+          "text": "term 269"
+        },
+        {
+          "text": "term 270"
+        },
+        {
+          "text": "term 271"
+        },
+        {
+          "text": "term 272"
+        },
+        {
+          "text": "term 273"
+        },
+        {
+          "text": "term 274"
+        },
+        {
+          "text": "term 275"
+        },
+        {
+          "text": "term 276"
+        },
+        {
+          "text": "term 277"
+        },
+        {
+          "text": "term 278"
+        },
+        {
+          "text": "term 279"
+        },
+        {
+          "text": "term 280"
+        },
+        {
+          "text": "term 281"
+        },
+        {
+          "text": "term 282"
+        },
+        {
+          "text": "term 283"
+        },
+        {
+          "text": "term 284"
+        },
+        {
+          "text": "term 285"
+        },
+        {
+          "text": "term 286"
+        },
+        {
+          "text": "term 287"
+        },
+        {
+          "text": "term 288"
+        },
+        {
+          "text": "term 289"
+        },
+        {
+          "text": "term 290"
+        },
+        {
+          "text": "term 291"
+        },
+        {
+          "text": "term 292"
+        },
+        {
+          "text": "term 293"
+        },
+        {
+          "text": "term 294"
+        },
+        {
+          "text": "term 295"
+        },
+        {
+          "text": "term 296"
+        },
+        {
+          "text": "term 297"
+        },
+        {
+          "text": "term 298"
+        },
+        {
+          "text": "term 299"
+        },
+        {
+          "text": "term 300"
+        },
+        {
+          "text": "term 301"
+        },
+        {
+          "text": "term 302"
+        },
+        {
+          "text": "term 303"
+        },
+        {
+          "text": "term 304"
+        },
+        {
+          "text": "term 305"
+        },
+        {
+          "text": "term 306"
+        },
+        {
+          "text": "term 307"
+        },
+        {
+          "text": "term 308"
+        },
+        {
+          "text": "term 309"
+        },
+        {
+          "text": "term 310"
+        },
+        {
+          "text": "term 311"
+        },
+        {
+          "text": "term 312"
+        },
+        {
+          "text": "term 313"
+        },
+        {
+          "text": "term 314"
+        },
+        {
+          "text": "term 315"
+        },
+        {
+          "text": "term 316"
+        },
+        {
+          "text": "term 317"
+        },
+        {
+          "text": "term 318"
+        },
+        {
+          "text": "term 319"
+        },
+        {
+          "text": "term 320"
+        },
+        {
+          "text": "term 321"
+        },
+        {
+          "text": "term 322"
+        },
+        {
+          "text": "term 323"
+        },
+        {
+          "text": "term 324"
+        },
+        {
+          "text": "term 325"
+        },
+        {
+          "text": "term 326"
+        },
+        {
+          "text": "term 327"
+        },
+        {
+          "text": "term 328"
+        },
+        {
+          "text": "term 329"
+        },
+        {
+          "text": "term 330"
+        },
+        {
+          "text": "term 331"
+        },
+        {
+          "text": "term 332"
+        },
+        {
+          "text": "term 333"
+        },
+        {
+          "text": "term 334"
+        },
+        {
+          "text": "term 335"
+        },
+        {
+          "text": "term 336"
+        },
+        {
+          "text": "term 337"
+        },
+        {
+          "text": "term 338"
+        },
+        {
+          "text": "term 339"
+        },
+        {
+          "text": "term 340"
+        },
+        {
+          "text": "term 341"
+        },
+        {
+          "text": "term 342"
+        },
+        {
+          "text": "term 343"
+        },
+        {
+          "text": "term 344"
+        },
+        {
+          "text": "term 345"
+        },
+        {
+          "text": "term 346"
+        },
+        {
+          "text": "term 347"
+        },
+        {
+          "text": "term 348"
+        },
+        {
+          "text": "term 349"
+        },
+        {
+          "text": "term 350"
+        },
+        {
+          "text": "term 351"
+        },
+        {
+          "text": "term 352"
+        },
+        {
+          "text": "term 353"
+        },
+        {
+          "text": "term 354"
+        },
+        {
+          "text": "term 355"
+        },
+        {
+          "text": "term 356"
+        },
+        {
+          "text": "term 357"
+        },
+        {
+          "text": "term 358"
+        },
+        {
+          "text": "term 359"
+        },
+        {
+          "text": "term 360"
+        },
+        {
+          "text": "term 361"
+        },
+        {
+          "text": "term 362"
+        },
+        {
+          "text": "term 363"
+        },
+        {
+          "text": "term 364"
+        },
+        {
+          "text": "term 365"
+        },
+        {
+          "text": "term 366"
+        },
+        {
+          "text": "term 367"
+        },
+        {
+          "text": "term 368"
+        },
+        {
+          "text": "term 369"
+        },
+        {
+          "text": "term 370"
+        },
+        {
+          "text": "term 371"
+        },
+        {
+          "text": "term 372"
+        },
+        {
+          "text": "term 373"
+        },
+        {
+          "text": "term 374"
+        },
+        {
+          "text": "term 375"
+        },
+        {
+          "text": "term 376"
+        },
+        {
+          "text": "term 377"
+        },
+        {
+          "text": "term 378"
+        },
+        {
+          "text": "term 379"
+        },
+        {
+          "text": "term 380"
+        },
+        {
+          "text": "term 381"
+        },
+        {
+          "text": "term 382"
+        },
+        {
+          "text": "term 383"
+        },
+        {
+          "text": "term 384"
+        },
+        {
+          "text": "term 385"
+        },
+        {
+          "text": "term 386"
+        },
+        {
+          "text": "term 387"
+        },
+        {
+          "text": "term 388"
+        },
+        {
+          "text": "term 389"
+        },
+        {
+          "text": "term 390"
+        },
+        {
+          "text": "term 391"
+        },
+        {
+          "text": "term 392"
+        },
+        {
+          "text": "term 393"
+        },
+        {
+          "text": "term 394"
+        },
+        {
+          "text": "term 395"
+        },
+        {
+          "text": "term 396"
+        },
+        {
+          "text": "term 397"
+        },
+        {
+          "text": "term 398"
+        },
+        {
+          "text": "term 399"
+        },
+        {
+          "text": "term 400"
+        },
+        {
+          "text": "term 401"
+        },
+        {
+          "text": "term 402"
+        },
+        {
+          "text": "term 403"
+        },
+        {
+          "text": "term 404"
+        },
+        {
+          "text": "term 405"
+        },
+        {
+          "text": "term 406"
+        },
+        {
+          "text": "term 407"
+        },
+        {
+          "text": "term 408"
+        },
+        {
+          "text": "term 409"
+        },
+        {
+          "text": "term 410"
+        },
+        {
+          "text": "term 411"
+        },
+        {
+          "text": "term 412"
+        },
+        {
+          "text": "term 413"
+        },
+        {
+          "text": "term 414"
+        },
+        {
+          "text": "term 415"
+        },
+        {
+          "text": "term 416"
+        },
+        {
+          "text": "term 417"
+        },
+        {
+          "text": "term 418"
+        },
+        {
+          "text": "term 419"
+        },
+        {
+          "text": "term 420"
+        },
+        {
+          "text": "term 421"
+        },
+        {
+          "text": "term 422"
+        },
+        {
+          "text": "term 423"
+        },
+        {
+          "text": "term 424"
+        },
+        {
+          "text": "term 425"
+        },
+        {
+          "text": "term 426"
+        },
+        {
+          "text": "term 427"
+        },
+        {
+          "text": "term 428"
+        },
+        {
+          "text": "term 429"
+        },
+        {
+          "text": "term 430"
+        },
+        {
+          "text": "term 431"
+        },
+        {
+          "text": "term 432"
+        },
+        {
+          "text": "term 433"
+        },
+        {
+          "text": "term 434"
+        },
+        {
+          "text": "term 435"
+        },
+        {
+          "text": "term 436"
+        },
+        {
+          "text": "term 437"
+        },
+        {
+          "text": "term 438"
+        },
+        {
+          "text": "term 439"
+        },
+        {
+          "text": "term 440"
+        },
+        {
+          "text": "term 441"
+        },
+        {
+          "text": "term 442"
+        },
+        {
+          "text": "term 443"
+        },
+        {
+          "text": "term 444"
+        },
+        {
+          "text": "term 445"
+        },
+        {
+          "text": "term 446"
+        },
+        {
+          "text": "term 447"
+        },
+        {
+          "text": "term 448"
+        },
+        {
+          "text": "term 449"
+        },
+        {
+          "text": "term 450"
+        },
+        {
+          "text": "term 451"
+        },
+        {
+          "text": "term 452"
+        },
+        {
+          "text": "term 453"
+        },
+        {
+          "text": "term 454"
+        },
+        {
+          "text": "term 455"
+        },
+        {
+          "text": "term 456"
+        },
+        {
+          "text": "term 457"
+        },
+        {
+          "text": "term 458"
+        },
+        {
+          "text": "term 459"
+        },
+        {
+          "text": "term 460"
+        },
+        {
+          "text": "term 461"
+        },
+        {
+          "text": "term 462"
+        },
+        {
+          "text": "term 463"
+        },
+        {
+          "text": "term 464"
+        },
+        {
+          "text": "term 465"
+        },
+        {
+          "text": "term 466"
+        },
+        {
+          "text": "term 467"
+        },
+        {
+          "text": "term 468"
+        },
+        {
+          "text": "term 469"
+        },
+        {
+          "text": "term 470"
+        },
+        {
+          "text": "term 471"
+        },
+        {
+          "text": "term 472"
+        },
+        {
+          "text": "term 473"
+        },
+        {
+          "text": "term 474"
+        },
+        {
+          "text": "term 475"
+        },
+        {
+          "text": "term 476"
+        },
+        {
+          "text": "term 477"
+        },
+        {
+          "text": "term 478"
+        },
+        {
+          "text": "term 479"
+        },
+        {
+          "text": "term 480"
+        },
+        {
+          "text": "term 481"
+        },
+        {
+          "text": "term 482"
+        },
+        {
+          "text": "term 483"
+        },
+        {
+          "text": "term 484"
+        },
+        {
+          "text": "term 485"
+        },
+        {
+          "text": "term 486"
+        },
+        {
+          "text": "term 487"
+        },
+        {
+          "text": "term 488"
+        },
+        {
+          "text": "term 489"
+        },
+        {
+          "text": "term 490"
+        },
+        {
+          "text": "term 491"
+        },
+        {
+          "text": "term 492"
+        },
+        {
+          "text": "term 493"
+        },
+        {
+          "text": "term 494"
+        },
+        {
+          "text": "term 495"
+        },
+        {
+          "text": "term 496"
+        },
+        {
+          "text": "term 497"
+        },
+        {
+          "text": "term 498"
+        }
+      ],
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "the 501st term is refused",
+      "op": "add",
+      "input": {
+        "text": "one more"
+      },
+      "existing": [
+        {
+          "text": "term 0"
+        },
+        {
+          "text": "term 1"
+        },
+        {
+          "text": "term 2"
+        },
+        {
+          "text": "term 3"
+        },
+        {
+          "text": "term 4"
+        },
+        {
+          "text": "term 5"
+        },
+        {
+          "text": "term 6"
+        },
+        {
+          "text": "term 7"
+        },
+        {
+          "text": "term 8"
+        },
+        {
+          "text": "term 9"
+        },
+        {
+          "text": "term 10"
+        },
+        {
+          "text": "term 11"
+        },
+        {
+          "text": "term 12"
+        },
+        {
+          "text": "term 13"
+        },
+        {
+          "text": "term 14"
+        },
+        {
+          "text": "term 15"
+        },
+        {
+          "text": "term 16"
+        },
+        {
+          "text": "term 17"
+        },
+        {
+          "text": "term 18"
+        },
+        {
+          "text": "term 19"
+        },
+        {
+          "text": "term 20"
+        },
+        {
+          "text": "term 21"
+        },
+        {
+          "text": "term 22"
+        },
+        {
+          "text": "term 23"
+        },
+        {
+          "text": "term 24"
+        },
+        {
+          "text": "term 25"
+        },
+        {
+          "text": "term 26"
+        },
+        {
+          "text": "term 27"
+        },
+        {
+          "text": "term 28"
+        },
+        {
+          "text": "term 29"
+        },
+        {
+          "text": "term 30"
+        },
+        {
+          "text": "term 31"
+        },
+        {
+          "text": "term 32"
+        },
+        {
+          "text": "term 33"
+        },
+        {
+          "text": "term 34"
+        },
+        {
+          "text": "term 35"
+        },
+        {
+          "text": "term 36"
+        },
+        {
+          "text": "term 37"
+        },
+        {
+          "text": "term 38"
+        },
+        {
+          "text": "term 39"
+        },
+        {
+          "text": "term 40"
+        },
+        {
+          "text": "term 41"
+        },
+        {
+          "text": "term 42"
+        },
+        {
+          "text": "term 43"
+        },
+        {
+          "text": "term 44"
+        },
+        {
+          "text": "term 45"
+        },
+        {
+          "text": "term 46"
+        },
+        {
+          "text": "term 47"
+        },
+        {
+          "text": "term 48"
+        },
+        {
+          "text": "term 49"
+        },
+        {
+          "text": "term 50"
+        },
+        {
+          "text": "term 51"
+        },
+        {
+          "text": "term 52"
+        },
+        {
+          "text": "term 53"
+        },
+        {
+          "text": "term 54"
+        },
+        {
+          "text": "term 55"
+        },
+        {
+          "text": "term 56"
+        },
+        {
+          "text": "term 57"
+        },
+        {
+          "text": "term 58"
+        },
+        {
+          "text": "term 59"
+        },
+        {
+          "text": "term 60"
+        },
+        {
+          "text": "term 61"
+        },
+        {
+          "text": "term 62"
+        },
+        {
+          "text": "term 63"
+        },
+        {
+          "text": "term 64"
+        },
+        {
+          "text": "term 65"
+        },
+        {
+          "text": "term 66"
+        },
+        {
+          "text": "term 67"
+        },
+        {
+          "text": "term 68"
+        },
+        {
+          "text": "term 69"
+        },
+        {
+          "text": "term 70"
+        },
+        {
+          "text": "term 71"
+        },
+        {
+          "text": "term 72"
+        },
+        {
+          "text": "term 73"
+        },
+        {
+          "text": "term 74"
+        },
+        {
+          "text": "term 75"
+        },
+        {
+          "text": "term 76"
+        },
+        {
+          "text": "term 77"
+        },
+        {
+          "text": "term 78"
+        },
+        {
+          "text": "term 79"
+        },
+        {
+          "text": "term 80"
+        },
+        {
+          "text": "term 81"
+        },
+        {
+          "text": "term 82"
+        },
+        {
+          "text": "term 83"
+        },
+        {
+          "text": "term 84"
+        },
+        {
+          "text": "term 85"
+        },
+        {
+          "text": "term 86"
+        },
+        {
+          "text": "term 87"
+        },
+        {
+          "text": "term 88"
+        },
+        {
+          "text": "term 89"
+        },
+        {
+          "text": "term 90"
+        },
+        {
+          "text": "term 91"
+        },
+        {
+          "text": "term 92"
+        },
+        {
+          "text": "term 93"
+        },
+        {
+          "text": "term 94"
+        },
+        {
+          "text": "term 95"
+        },
+        {
+          "text": "term 96"
+        },
+        {
+          "text": "term 97"
+        },
+        {
+          "text": "term 98"
+        },
+        {
+          "text": "term 99"
+        },
+        {
+          "text": "term 100"
+        },
+        {
+          "text": "term 101"
+        },
+        {
+          "text": "term 102"
+        },
+        {
+          "text": "term 103"
+        },
+        {
+          "text": "term 104"
+        },
+        {
+          "text": "term 105"
+        },
+        {
+          "text": "term 106"
+        },
+        {
+          "text": "term 107"
+        },
+        {
+          "text": "term 108"
+        },
+        {
+          "text": "term 109"
+        },
+        {
+          "text": "term 110"
+        },
+        {
+          "text": "term 111"
+        },
+        {
+          "text": "term 112"
+        },
+        {
+          "text": "term 113"
+        },
+        {
+          "text": "term 114"
+        },
+        {
+          "text": "term 115"
+        },
+        {
+          "text": "term 116"
+        },
+        {
+          "text": "term 117"
+        },
+        {
+          "text": "term 118"
+        },
+        {
+          "text": "term 119"
+        },
+        {
+          "text": "term 120"
+        },
+        {
+          "text": "term 121"
+        },
+        {
+          "text": "term 122"
+        },
+        {
+          "text": "term 123"
+        },
+        {
+          "text": "term 124"
+        },
+        {
+          "text": "term 125"
+        },
+        {
+          "text": "term 126"
+        },
+        {
+          "text": "term 127"
+        },
+        {
+          "text": "term 128"
+        },
+        {
+          "text": "term 129"
+        },
+        {
+          "text": "term 130"
+        },
+        {
+          "text": "term 131"
+        },
+        {
+          "text": "term 132"
+        },
+        {
+          "text": "term 133"
+        },
+        {
+          "text": "term 134"
+        },
+        {
+          "text": "term 135"
+        },
+        {
+          "text": "term 136"
+        },
+        {
+          "text": "term 137"
+        },
+        {
+          "text": "term 138"
+        },
+        {
+          "text": "term 139"
+        },
+        {
+          "text": "term 140"
+        },
+        {
+          "text": "term 141"
+        },
+        {
+          "text": "term 142"
+        },
+        {
+          "text": "term 143"
+        },
+        {
+          "text": "term 144"
+        },
+        {
+          "text": "term 145"
+        },
+        {
+          "text": "term 146"
+        },
+        {
+          "text": "term 147"
+        },
+        {
+          "text": "term 148"
+        },
+        {
+          "text": "term 149"
+        },
+        {
+          "text": "term 150"
+        },
+        {
+          "text": "term 151"
+        },
+        {
+          "text": "term 152"
+        },
+        {
+          "text": "term 153"
+        },
+        {
+          "text": "term 154"
+        },
+        {
+          "text": "term 155"
+        },
+        {
+          "text": "term 156"
+        },
+        {
+          "text": "term 157"
+        },
+        {
+          "text": "term 158"
+        },
+        {
+          "text": "term 159"
+        },
+        {
+          "text": "term 160"
+        },
+        {
+          "text": "term 161"
+        },
+        {
+          "text": "term 162"
+        },
+        {
+          "text": "term 163"
+        },
+        {
+          "text": "term 164"
+        },
+        {
+          "text": "term 165"
+        },
+        {
+          "text": "term 166"
+        },
+        {
+          "text": "term 167"
+        },
+        {
+          "text": "term 168"
+        },
+        {
+          "text": "term 169"
+        },
+        {
+          "text": "term 170"
+        },
+        {
+          "text": "term 171"
+        },
+        {
+          "text": "term 172"
+        },
+        {
+          "text": "term 173"
+        },
+        {
+          "text": "term 174"
+        },
+        {
+          "text": "term 175"
+        },
+        {
+          "text": "term 176"
+        },
+        {
+          "text": "term 177"
+        },
+        {
+          "text": "term 178"
+        },
+        {
+          "text": "term 179"
+        },
+        {
+          "text": "term 180"
+        },
+        {
+          "text": "term 181"
+        },
+        {
+          "text": "term 182"
+        },
+        {
+          "text": "term 183"
+        },
+        {
+          "text": "term 184"
+        },
+        {
+          "text": "term 185"
+        },
+        {
+          "text": "term 186"
+        },
+        {
+          "text": "term 187"
+        },
+        {
+          "text": "term 188"
+        },
+        {
+          "text": "term 189"
+        },
+        {
+          "text": "term 190"
+        },
+        {
+          "text": "term 191"
+        },
+        {
+          "text": "term 192"
+        },
+        {
+          "text": "term 193"
+        },
+        {
+          "text": "term 194"
+        },
+        {
+          "text": "term 195"
+        },
+        {
+          "text": "term 196"
+        },
+        {
+          "text": "term 197"
+        },
+        {
+          "text": "term 198"
+        },
+        {
+          "text": "term 199"
+        },
+        {
+          "text": "term 200"
+        },
+        {
+          "text": "term 201"
+        },
+        {
+          "text": "term 202"
+        },
+        {
+          "text": "term 203"
+        },
+        {
+          "text": "term 204"
+        },
+        {
+          "text": "term 205"
+        },
+        {
+          "text": "term 206"
+        },
+        {
+          "text": "term 207"
+        },
+        {
+          "text": "term 208"
+        },
+        {
+          "text": "term 209"
+        },
+        {
+          "text": "term 210"
+        },
+        {
+          "text": "term 211"
+        },
+        {
+          "text": "term 212"
+        },
+        {
+          "text": "term 213"
+        },
+        {
+          "text": "term 214"
+        },
+        {
+          "text": "term 215"
+        },
+        {
+          "text": "term 216"
+        },
+        {
+          "text": "term 217"
+        },
+        {
+          "text": "term 218"
+        },
+        {
+          "text": "term 219"
+        },
+        {
+          "text": "term 220"
+        },
+        {
+          "text": "term 221"
+        },
+        {
+          "text": "term 222"
+        },
+        {
+          "text": "term 223"
+        },
+        {
+          "text": "term 224"
+        },
+        {
+          "text": "term 225"
+        },
+        {
+          "text": "term 226"
+        },
+        {
+          "text": "term 227"
+        },
+        {
+          "text": "term 228"
+        },
+        {
+          "text": "term 229"
+        },
+        {
+          "text": "term 230"
+        },
+        {
+          "text": "term 231"
+        },
+        {
+          "text": "term 232"
+        },
+        {
+          "text": "term 233"
+        },
+        {
+          "text": "term 234"
+        },
+        {
+          "text": "term 235"
+        },
+        {
+          "text": "term 236"
+        },
+        {
+          "text": "term 237"
+        },
+        {
+          "text": "term 238"
+        },
+        {
+          "text": "term 239"
+        },
+        {
+          "text": "term 240"
+        },
+        {
+          "text": "term 241"
+        },
+        {
+          "text": "term 242"
+        },
+        {
+          "text": "term 243"
+        },
+        {
+          "text": "term 244"
+        },
+        {
+          "text": "term 245"
+        },
+        {
+          "text": "term 246"
+        },
+        {
+          "text": "term 247"
+        },
+        {
+          "text": "term 248"
+        },
+        {
+          "text": "term 249"
+        },
+        {
+          "text": "term 250"
+        },
+        {
+          "text": "term 251"
+        },
+        {
+          "text": "term 252"
+        },
+        {
+          "text": "term 253"
+        },
+        {
+          "text": "term 254"
+        },
+        {
+          "text": "term 255"
+        },
+        {
+          "text": "term 256"
+        },
+        {
+          "text": "term 257"
+        },
+        {
+          "text": "term 258"
+        },
+        {
+          "text": "term 259"
+        },
+        {
+          "text": "term 260"
+        },
+        {
+          "text": "term 261"
+        },
+        {
+          "text": "term 262"
+        },
+        {
+          "text": "term 263"
+        },
+        {
+          "text": "term 264"
+        },
+        {
+          "text": "term 265"
+        },
+        {
+          "text": "term 266"
+        },
+        {
+          "text": "term 267"
+        },
+        {
+          "text": "term 268"
+        },
+        {
+          "text": "term 269"
+        },
+        {
+          "text": "term 270"
+        },
+        {
+          "text": "term 271"
+        },
+        {
+          "text": "term 272"
+        },
+        {
+          "text": "term 273"
+        },
+        {
+          "text": "term 274"
+        },
+        {
+          "text": "term 275"
+        },
+        {
+          "text": "term 276"
+        },
+        {
+          "text": "term 277"
+        },
+        {
+          "text": "term 278"
+        },
+        {
+          "text": "term 279"
+        },
+        {
+          "text": "term 280"
+        },
+        {
+          "text": "term 281"
+        },
+        {
+          "text": "term 282"
+        },
+        {
+          "text": "term 283"
+        },
+        {
+          "text": "term 284"
+        },
+        {
+          "text": "term 285"
+        },
+        {
+          "text": "term 286"
+        },
+        {
+          "text": "term 287"
+        },
+        {
+          "text": "term 288"
+        },
+        {
+          "text": "term 289"
+        },
+        {
+          "text": "term 290"
+        },
+        {
+          "text": "term 291"
+        },
+        {
+          "text": "term 292"
+        },
+        {
+          "text": "term 293"
+        },
+        {
+          "text": "term 294"
+        },
+        {
+          "text": "term 295"
+        },
+        {
+          "text": "term 296"
+        },
+        {
+          "text": "term 297"
+        },
+        {
+          "text": "term 298"
+        },
+        {
+          "text": "term 299"
+        },
+        {
+          "text": "term 300"
+        },
+        {
+          "text": "term 301"
+        },
+        {
+          "text": "term 302"
+        },
+        {
+          "text": "term 303"
+        },
+        {
+          "text": "term 304"
+        },
+        {
+          "text": "term 305"
+        },
+        {
+          "text": "term 306"
+        },
+        {
+          "text": "term 307"
+        },
+        {
+          "text": "term 308"
+        },
+        {
+          "text": "term 309"
+        },
+        {
+          "text": "term 310"
+        },
+        {
+          "text": "term 311"
+        },
+        {
+          "text": "term 312"
+        },
+        {
+          "text": "term 313"
+        },
+        {
+          "text": "term 314"
+        },
+        {
+          "text": "term 315"
+        },
+        {
+          "text": "term 316"
+        },
+        {
+          "text": "term 317"
+        },
+        {
+          "text": "term 318"
+        },
+        {
+          "text": "term 319"
+        },
+        {
+          "text": "term 320"
+        },
+        {
+          "text": "term 321"
+        },
+        {
+          "text": "term 322"
+        },
+        {
+          "text": "term 323"
+        },
+        {
+          "text": "term 324"
+        },
+        {
+          "text": "term 325"
+        },
+        {
+          "text": "term 326"
+        },
+        {
+          "text": "term 327"
+        },
+        {
+          "text": "term 328"
+        },
+        {
+          "text": "term 329"
+        },
+        {
+          "text": "term 330"
+        },
+        {
+          "text": "term 331"
+        },
+        {
+          "text": "term 332"
+        },
+        {
+          "text": "term 333"
+        },
+        {
+          "text": "term 334"
+        },
+        {
+          "text": "term 335"
+        },
+        {
+          "text": "term 336"
+        },
+        {
+          "text": "term 337"
+        },
+        {
+          "text": "term 338"
+        },
+        {
+          "text": "term 339"
+        },
+        {
+          "text": "term 340"
+        },
+        {
+          "text": "term 341"
+        },
+        {
+          "text": "term 342"
+        },
+        {
+          "text": "term 343"
+        },
+        {
+          "text": "term 344"
+        },
+        {
+          "text": "term 345"
+        },
+        {
+          "text": "term 346"
+        },
+        {
+          "text": "term 347"
+        },
+        {
+          "text": "term 348"
+        },
+        {
+          "text": "term 349"
+        },
+        {
+          "text": "term 350"
+        },
+        {
+          "text": "term 351"
+        },
+        {
+          "text": "term 352"
+        },
+        {
+          "text": "term 353"
+        },
+        {
+          "text": "term 354"
+        },
+        {
+          "text": "term 355"
+        },
+        {
+          "text": "term 356"
+        },
+        {
+          "text": "term 357"
+        },
+        {
+          "text": "term 358"
+        },
+        {
+          "text": "term 359"
+        },
+        {
+          "text": "term 360"
+        },
+        {
+          "text": "term 361"
+        },
+        {
+          "text": "term 362"
+        },
+        {
+          "text": "term 363"
+        },
+        {
+          "text": "term 364"
+        },
+        {
+          "text": "term 365"
+        },
+        {
+          "text": "term 366"
+        },
+        {
+          "text": "term 367"
+        },
+        {
+          "text": "term 368"
+        },
+        {
+          "text": "term 369"
+        },
+        {
+          "text": "term 370"
+        },
+        {
+          "text": "term 371"
+        },
+        {
+          "text": "term 372"
+        },
+        {
+          "text": "term 373"
+        },
+        {
+          "text": "term 374"
+        },
+        {
+          "text": "term 375"
+        },
+        {
+          "text": "term 376"
+        },
+        {
+          "text": "term 377"
+        },
+        {
+          "text": "term 378"
+        },
+        {
+          "text": "term 379"
+        },
+        {
+          "text": "term 380"
+        },
+        {
+          "text": "term 381"
+        },
+        {
+          "text": "term 382"
+        },
+        {
+          "text": "term 383"
+        },
+        {
+          "text": "term 384"
+        },
+        {
+          "text": "term 385"
+        },
+        {
+          "text": "term 386"
+        },
+        {
+          "text": "term 387"
+        },
+        {
+          "text": "term 388"
+        },
+        {
+          "text": "term 389"
+        },
+        {
+          "text": "term 390"
+        },
+        {
+          "text": "term 391"
+        },
+        {
+          "text": "term 392"
+        },
+        {
+          "text": "term 393"
+        },
+        {
+          "text": "term 394"
+        },
+        {
+          "text": "term 395"
+        },
+        {
+          "text": "term 396"
+        },
+        {
+          "text": "term 397"
+        },
+        {
+          "text": "term 398"
+        },
+        {
+          "text": "term 399"
+        },
+        {
+          "text": "term 400"
+        },
+        {
+          "text": "term 401"
+        },
+        {
+          "text": "term 402"
+        },
+        {
+          "text": "term 403"
+        },
+        {
+          "text": "term 404"
+        },
+        {
+          "text": "term 405"
+        },
+        {
+          "text": "term 406"
+        },
+        {
+          "text": "term 407"
+        },
+        {
+          "text": "term 408"
+        },
+        {
+          "text": "term 409"
+        },
+        {
+          "text": "term 410"
+        },
+        {
+          "text": "term 411"
+        },
+        {
+          "text": "term 412"
+        },
+        {
+          "text": "term 413"
+        },
+        {
+          "text": "term 414"
+        },
+        {
+          "text": "term 415"
+        },
+        {
+          "text": "term 416"
+        },
+        {
+          "text": "term 417"
+        },
+        {
+          "text": "term 418"
+        },
+        {
+          "text": "term 419"
+        },
+        {
+          "text": "term 420"
+        },
+        {
+          "text": "term 421"
+        },
+        {
+          "text": "term 422"
+        },
+        {
+          "text": "term 423"
+        },
+        {
+          "text": "term 424"
+        },
+        {
+          "text": "term 425"
+        },
+        {
+          "text": "term 426"
+        },
+        {
+          "text": "term 427"
+        },
+        {
+          "text": "term 428"
+        },
+        {
+          "text": "term 429"
+        },
+        {
+          "text": "term 430"
+        },
+        {
+          "text": "term 431"
+        },
+        {
+          "text": "term 432"
+        },
+        {
+          "text": "term 433"
+        },
+        {
+          "text": "term 434"
+        },
+        {
+          "text": "term 435"
+        },
+        {
+          "text": "term 436"
+        },
+        {
+          "text": "term 437"
+        },
+        {
+          "text": "term 438"
+        },
+        {
+          "text": "term 439"
+        },
+        {
+          "text": "term 440"
+        },
+        {
+          "text": "term 441"
+        },
+        {
+          "text": "term 442"
+        },
+        {
+          "text": "term 443"
+        },
+        {
+          "text": "term 444"
+        },
+        {
+          "text": "term 445"
+        },
+        {
+          "text": "term 446"
+        },
+        {
+          "text": "term 447"
+        },
+        {
+          "text": "term 448"
+        },
+        {
+          "text": "term 449"
+        },
+        {
+          "text": "term 450"
+        },
+        {
+          "text": "term 451"
+        },
+        {
+          "text": "term 452"
+        },
+        {
+          "text": "term 453"
+        },
+        {
+          "text": "term 454"
+        },
+        {
+          "text": "term 455"
+        },
+        {
+          "text": "term 456"
+        },
+        {
+          "text": "term 457"
+        },
+        {
+          "text": "term 458"
+        },
+        {
+          "text": "term 459"
+        },
+        {
+          "text": "term 460"
+        },
+        {
+          "text": "term 461"
+        },
+        {
+          "text": "term 462"
+        },
+        {
+          "text": "term 463"
+        },
+        {
+          "text": "term 464"
+        },
+        {
+          "text": "term 465"
+        },
+        {
+          "text": "term 466"
+        },
+        {
+          "text": "term 467"
+        },
+        {
+          "text": "term 468"
+        },
+        {
+          "text": "term 469"
+        },
+        {
+          "text": "term 470"
+        },
+        {
+          "text": "term 471"
+        },
+        {
+          "text": "term 472"
+        },
+        {
+          "text": "term 473"
+        },
+        {
+          "text": "term 474"
+        },
+        {
+          "text": "term 475"
+        },
+        {
+          "text": "term 476"
+        },
+        {
+          "text": "term 477"
+        },
+        {
+          "text": "term 478"
+        },
+        {
+          "text": "term 479"
+        },
+        {
+          "text": "term 480"
+        },
+        {
+          "text": "term 481"
+        },
+        {
+          "text": "term 482"
+        },
+        {
+          "text": "term 483"
+        },
+        {
+          "text": "term 484"
+        },
+        {
+          "text": "term 485"
+        },
+        {
+          "text": "term 486"
+        },
+        {
+          "text": "term 487"
+        },
+        {
+          "text": "term 488"
+        },
+        {
+          "text": "term 489"
+        },
+        {
+          "text": "term 490"
+        },
+        {
+          "text": "term 491"
+        },
+        {
+          "text": "term 492"
+        },
+        {
+          "text": "term 493"
+        },
+        {
+          "text": "term 494"
+        },
+        {
+          "text": "term 495"
+        },
+        {
+          "text": "term 496"
+        },
+        {
+          "text": "term 497"
+        },
+        {
+          "text": "term 498"
+        },
+        {
+          "text": "term 499"
+        }
+      ],
+      "expect": {
+        "error": "TooManyTerms",
+        "limit": 500
+      }
+    },
+    {
+      "name": "control character U+0000 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a\u0000b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 0
+      }
+    },
+    {
+      "name": "control character U+0007 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a\u0007b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 7
+      }
+    },
+    {
+      "name": "control character U+000A is rejected",
+      "op": "add",
+      "input": {
+        "text": "a\nb"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 10
+      }
+    },
+    {
+      "name": "control character U+0009 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a\tb"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 9
+      }
+    },
+    {
+      "name": "control character U+007F is rejected",
+      "op": "add",
+      "input": {
+        "text": "ab"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 127
+      }
+    },
+    {
+      "name": "control character U+0085 is rejected",
+      "op": "add",
+      "input": {
+        "text": "ab"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 133
+      }
+    },
+    {
+      "name": "control character U+009F is rejected",
+      "op": "add",
+      "input": {
+        "text": "ab"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 159
+      }
+    },
+    {
+      "name": "control character in a variant is rejected",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "variants": [
+          "x\u0001"
+        ]
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "variants[0]",
+        "codePoint": 1
+      }
+    },
+    {
+      "name": "control character in a fixed translation is rejected",
+      "op": "add",
+      "input": {
+        "text": "A",
+        "fixed": {
+          "en": "x\u0001"
+        }
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "fixed.en",
+        "codePoint": 1
+      }
+    },
+    {
+      "name": "bidi override U+202A is rejected",
+      "op": "add",
+      "input": {
+        "text": "a‪b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8234
+      }
+    },
+    {
+      "name": "bidi override U+202B is rejected",
+      "op": "add",
+      "input": {
+        "text": "a‫b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8235
+      }
+    },
+    {
+      "name": "bidi override U+202C is rejected",
+      "op": "add",
+      "input": {
+        "text": "a‬b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8236
+      }
+    },
+    {
+      "name": "bidi override U+202D is rejected",
+      "op": "add",
+      "input": {
+        "text": "a‭b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8237
+      }
+    },
+    {
+      "name": "bidi override U+202E is rejected",
+      "op": "add",
+      "input": {
+        "text": "a‮b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8238
+      }
+    },
+    {
+      "name": "bidi override U+2066 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a⁦b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8294
+      }
+    },
+    {
+      "name": "bidi override U+2067 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a⁧b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8295
+      }
+    },
+    {
+      "name": "bidi override U+2068 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a⁨b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8296
+      }
+    },
+    {
+      "name": "bidi override U+2069 is rejected",
+      "op": "add",
+      "input": {
+        "text": "a⁩b"
+      },
+      "expect": {
+        "error": "ForbiddenCharacter",
+        "field": "text",
+        "codePoint": 8297
+      }
+    },
+    {
+      "name": "U+2030 next to the bidi range is fine",
+      "op": "add",
+      "input": {
+        "text": "a‰b"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "U+2065 next to the bidi range is fine",
+      "op": "add",
+      "input": {
+        "text": "a⁥b"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "duplicate text, ignoring case",
+      "op": "add",
+      "input": {
+        "text": "grab"
+      },
+      "existing": [
+        {
+          "text": "Grab",
+          "variants": [
+            "Grab Car"
+          ]
+        }
+      ],
+      "expect": {
+        "error": "DuplicateTerm",
+        "field": "text",
+        "value": "grab"
+      }
+    },
+    {
+      "name": "a variant equal to another term's variant",
+      "op": "add",
+      "input": {
+        "text": "Other",
+        "variants": [
+          "GRAB CAR"
+        ]
+      },
+      "existing": [
+        {
+          "text": "Grab",
+          "variants": [
+            "Grab Car"
+          ]
+        }
+      ],
+      "expect": {
+        "error": "DuplicateTerm",
+        "field": "variants[0]",
+        "value": "GRAB CAR"
+      }
+    },
+    {
+      "name": "a variant equal to its own text",
+      "op": "add",
+      "input": {
+        "text": "X",
+        "variants": [
+          "x"
+        ]
+      },
+      "expect": {
+        "error": "DuplicateTerm",
+        "field": "variants[0]",
+        "value": "x"
+      }
+    },
+    {
+      "name": "two variants equal ignoring case",
+      "op": "add",
+      "input": {
+        "text": "Y",
+        "variants": [
+          "v",
+          "V"
+        ]
+      },
+      "expect": {
+        "error": "DuplicateTerm",
+        "field": "variants[1]",
+        "value": "V"
+      }
+    },
+    {
+      "name": "a term with regex characters is plain text",
+      "op": "add",
+      "input": {
+        "text": "C++ (.*)[a-z]$"
+      },
+      "expect": {
+        "ok": true,
+        "text": "C++ (.*)[a-z]$"
+      }
+    },
+    {
+      "name": "update to the same text in another case is not a duplicate of itself",
+      "op": "update",
+      "existing": [
+        {
+          "text": "Zalo"
+        }
+      ],
+      "target": 0,
+      "input": {
+        "text": "zalo",
+        "variants": [
+          "Zalo App"
+        ]
+      },
+      "expect": {
+        "ok": true,
+        "text": "zalo",
+        "variants": [
+          "Zalo App"
+        ]
+      }
+    },
+    {
+      "name": "update replaces the term in place",
+      "op": "update",
+      "existing": [
+        {
+          "text": "Zalo"
+        },
+        {
+          "text": "Grab"
+        }
+      ],
+      "target": 0,
+      "input": {
+        "text": "Zalo Pay",
+        "fixed": {
+          "en": "ZaloPay"
+        }
+      },
+      "expect": {
+        "ok": true,
+        "text": "Zalo Pay",
+        "fixed": {
+          "en": "ZaloPay"
+        },
+        "allTexts": [
+          "Zalo Pay",
+          "Grab"
+        ]
+      }
+    },
+    {
+      "name": "update of an unknown id",
+      "op": "update",
+      "existing": [
+        {
+          "text": "Zalo"
+        }
+      ],
+      "targetId": "nope",
+      "input": {
+        "text": "x"
+      },
+      "expect": {
+        "error": "UnknownTerm"
+      }
+    },
+    {
+      "name": "remove deletes a term",
+      "op": "remove",
+      "existing": [
+        {
+          "text": "Zalo Pay"
+        },
+        {
+          "text": "Grab"
+        }
+      ],
+      "target": 1,
+      "expect": {
+        "ok": true,
+        "allTexts": [
+          "Zalo Pay"
+        ]
+      }
+    },
+    {
+      "name": "remove of an unknown id",
+      "op": "remove",
+      "existing": [
+        {
+          "text": "Zalo"
+        }
+      ],
+      "targetId": "nope",
+      "expect": {
+        "error": "UnknownTerm"
+      }
+    }
+  ],
+  "load": [
+    {
+      "name": "not json",
+      "content": "{oops",
+      "recovered": true
+    },
+    {
+      "name": "not a list",
+      "content": "{\"a\": 1}",
+      "recovered": true
+    },
+    {
+      "name": "empty file",
+      "content": "",
+      "recovered": true
+    },
+    {
+      "name": "entry of the wrong type",
+      "content": "[1]",
+      "recovered": true
+    },
+    {
+      "name": "entry missing a field",
+      "content": "[{\"id\":\"a\"}]",
+      "recovered": true
+    },
+    {
+      "name": "entry over the limits",
+      "content": "[{\"id\":\"a\",\"text\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"variants\":[],\"fixed\":{},\"origin\":\"user\"}]",
+      "recovered": true
+    },
+    {
+      "name": "duplicate entries",
+      "content": "[{\"id\":\"a\",\"text\":\"Zalo\"},{\"id\":\"b\",\"text\":\"zalo\"}]",
+      "recovered": true
+    },
+    {
+      "name": "a valid list loads",
+      "content": "[{\"id\":\"a\",\"text\":\"Zalo\",\"variants\":[\"Za lo\"],\"fixed\":{\"en\":\"Zalo\"},\"origin\":\"user\"}]",
+      "recovered": false,
+      "texts": [
+        "Zalo"
+      ]
+    },
+    {
+      "name": "an empty list loads",
+      "content": "[]",
+      "recovered": false,
+      "texts": []
+    }
+  ]
+}

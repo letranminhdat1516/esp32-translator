@@ -1,0 +1,584 @@
+{
+  "description": "TermProtector (app/lib/core/term_protector.dart): mask(text, terms, target, placeholder) then restore(translated). Review Focus 3.",
+  "defaultPlaceholder": "Zorvik{n}",
+  "cases": [
+    {
+      "name": "replaces a term with a numbered placeholder",
+      "text": "Tôi ở Bến Thành",
+      "terms": [
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        }
+      ],
+      "target": "en",
+      "masked": "Tôi ở Zorvik1",
+      "isEmpty": false
+    },
+    {
+      "name": "no match leaves the text and restore is a no-op",
+      "text": "Xin chào",
+      "terms": [
+        {
+          "id": "Hà Nội",
+          "text": "Hà Nội"
+        }
+      ],
+      "target": "en",
+      "masked": "Xin chào",
+      "isEmpty": true,
+      "restores": [
+        {
+          "translated": "Hello",
+          "expected": "Hello"
+        }
+      ]
+    },
+    {
+      "name": "no terms leaves the text",
+      "text": "Xin chào",
+      "terms": [],
+      "target": "en",
+      "masked": "Xin chào",
+      "isEmpty": true
+    },
+    {
+      "name": "Review Focus 3: regex characters, overlap, longest first",
+      "text": "Tôi viết C++ ở Q.1 gần Bến Thành rồi tới Chợ Bến Thành",
+      "terms": [
+        {
+          "id": "C++",
+          "text": "C++"
+        },
+        {
+          "id": "Q.1",
+          "text": "Q.1"
+        },
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        },
+        {
+          "id": "Chợ Bến Thành",
+          "text": "Chợ Bến Thành",
+          "fixed": {
+            "en": "Ben Thanh Market"
+          }
+        }
+      ],
+      "target": "en",
+      "masked": "Tôi viết Zorvik1 ở Zorvik2 gần Zorvik3 rồi tới Zorvik4",
+      "restores": [
+        {
+          "translated": "I write Zorvik1 in Zorvik2 near Zorvik3 then to Zorvik4",
+          "expected": "I write C++ in Q.1 near Bến Thành then to Ben Thanh Market"
+        }
+      ]
+    },
+    {
+      "name": "regex metacharacters in a term are matched literally",
+      "text": "gọi (A|B) [x] ^$ .* nhé",
+      "terms": [
+        {
+          "id": "(A|B)",
+          "text": "(A|B)"
+        },
+        {
+          "id": "[x]",
+          "text": "[x]"
+        },
+        {
+          "id": "^$",
+          "text": "^$"
+        },
+        {
+          "id": ".*",
+          "text": ".*"
+        }
+      ],
+      "target": "en",
+      "masked": "gọi Zorvik1 Zorvik2 Zorvik3 Zorvik4 nhé"
+    },
+    {
+      "name": "a lone dot does not match any character",
+      "text": "abc",
+      "terms": [
+        {
+          "id": ".",
+          "text": "."
+        }
+      ],
+      "target": "en",
+      "masked": "abc",
+      "isEmpty": true
+    },
+    {
+      "name": "longest term wins even when listed after the shorter one",
+      "text": "Chợ Bến Thành",
+      "terms": [
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        },
+        {
+          "id": "Chợ Bến Thành",
+          "text": "Chợ Bến Thành"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1"
+    },
+    {
+      "name": "Latin matching is case-insensitive and keeps the spoken form",
+      "text": "đi chợ bến thành nhé",
+      "terms": [
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        }
+      ],
+      "target": "en",
+      "masked": "đi chợ Zorvik1 nhé",
+      "restores": [
+        {
+          "translated": "go to Zorvik1",
+          "expected": "go to bến thành"
+        }
+      ]
+    },
+    {
+      "name": "Latin matching is case-insensitive (upper case)",
+      "text": "BẾN THÀNH",
+      "terms": [
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1"
+    },
+    {
+      "name": "other scripts match exactly",
+      "text": "Москва и москва",
+      "terms": [
+        {
+          "id": "Москва",
+          "text": "Москва"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 и москва"
+    },
+    {
+      "name": "whole words only for spaced scripts",
+      "text": "Anh An ở Q.10 và Q.1",
+      "terms": [
+        {
+          "id": "An",
+          "text": "An"
+        },
+        {
+          "id": "Q.1",
+          "text": "Q.1"
+        }
+      ],
+      "target": "en",
+      "masked": "Anh Zorvik1 ở Q.10 và Zorvik2"
+    },
+    {
+      "name": "no word boundary inside scripts written without spaces",
+      "text": "東京に行く",
+      "terms": [
+        {
+          "id": "東京",
+          "text": "東京"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1に行く"
+    },
+    {
+      "name": "variants are matched and share the term's fixed translation",
+      "text": "Hà Nội và hanoi",
+      "terms": [
+        {
+          "id": "Hà Nội",
+          "text": "Hà Nội",
+          "variants": [
+            "Hanoi"
+          ],
+          "fixed": {
+            "en": "Hanoi"
+          }
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 và Zorvik1",
+      "restores": [
+        {
+          "translated": "Zorvik1 and Zorvik1",
+          "expected": "Hanoi and Hanoi"
+        }
+      ]
+    },
+    {
+      "name": "fixed translation is chosen per target (en)",
+      "text": "Một tô Phở",
+      "terms": [
+        {
+          "id": "Phở",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho noodle soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "target": "en",
+      "masked": "Một tô Zorvik1",
+      "restores": [
+        {
+          "translated": "A bowl of Zorvik1",
+          "expected": "A bowl of Pho noodle soup"
+        }
+      ]
+    },
+    {
+      "name": "fixed translation is chosen per target (ja)",
+      "text": "Một tô Phở",
+      "terms": [
+        {
+          "id": "Phở",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho noodle soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "target": "ja",
+      "masked": "Một tô Zorvik1",
+      "restores": [
+        {
+          "translated": "Zorvik1を一杯",
+          "expected": "フォーを一杯"
+        }
+      ]
+    },
+    {
+      "name": "no fixed translation for the target means verbatim",
+      "text": "Một tô Phở",
+      "terms": [
+        {
+          "id": "Phở",
+          "text": "Phở",
+          "fixed": {
+            "en": "Pho noodle soup",
+            "ja": "フォー"
+          }
+        }
+      ],
+      "target": "fr",
+      "masked": "Một tô Zorvik1",
+      "restores": [
+        {
+          "translated": "Un bol de Zorvik1",
+          "expected": "Un bol de Phở"
+        }
+      ]
+    },
+    {
+      "name": "different spoken forms of one term without fixed get own tokens",
+      "text": "Grab và grab",
+      "terms": [
+        {
+          "id": "Grab",
+          "text": "Grab"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 và Zorvik2",
+      "restores": [
+        {
+          "translated": "Zorvik1 and Zorvik2",
+          "expected": "Grab and grab"
+        }
+      ]
+    },
+    {
+      "name": "repeating the same term reuses its token",
+      "text": "Zalo hoặc Zalo",
+      "terms": [
+        {
+          "id": "Zalo",
+          "text": "Zalo"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 hoặc Zorvik1",
+      "restores": [
+        {
+          "translated": "Zorvik1 or Zorvik1",
+          "expected": "Zalo or Zalo"
+        },
+        {
+          "translated": "Zorvik1 or nothing",
+          "expected": null
+        }
+      ]
+    },
+    {
+      "name": "numbers skip tokens already present in the text; such a number may stay",
+      "text": "Zorvik1 là Zalo",
+      "terms": [
+        {
+          "id": "Zalo",
+          "text": "Zalo"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 là Zorvik2",
+      "restores": [
+        {
+          "translated": "Zorvik1 is Zorvik2",
+          "expected": "Zorvik1 is Zalo"
+        }
+      ]
+    },
+    {
+      "name": "a custom placeholder shape",
+      "text": "ở Hà Nội",
+      "terms": [
+        {
+          "id": "Hà Nội",
+          "text": "Hà Nội"
+        }
+      ],
+      "target": "en",
+      "placeholder": "[[{n}]]",
+      "masked": "ở [[1]]",
+      "restores": [
+        {
+          "translated": "in [[1]]",
+          "expected": "in Hà Nội"
+        }
+      ]
+    },
+    {
+      "name": "a placeholder without {n} is rejected",
+      "text": "x",
+      "terms": [
+        {
+          "id": "x",
+          "text": "x"
+        }
+      ],
+      "target": "en",
+      "placeholder": "Zorvik",
+      "error": "invalidPlaceholder"
+    },
+    {
+      "name": "a placeholder with {n} twice is rejected",
+      "text": "x",
+      "terms": [
+        {
+          "id": "x",
+          "text": "x"
+        }
+      ],
+      "target": "en",
+      "placeholder": "A{n}B{n}",
+      "error": "invalidPlaceholder"
+    },
+    {
+      "name": "a placeholder that is only {n} is rejected",
+      "text": "x",
+      "terms": [
+        {
+          "id": "x",
+          "text": "x"
+        }
+      ],
+      "target": "en",
+      "placeholder": "{n}",
+      "error": "invalidPlaceholder"
+    },
+    {
+      "name": "empty terms are ignored",
+      "text": "abc",
+      "terms": [
+        {
+          "id": "",
+          "text": ""
+        }
+      ],
+      "target": "en",
+      "masked": "abc",
+      "isEmpty": true
+    },
+    {
+      "name": "a lost placeholder makes restore fail",
+      "text": "Q.1 và Bến Thành",
+      "terms": [
+        {
+          "id": "Q.1",
+          "text": "Q.1"
+        },
+        {
+          "id": "Bến Thành",
+          "text": "Bến Thành"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 và Zorvik2",
+      "restores": [
+        {
+          "translated": "District one and Zorvik2",
+          "expected": null
+        },
+        {
+          "translated": "Zorvik1 and Zorvik2",
+          "expected": "Q.1 and Bến Thành"
+        }
+      ]
+    },
+    {
+      "name": "tokens come back in any case and order",
+      "text": "A và B",
+      "terms": [
+        {
+          "id": "A",
+          "text": "A"
+        },
+        {
+          "id": "B",
+          "text": "B"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 và Zorvik2",
+      "restores": [
+        {
+          "translated": "zorvik2 then ZORVIK1",
+          "expected": "B then A"
+        }
+      ]
+    },
+    {
+      "name": "Zorvik1 is not confused with Zorvik10",
+      "text": "T1 T2 T3 T4 T5 T6 T7 T8 T9 T10",
+      "terms": [
+        {
+          "id": "T1",
+          "text": "T1"
+        },
+        {
+          "id": "T2",
+          "text": "T2"
+        },
+        {
+          "id": "T3",
+          "text": "T3"
+        },
+        {
+          "id": "T4",
+          "text": "T4"
+        },
+        {
+          "id": "T5",
+          "text": "T5"
+        },
+        {
+          "id": "T6",
+          "text": "T6"
+        },
+        {
+          "id": "T7",
+          "text": "T7"
+        },
+        {
+          "id": "T8",
+          "text": "T8"
+        },
+        {
+          "id": "T9",
+          "text": "T9"
+        },
+        {
+          "id": "T10",
+          "text": "T10"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 Zorvik2 Zorvik3 Zorvik4 Zorvik5 Zorvik6 Zorvik7 Zorvik8 Zorvik9 Zorvik10",
+      "restores": [
+        {
+          "translated": "Zorvik1 Zorvik2 Zorvik3 Zorvik4 Zorvik5 Zorvik6 Zorvik7 Zorvik8 Zorvik9 Zorvik10",
+          "expected": "T1 T2 T3 T4 T5 T6 T7 T8 T9 T10"
+        }
+      ]
+    },
+    {
+      "name": "restored text is not scanned again",
+      "text": "a Zorvik2 b",
+      "terms": [
+        {
+          "id": "Zorvik2",
+          "text": "Zorvik2",
+          "fixed": {
+            "en": "Zorvik1"
+          }
+        }
+      ],
+      "target": "en",
+      "masked": "a Zorvik1 b",
+      "restores": [
+        {
+          "translated": "x Zorvik1 y",
+          "expected": "x Zorvik1 y"
+        }
+      ]
+    },
+    {
+      "name": "a duplicated placeholder makes restore fail",
+      "text": "Tôi dùng Zalo",
+      "terms": [
+        {
+          "id": "Zalo",
+          "text": "Zalo"
+        }
+      ],
+      "target": "en",
+      "masked": "Tôi dùng Zorvik1",
+      "restores": [
+        {
+          "translated": "Zorvik1 Zorvik1",
+          "expected": null
+        }
+      ]
+    },
+    {
+      "name": "a placeholder the translator invented makes restore fail",
+      "text": "A và B",
+      "terms": [
+        {
+          "id": "A",
+          "text": "A"
+        },
+        {
+          "id": "B",
+          "text": "B"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 và Zorvik2",
+      "restores": [
+        {
+          "translated": "Zorvik1 Zorvik2 Zorvik9",
+          "expected": null
+        }
+      ]
+    }
+  ]
+}

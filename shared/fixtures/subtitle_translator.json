@@ -1,0 +1,640 @@
+{
+  "description": "SubtitleTranslator (app/lib/core/subtitle_translator.dart). The fake translator records every request, waits delayMs, then throws for texts in `failing` or returns the text upper-cased. Steps run in order; consecutive non-wait steps are one synchronous burst.",
+  "scenarios": [
+    {
+      "name": "finals are translated once and joined",
+      "translator": {
+        "delayMs": 5
+      },
+      "steps": [
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "xin"
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "xin chào"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "xin chào"
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": ""
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "anh"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "anh khỏe không"
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": ""
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "expect": {
+        "results": {
+          "1": "XIN CHÀO ANH KHỎE KHÔNG"
+        },
+        "requestCounts": [
+          {
+            "text": "xin chào",
+            "max": 2
+          },
+          {
+            "text": "anh khỏe không",
+            "exactly": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "late final of an earlier turn lands in that turn",
+      "translator": {
+        "delayMs": 50
+      },
+      "steps": [
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "một"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "hai"
+        },
+        {
+          "op": "partial",
+          "turn": 2,
+          "text": "ba"
+        },
+        {
+          "op": "wait",
+          "ms": 400
+        }
+      ],
+      "expect": {
+        "results": {
+          "1": "MỘT HAI",
+          "2": "BA"
+        }
+      }
+    },
+    {
+      "name": "a failed translation keeps the volatile translation",
+      "translator": {
+        "delayMs": 5,
+        "failing": [
+          "bốn năm"
+        ]
+      },
+      "steps": [
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "bốn"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "bốn năm"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "expect": {
+        "results": {
+          "1": "BỐN"
+        }
+      }
+    },
+    {
+      "name": "request length does not grow with the turn",
+      "translator": {
+        "delayMs": 1
+      },
+      "steps": [
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 0"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 0 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 1"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 1 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 2"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 2 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 3"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 3 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 4"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 4 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 5"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 5 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 6"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 6 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 7"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 7 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 8"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 8 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 9"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 9 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 10"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 10 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 11"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 11 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 12"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 12 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 13"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 13 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 14"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 14 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 15"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 15 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 16"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 16 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 17"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 17 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 18"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 18 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 19"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 19 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 20"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 20 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 21"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 21 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 22"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 22 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 23"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 23 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 24"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 24 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 25"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 25 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 26"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 26 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 27"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 27 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 28"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 28 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "partial",
+          "turn": 1,
+          "text": "câu số 29"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "câu số 29 xong"
+        },
+        {
+          "op": "wait",
+          "ms": 5
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "expect": {
+        "maxRequestLength": 14,
+        "wordCounts": {
+          "1": 120
+        }
+      }
+    },
+    {
+      "name": "empty phrases are not translated",
+      "translator": {
+        "delayMs": 5
+      },
+      "steps": [
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "một"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": ""
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "hai"
+        },
+        {
+          "op": "wait",
+          "ms": 200
+        }
+      ],
+      "expect": {
+        "results": {
+          "1": "MỘT HAI"
+        },
+        "requestCounts": [
+          {
+            "text": "",
+            "exactly": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "reset drops pending work",
+      "translator": {
+        "delayMs": 50
+      },
+      "steps": [
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "một"
+        },
+        {
+          "op": "final",
+          "turn": 1,
+          "text": "hai"
+        },
+        {
+          "op": "reset"
+        },
+        {
+          "op": "wait",
+          "ms": 300
+        }
+      ],
+      "expect": {
+        "emptyTurns": [
+          1
+        ]
+      }
+    }
+  ]
+}
