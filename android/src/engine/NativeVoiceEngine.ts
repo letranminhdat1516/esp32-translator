@@ -192,7 +192,11 @@ export class NativeVoiceEngineAdapter implements VoiceEngine {
     ];
   }
 
-  /** Converts and emits; a malformed native event is dropped with a warning, never thrown into native code. */
+  /**
+   * Converts and emits. Nothing is ever thrown back into the native emitter callback: a malformed
+   * native event is dropped with `console.warn`; a handler that throws is logged with
+   * `console.error` (the other handlers have still run, see `TypedEmitter.emit`).
+   */
   private forward<K extends keyof VoiceEngineEvents>(
     event: K,
     convert: () => VoiceEngineEvents[K],
@@ -204,7 +208,11 @@ export class NativeVoiceEngineAdapter implements VoiceEngine {
       console.warn(`VoiceEngine: dropped ${event} event: ${(e as Error).message}`);
       return;
     }
-    this.events.emit(event, payload);
+    try {
+      this.events.emit(event, payload);
+    } catch (e) {
+      console.error(`VoiceEngine: a ${event} handler threw`, e);
+    }
   }
 
   /** Maps a rejection whose `code` names an `EngineError` (else `fallback`); rethrows anything else. */
