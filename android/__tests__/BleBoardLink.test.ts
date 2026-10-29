@@ -1,11 +1,11 @@
 // Port of app/test/board/ble_board_link_test.dart (every case, same names), plus the gaps the
 // Track F review listed (dispose, power-off while connecting, label before ready) and Review
 // Focus 1 (a stale write failing after a reset/reconnect never clears the new queue).
-import {BleBoardLink} from '../src/board/BleBoardLink';
-import {BoardControl, BoardState} from '../src/board/BoardLink';
-import {frameText, parseBoardInfo, timeFrame} from '../src/board/protocol';
-import {FontSets, boardInfoEquals, legacyBoardInfo} from '../src/core/model';
-import {Deferred, FakeAdapter, FakeDevice, infoBytes, payloadOf} from './fakeBle';
+import { BleBoardLink } from '../src/board/BleBoardLink';
+import { BoardControl, BoardState } from '../src/board/BoardLink';
+import { frameText, parseBoardInfo, timeFrame } from '../src/board/protocol';
+import { FontSets, boardInfoEquals, legacyBoardInfo } from '../src/core/model';
+import { Deferred, FakeAdapter, FakeDevice, infoBytes, payloadOf } from './fakeBle';
 
 const clock = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
 
@@ -41,7 +41,7 @@ async function start(dev: FakeDevice, viaScan = true): Promise<void> {
   } else {
     adapter.known = dev;
   }
-  makeLink({retryDelayMs: 0, now: () => clock});
+  makeLink({ retryDelayMs: 0, now: () => clock });
   adapter.power(true);
   await until(() => states.includes('ready'));
 }
@@ -86,7 +86,7 @@ test('info is read from 0005; defaults when absent', async () => {
   link.dispose();
   adapter = new FakeAdapter();
   await start(new FakeDevice());
-  expect(boardInfoEquals(link.info, {protocolVersion: 0, fontSets: FontSets.latinVI})).toBe(true);
+  expect(boardInfoEquals(link.info, { protocolVersion: 0, fontSets: FontSets.latinVI })).toBe(true);
 });
 
 test('an unreadable or short 0005 counts as legacy: no label', async () => {
@@ -112,8 +112,8 @@ test('audio is raw; control notify becomes mic events', async () => {
   await settle();
   expect(audio.map(a => Array.from(a))).toEqual([[9, 8, 7]]);
   expect(ctl).toEqual([
-    {type: 'micChanged', on: true},
-    {type: 'micChanged', on: false},
+    { type: 'micChanged', on: true },
+    { type: 'micChanged', on: false },
   ]);
 });
 
@@ -147,7 +147,7 @@ test('a new text replaces unsent chunks of the previous one', async () => {
 });
 
 test('sendText and setBoardMic before ready do nothing', async () => {
-  makeLink({retryDelayMs: 0});
+  makeLink({ retryDelayMs: 0 });
   await link.sendText('x', 'subtitle');
   await link.setBoardMic(true);
   expect(adapter.scans).toBe(0);
@@ -176,7 +176,7 @@ test('label is sent only when 0005 exists', async () => {
 test('a label set before ready goes out on ready, after the clock', async () => {
   const dev = new FakeDevice(100, infoBytes(1, 0x3));
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 0, now: () => clock});
+  makeLink({ retryDelayMs: 0, now: () => clock });
   await link.sendText('Chủ tịch', 'label');
   expect(dev.writes).toEqual([]);
   adapter.power(true);
@@ -277,7 +277,7 @@ test('Bluetooth off while connecting: the late connect is ignored', async () => 
   const dev = new FakeDevice();
   const gate = (dev.connectGate = new Deferred());
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 0});
+  makeLink({ retryDelayMs: 0 });
   adapter.power(true);
   await until(() => states.includes('connecting'));
   adapter.power(false);
@@ -294,7 +294,7 @@ test('keepalive 0xFF on the control characteristic', async () => {
   jest.useFakeTimers();
   const dev = new FakeDevice();
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 0});
+  makeLink({ retryDelayMs: 0 });
   adapter.power(true);
   await jest.advanceTimersByTimeAsync(0);
   expect(link.currentState).toBe('ready');
@@ -308,7 +308,7 @@ test('keepalive stops when the link drops', async () => {
   jest.useFakeTimers();
   const dev = new FakeDevice();
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 1_000_000, maxRetryDelayMs: 1_000_000});
+  makeLink({ retryDelayMs: 1_000_000, maxRetryDelayMs: 1_000_000 });
   adapter.power(true);
   await jest.advanceTimersByTimeAsync(0);
   dev.drop();
@@ -494,7 +494,7 @@ test('dispose disconnects, stops events and Bluetooth tracking', async () => {
   jest.useFakeTimers();
   const dev = new FakeDevice();
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 0});
+  makeLink({ retryDelayMs: 0 });
   adapter.power(true);
   await jest.advanceTimersByTimeAsync(0);
   const audio: Uint8Array[] = [];
@@ -520,11 +520,92 @@ test('dispose disconnects, stops events and Bluetooth tracking', async () => {
 test('a throwing subscriber does not break the link', async () => {
   const dev = new FakeDevice();
   adapter.scanned.push(dev);
-  makeLink({retryDelayMs: 0});
+  makeLink({ retryDelayMs: 0 });
   link.on('state', () => {
     throw new Error('subscriber bug');
   });
   adapter.power(true);
   await until(() => states.includes('ready'));
   expect(dev.connectCalls).toBe(1);
+});
+
+// --- fix round 1 ---------------------------------------------------------------------------
+
+test('a failed notification enable reconnects instead of a silent ready', async () => {
+  const dev = new FakeDevice();
+  await start(dev);
+  states.length = 0;
+  dev.audio.failNotify(new Error('CCCD write failed'));
+  await until(lastIsReady);
+  expect(states[0]).toBe('scanning');
+  expect(dev.connectCalls).toBe(2);
+});
+
+test('a notification error from before a services reset is ignored', async () => {
+  const dev = new FakeDevice();
+  await start(dev);
+  const stale = dev.control.errorCallbacks[0];
+  states.length = 0;
+  dev.fireServicesReset();
+  await until(lastIsReady);
+  states.length = 0;
+  stale(new Error('stale subscription'));
+  await settle();
+  expect(states).toEqual([]);
+  expect(link.currentState).toBe('ready');
+  expect(dev.connectCalls).toBe(1);
+});
+
+test('a failing keepalive notices the dead link within 20 s', async () => {
+  jest.useFakeTimers();
+  const dev = new FakeDevice();
+  adapter.scanned.push(dev);
+  makeLink();
+  adapter.power(true);
+  await jest.advanceTimersByTimeAsync(0);
+  expect(link.currentState).toBe('ready');
+  dev.control.failWithResponse = new Error('link dead');
+  states.length = 0;
+  await jest.advanceTimersByTimeAsync(20_000);
+  expect(states[0]).toBe('scanning');
+  dev.control.failWithResponse = null;
+  await jest.advanceTimersByTimeAsync(500);
+  expect(dev.connectCalls).toBe(2);
+  expect(link.currentState).toBe('ready');
+});
+
+test('the retry waits for the disconnect to finish', async () => {
+  jest.useFakeTimers();
+  const dev = new FakeDevice();
+  adapter.scanned.push(dev);
+  makeLink();
+  adapter.power(true);
+  await jest.advanceTimersByTimeAsync(0);
+  const gate = (dev.disconnectGate = new Deferred());
+  dev.drop();
+  await jest.advanceTimersByTimeAsync(900); // past the 500 ms retry delay; cancel still pending
+  expect(dev.disconnectCalls).toBe(1);
+  expect(dev.connectCalls).toBe(1);
+  dev.disconnectGate = null;
+  gate.resolve();
+  await jest.advanceTimersByTimeAsync(499); // the retry delay starts only now
+  expect(dev.connectCalls).toBe(1);
+  await jest.advanceTimersByTimeAsync(1);
+  expect(dev.connectCalls).toBe(2);
+});
+
+test('a hung disconnect delays the retry by at most 1 s', async () => {
+  jest.useFakeTimers();
+  const dev = new FakeDevice();
+  adapter.scanned.push(dev);
+  makeLink();
+  adapter.power(true);
+  await jest.advanceTimersByTimeAsync(0);
+  dev.disconnectGate = new Deferred(); // never settles
+  dev.drop();
+  await jest.advanceTimersByTimeAsync(1499); // 1 s timeout + 500 ms retry delay
+  expect(dev.connectCalls).toBe(1);
+  dev.disconnectGate = null;
+  await jest.advanceTimersByTimeAsync(1);
+  expect(dev.connectCalls).toBe(2);
 });

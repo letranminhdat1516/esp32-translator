@@ -1,6 +1,6 @@
 // BlePlxAdapter against a scripted react-native-ble-plx manager, base64 helpers, and the Android
 // permission request.
-import type {Characteristic, Device} from 'react-native-ble-plx';
+import type { Characteristic, Device } from 'react-native-ble-plx';
 import {
   BlePlxAdapter,
   PermissionRequester,
@@ -11,12 +11,12 @@ import {
   requestedMtu,
   toBase64,
 } from '../src/board/BleAdapter';
-import {boardServiceUuid, boardTextUuid} from '../src/board/protocol';
+import { boardServiceUuid, boardTextUuid } from '../src/board/protocol';
 
-const device = (id: string, mtu: number) => ({id, mtu} as unknown as Device);
+const device = (id: string, mtu: number) => ({ id, mtu } as unknown as Device);
 const char = (uuid: string, value: string | null = null) =>
-  ({uuid, value} as unknown as Characteristic);
-const sub = () => ({remove: jest.fn()});
+  ({ uuid, value } as unknown as Characteristic);
+const sub = () => ({ remove: jest.fn() });
 
 function mockManager() {
   const m = {
@@ -36,12 +36,12 @@ function mockManager() {
     writeCharacteristicWithoutResponseForDevice: jest.fn(async () => char('x')),
     monitorCharacteristicForDevice: jest.fn(),
   };
-  return {m, manager: m as unknown as PlxManager};
+  return { m, manager: m as unknown as PlxManager };
 }
 
 test('base64 round-trips every length and matches Buffer', () => {
   for (let n = 0; n < 40; n++) {
-    const data = Uint8Array.from({length: n}, (_, i) => (i * 37 + n) % 256);
+    const data = Uint8Array.from({ length: n }, (_, i) => (i * 37 + n) % 256);
     const b64 = toBase64(data);
     expect(b64).toBe(Buffer.from(data).toString('base64'));
     expect(Array.from(fromBase64(b64))).toEqual(Array.from(data));
@@ -50,7 +50,7 @@ test('base64 round-trips every length and matches Buffer', () => {
 });
 
 test('power: only PoweredOn is on; current state requested; unsubscribe removes', () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   const s = sub();
   m.onStateChange.mockReturnValue(s);
   const seen: boolean[] = [];
@@ -66,7 +66,7 @@ test('power: only PoweredOn is on; current state requested; unsubscribe removes'
 });
 
 test('knownDevice asks for connected devices with the board service', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   const adapter = new BlePlxAdapter(manager);
   expect(await adapter.knownDevice(boardServiceUuid)).toBeNull();
   m.connectedDevices.mockResolvedValueOnce([device('AA', 23)]);
@@ -76,7 +76,7 @@ test('knownDevice asks for connected devices with the board service', async () =
 });
 
 test('scan filters by service, reports devices and errors, stops once', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   const found: string[] = [];
   const errors: unknown[] = [];
   const stop = new BlePlxAdapter(manager).scan(
@@ -97,17 +97,21 @@ test('scan filters by service, reports devices and errors, stops once', async ()
 });
 
 test('a rejected startDeviceScan is reported as a scan error', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   m.startDeviceScan.mockRejectedValueOnce(new Error('BluetoothUnauthorized'));
   const errors: unknown[] = [];
-  new BlePlxAdapter(manager).scan(boardServiceUuid, () => {}, e => errors.push(e));
+  new BlePlxAdapter(manager).scan(
+    boardServiceUuid,
+    () => {},
+    e => errors.push(e),
+  );
   await Promise.resolve();
   await Promise.resolve();
   expect(errors).toHaveLength(1);
 });
 
 test('device: connect negotiates the MTU, refreshes GATT, reports up and drops', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   m.connectedDevices.mockResolvedValueOnce([device('AA', 0)]);
   const s = sub();
   m.onDeviceDisconnected.mockReturnValue(s);
@@ -131,7 +135,7 @@ test('device: connect negotiates the MTU, refreshes GATT, reports up and drops',
 });
 
 test('device: discover maps characteristics; a missing service is empty', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   m.connectedDevices.mockResolvedValue([device('AA', 23)]);
   const d = (await new BlePlxAdapter(manager).knownDevice(boardServiceUuid))!;
   const chars = await d.discover(boardServiceUuid);
@@ -142,7 +146,7 @@ test('device: discover maps characteristics; a missing service is empty', async 
 });
 
 test('characteristic: writes base64 with or without response, reads, monitors', async () => {
-  const {m, manager} = mockManager();
+  const { m, manager } = mockManager();
   m.connectedDevices.mockResolvedValue([device('AA', 23)]);
   const d = (await new BlePlxAdapter(manager).knownDevice(boardServiceUuid))!;
   const c = (await d.discover(boardServiceUuid)).get(boardTextUuid.toLowerCase())!;
@@ -167,7 +171,11 @@ test('characteristic: writes base64 with or without response, reads, monitors', 
   const s = sub();
   m.monitorCharacteristicForDevice.mockReturnValue(s);
   const values: number[][] = [];
-  const stop = await c.subscribe(v => values.push(Array.from(v)));
+  const failures: unknown[] = [];
+  const stop = await c.subscribe(
+    v => values.push(Array.from(v)),
+    e => failures.push(e),
+  );
   const listener = m.monitorCharacteristicForDevice.mock.calls[0][3] as (
     e: unknown,
     c: Characteristic | null,
@@ -176,6 +184,7 @@ test('characteristic: writes base64 with or without response, reads, monitors', 
   listener(new Error('disconnected'), null);
   listener(null, char(id, null));
   expect(values).toEqual([[9, 8, 7]]);
+  expect(failures).toHaveLength(1);
   stop();
   expect(s.remove).toHaveBeenCalled();
 });
@@ -188,12 +197,12 @@ describe('requestBlePermissions', () => {
         Object.fromEntries(ps.map(p => [p, result])),
       ),
     };
-    return {r, requester: r as unknown as PermissionRequester};
+    return { r, requester: r as unknown as PermissionRequester };
   }
 
   test('Android 12+ asks for BLUETOOTH_SCAN and BLUETOOTH_CONNECT', async () => {
-    const {r, requester: q} = requester('granted');
-    expect(await requestBlePermissions({OS: 'android', Version: 31}, q)).toBe(true);
+    const { r, requester: q } = requester('granted');
+    expect(await requestBlePermissions({ OS: 'android', Version: 31 }, q)).toBe(true);
     expect(r.requestMultiple).toHaveBeenCalledWith([
       'android.permission.BLUETOOTH_SCAN',
       'android.permission.BLUETOOTH_CONNECT',
@@ -202,27 +211,27 @@ describe('requestBlePermissions', () => {
   });
 
   test('one denied permission on Android 12+ is a refusal', async () => {
-    const {r, requester: q} = requester('granted');
+    const { r, requester: q } = requester('granted');
     r.requestMultiple.mockResolvedValueOnce({
       'android.permission.BLUETOOTH_SCAN': 'granted',
       'android.permission.BLUETOOTH_CONNECT': 'never_ask_again',
     });
-    expect(await requestBlePermissions({OS: 'android', Version: 34}, q)).toBe(false);
+    expect(await requestBlePermissions({ OS: 'android', Version: 34 }, q)).toBe(false);
   });
 
   test('Android 10–11 ask for fine location', async () => {
     for (const v of [29, 30]) {
-      const {r, requester: q} = requester('granted');
-      expect(await requestBlePermissions({OS: 'android', Version: v}, q)).toBe(true);
+      const { r, requester: q } = requester('granted');
+      expect(await requestBlePermissions({ OS: 'android', Version: v }, q)).toBe(true);
       expect(r.request).toHaveBeenCalledWith('android.permission.ACCESS_FINE_LOCATION');
     }
-    const {requester: denied} = requester('denied');
-    expect(await requestBlePermissions({OS: 'android', Version: 29}, denied)).toBe(false);
+    const { requester: denied } = requester('denied');
+    expect(await requestBlePermissions({ OS: 'android', Version: 29 }, denied)).toBe(false);
   });
 
   test('not Android: nothing to ask', async () => {
-    const {r, requester: q} = requester('denied');
-    expect(await requestBlePermissions({OS: 'ios', Version: '26.0'}, q)).toBe(true);
+    const { r, requester: q } = requester('denied');
+    expect(await requestBlePermissions({ OS: 'ios', Version: '26.0' }, q)).toBe(true);
     expect(r.request).not.toHaveBeenCalled();
     expect(r.requestMultiple).not.toHaveBeenCalled();
   });
@@ -234,4 +243,29 @@ describe('requestBlePermissions', () => {
       'android.permission.BLUETOOTH_CONNECT',
     ]);
   });
+});
+
+test('monitor errors reach the subscriber error callback', async () => {
+  const { m, manager } = mockManager();
+  m.connectedDevices.mockResolvedValue([device('AA', 23)]);
+  const d = (await new BlePlxAdapter(manager).knownDevice(boardServiceUuid))!;
+  const c = (await d.discover(boardServiceUuid)).get(boardTextUuid.toLowerCase())!;
+  m.monitorCharacteristicForDevice.mockReturnValue(sub());
+  const errors: unknown[] = [];
+  await c.subscribe(
+    () => {},
+    e => errors.push(e),
+  );
+  const listener = m.monitorCharacteristicForDevice.mock.calls[0][3] as (
+    e: unknown,
+    c: Characteristic | null,
+  ) => void;
+  const failure = new Error('CCCD write failed');
+  listener(failure, null);
+  expect(errors).toEqual([failure]);
+});
+
+test('fromBase64 skips padding and whitespace', () => {
+  expect(Array.from(fromBase64('Aw Jo\naQ=='))).toEqual([3, 2, 0x68, 0x69]);
+  expect(Array.from(fromBase64(''))).toEqual([]);
 });

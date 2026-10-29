@@ -5,7 +5,8 @@
 // What react-native-ble-plx offers and does not offer here:
 // - Power: `onStateChange(listener, true)` (current state first). Anything but `PoweredOn`
 //   (Unauthorized, Resetting, PoweredOff…) counts as off.
-// - Already connected board: `connectedDevices([service])` (Dart: `systemDevices`).
+// - Already connected board: `connectedDevices([service])`. Unlike Dart's `systemDevices` it lists
+//   only connections this BleManager made, so it is empty after an app restart (we then scan).
 // - Scan filtered by the service UUID: `startDeviceScan`; one scan per manager at a time.
 // - Connect: `connectToDevice(id, {requestMTU: 517, refreshGatt: 'OnConnected'})`. The MTU is
 //   negotiated during connect (Android 14+ always negotiates 517 itself); the write-without-response
@@ -14,8 +15,8 @@
 //   link (only a drop after an up counts).
 // - Drop: `onDeviceDisconnected(id, …)`.
 // - Notifications: `monitorCharacteristicForDevice` returns at once; enabling the CCCD is not
-//   awaitable and its failure arrives as an error on the listener, which is ignored (the board
-//   then stays silent, the link stays up; a later drop recovers).
+//   awaitable and its failure arrives as an error on the listener. Errors go to the subscriber's
+//   `onError`; BleBoardLink then reconnects instead of staying "ready" with a silent board.
 // - Values cross the bridge as base64 strings (encoded/decoded here).
 // - **No Services Changed event.** ble-plx (RxAndroidBle underneath) does not expose
 //   `BluetoothGattCallback.onServiceChanged`, so `onServicesReset` never fires in BlePlxAdapter.
@@ -23,8 +24,8 @@
 //   reflashed board (which reboots, i.e. drops and is reconnected) is always seen with its new
 //   table. The link still handles `onServicesReset` (re-discovery on the same connection) so an
 //   adapter that can see the event only has to fire it.
-import {PermissionsAndroid, Platform} from 'react-native';
-import type {BleManager, Device, Subscription} from 'react-native-ble-plx';
+import { PermissionsAndroid, Platform } from 'react-native';
+import type { BleManager, Device, Subscription } from 'react-native-ble-plx';
 
 export type Unsubscribe = () => void;
 
@@ -38,8 +39,14 @@ export interface BleCharacteristic {
 
   read(): Promise<Uint8Array>;
 
-  /** Enables notifications; resolves with the function that stops them. */
-  subscribe(onValue: (value: Uint8Array) => void): Promise<Unsubscribe>;
+  /**
+   * Enables notifications; resolves with the function that stops them. `onError` is called when
+   * notifications fail (enable refused, link lost); no values follow it.
+   */
+  subscribe(
+    onValue: (value: Uint8Array) => void,
+    onError: (error: unknown) => void,
+  ): Promise<Unsubscribe>;
 }
 
 /** A peripheral found by a BleAdapter. */
@@ -97,14 +104,27 @@ export function toBase64(data: Uint8Array): string {
   return out;
 }
 
+/** Base64 character code → 6-bit value; -1 for anything else (padding, whitespace). */
+const decodeTable = (() => {
+  const table = new Int8Array(128).fill(-1);
+  for (let i = 0; i < alphabet.length; i++) {
+    table[alphabet.charCodeAt(i)] = i;
+  }
+  return table;
+})();
+
 export function fromBase64(text: string): Uint8Array {
-  const clean = text.replace(/[^A-Za-z0-9+/]/g, '');
-  const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+  const out = new Uint8Array(Math.floor((text.length * 3) / 4));
   let bits = 0;
   let acc = 0;
   let j = 0;
-  for (const ch of clean) {
-    acc = (acc << 6) | alphabet.indexOf(ch);
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const v = code < 128 ? decodeTable[code] : -1;
+    if (v < 0) {
+      continue;
+    }
+    acc = ((acc << 6) | v) & 0xffffff;
     bits += 6;
     if (bits >= 8) {
       bits -= 8;
@@ -237,7 +257,10 @@ class PlxDevice implements BleDevice {
       return out; // service missing
     }
     for (const c of chars) {
-      out.set(c.uuid.toLowerCase(), new PlxCharacteristic(this.manager, this.id, serviceUuid, c.uuid));
+      out.set(
+        c.uuid.toLowerCase(),
+        new PlxCharacteristic(this.manager, this.id, serviceUuid, c.uuid),
+      );
     }
     return out;
   }
@@ -271,18 +294,27 @@ class PlxCharacteristic implements BleCharacteristic {
   }
 
   async read(): Promise<Uint8Array> {
-    const c = await this.manager.readCharacteristicForDevice(this.deviceId, this.serviceUuid, this.uuid);
+    const c = await this.manager.readCharacteristicForDevice(
+      this.deviceId,
+      this.serviceUuid,
+      this.uuid,
+    );
     return fromBase64(c.value ?? '');
   }
 
-  async subscribe(onValue: (value: Uint8Array) => void): Promise<Unsubscribe> {
+  async subscribe(
+    onValue: (value: Uint8Array) => void,
+    onError: (error: unknown) => void,
+  ): Promise<Unsubscribe> {
     const sub = this.manager.monitorCharacteristicForDevice(
       this.deviceId,
       this.serviceUuid,
       this.uuid,
       (error, c) => {
-        // Errors: the drop (reported by onDeviceDisconnected) or a CCCD failure (see header).
-        if (!error && c?.value) {
+        // Errors: a CCCD failure or the drop (the link ignores the latter once it has abandoned).
+        if (error) {
+          onError(error);
+        } else if (c?.value) {
           onValue(fromBase64(c.value));
         }
       },
@@ -322,7 +354,7 @@ export function blePermissionsFor(apiLevel: number): Permission[] {
  * settings for scans to return anything (not a permission: the scan just stays empty).
  */
 export async function requestBlePermissions(
-  platform: {OS: string; Version: number | string} = Platform,
+  platform: { OS: string; Version: number | string } = Platform,
   permissions: PermissionRequester = PermissionsAndroid,
 ): Promise<boolean> {
   if (platform.OS !== 'android') {

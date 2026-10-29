@@ -1,6 +1,6 @@
 // Scripted BleAdapter for the BleBoardLink tests: the TypeScript twin of the fakes at the top of
 // app/test/board/ble_board_link_test.dart. Not a suite (jest only runs *.test.*).
-import {BleAdapter, BleCharacteristic, BleDevice, Unsubscribe} from '../src/board/BleAdapter';
+import { BleAdapter, BleCharacteristic, BleDevice, Unsubscribe } from '../src/board/BleAdapter';
 import {
   boardAudioUuid,
   boardControlUuid,
@@ -48,7 +48,12 @@ class Listeners<T> {
 export class FakeChar implements BleCharacteristic {
   /** While set, writes without response wait for it (captured at call time). */
   gate: Deferred | null = null;
+  /** When set, writes with response fail with it. */
+  failWithResponse: Error | null = null;
   private readonly listeners = new Listeners<Uint8Array>();
+  private readonly errorListeners = new Listeners<unknown>();
+  /** Every error callback ever passed to subscribe (to replay a late, stale error). */
+  readonly errorCallbacks: Array<(error: unknown) => void> = [];
 
   constructor(
     readonly uuid: string,
@@ -61,7 +66,10 @@ export class FakeChar implements BleCharacteristic {
     if (!withResponse && gate) {
       await gate.promise;
     }
-    this.dev.writes.push({uuid: this.uuid, data, withResponse});
+    if (withResponse && this.failWithResponse) {
+      throw this.failWithResponse;
+    }
+    this.dev.writes.push({ uuid: this.uuid, data, withResponse });
   }
 
   async read(): Promise<Uint8Array> {
@@ -71,8 +79,22 @@ export class FakeChar implements BleCharacteristic {
     return this.readValue;
   }
 
-  async subscribe(onValue: (value: Uint8Array) => void): Promise<Unsubscribe> {
-    return this.listeners.add(onValue);
+  async subscribe(
+    onValue: (value: Uint8Array) => void,
+    onError: (error: unknown) => void,
+  ): Promise<Unsubscribe> {
+    const offValue = this.listeners.add(onValue);
+    const offError = this.errorListeners.add(onError);
+    this.errorCallbacks.push(onError);
+    return () => {
+      offValue();
+      offError();
+    };
+  }
+
+  /** Reports a notification failure (e.g. the CCCD enable failed) to every subscriber. */
+  failNotify(error: unknown): void {
+    this.errorListeners.emit(error);
   }
 
   /** Delivers a notification to every subscriber. */
@@ -97,6 +119,8 @@ export class FakeDevice implements BleDevice {
   incompleteDiscoveries = 0;
   /** When set, connect() waits for it (to act while connecting). */
   connectGate: Deferred | null = null;
+  /** When set, disconnect() waits for it (a never-settled one models a hung cancel). */
+  disconnectGate: Deferred | null = null;
   private readonly conn = new Listeners<boolean>();
   private readonly reset = new Listeners<void>();
 
@@ -156,6 +180,9 @@ export class FakeDevice implements BleDevice {
 
   async disconnect(): Promise<void> {
     this.disconnectCalls++;
+    if (this.disconnectGate) {
+      await this.disconnectGate.promise;
+    }
   }
 
   async discover(_serviceUuid: string): Promise<Map<string, BleCharacteristic>> {
@@ -226,8 +253,15 @@ export class FakeAdapter implements BleAdapter {
 }
 
 export function infoBytes(version: number, sets: number): Uint8Array {
-  // eslint-disable-next-line no-bitwise
-  return Uint8Array.of(version, sets & 0xff, (sets >> 8) & 0xff, (sets >> 16) & 0xff, (sets >> 24) & 0xff);
+  /* eslint-disable no-bitwise -- little-endian u32 */
+  return Uint8Array.of(
+    version,
+    sets & 0xff,
+    (sets >> 8) & 0xff,
+    (sets >> 16) & 0xff,
+    (sets >> 24) & 0xff,
+  );
+  /* eslint-enable no-bitwise */
 }
 
 /** Payload text of a frame (bytes after `[flags][kind]`). */

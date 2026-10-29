@@ -1,10 +1,10 @@
 // Port of app/lib/board/ble_board_link.dart: BoardLink over BLE (mirrors ios ESPLink). Finds (or
 // reuses) the board, connects, reads board info, subscribes to audio and control, sets the clock,
 // resends the label, switches the board mic on, keeps the link alive, and rescans after a drop.
-import {BoardInfo, legacyBoardInfo} from '../core/model';
-import {TypedEmitter} from '../engine/VoiceEngine';
-import {BleAdapter, BleCharacteristic, BleDevice, Unsubscribe} from './BleAdapter';
-import {BoardLink, BoardLinkEvents, BoardState} from './BoardLink';
+import { BoardInfo, legacyBoardInfo } from '../core/model';
+import { TypedEmitter } from '../engine/VoiceEngine';
+import { BleAdapter, BleCharacteristic, BleDevice, Unsubscribe } from './BleAdapter';
+import { BoardLink, BoardLinkEvents, BoardState } from './BoardLink';
 import {
   TextKind,
   boardAudioUuid,
@@ -34,6 +34,9 @@ export interface BleBoardLinkOptions {
 function detach(step: Promise<void>): void {
   step.catch(() => {});
 }
+
+/** Longest wait for a disconnect before the retry starts anyway (a hung cancel must not block). */
+export const disconnectTimeoutMs = 1000;
 
 /** Control byte the board takes as "the app is alive" (0..2 are mic states). */
 export const keepaliveByte = 0xff;
@@ -123,13 +126,16 @@ export class BleBoardLink implements BoardLink {
         detach(this.startScan());
       }
     } else {
-      this.abandon();
+      detach(this.abandon());
       this.setState('off');
     }
   }
 
-  /** Drops everything tied to the current link (not the Bluetooth power subscription). */
-  private abandon(): void {
+  /**
+   * Drops everything tied to the current link (not the Bluetooth power subscription). Resolves
+   * when the disconnect has finished, or after `disconnectTimeoutMs`; never rejects.
+   */
+  private abandon(): Promise<void> {
     this.gen++;
     this.flushing = null;
     this.resetUnsub?.();
@@ -146,9 +152,19 @@ export class BleBoardLink implements BoardLink {
     this.dropGatt();
     const dev = this.device;
     this.device = null;
-    if (dev) {
-      dev.disconnect().catch(() => {});
+    if (!dev) {
+      return Promise.resolve();
     }
+    return new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, disconnectTimeoutMs);
+      dev
+        .disconnect()
+        .catch(() => {})
+        .then(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+    });
   }
 
   /** Forgets the characteristics, their subscriptions and the queue (the connection may live on). */
@@ -193,7 +209,7 @@ export class BleBoardLink implements BoardLink {
   }
 
   private async startScan(): Promise<void> {
-    this.abandon();
+    detach(this.abandon()); // normally nothing left: a retry follows a finished abandon
     const gen = this.gen;
     this.setState('scanning');
     try {
@@ -304,12 +320,26 @@ export class BleBoardLink implements BoardLink {
   }
 
   private onDrop(): void {
-    this.abandon();
+    const disconnected = this.abandon();
     if (this.disposed) {
       return;
     }
     this.setState(this.powered ? 'scanning' : 'off');
-    this.scheduleRetry();
+    // Retry only once the old connection is gone; anything that happened meanwhile (Bluetooth
+    // off, dispose, a new attempt) bumped the generation and owns what comes next.
+    const gen = this.gen;
+    disconnected.then(() => {
+      if (gen === this.gen) {
+        this.scheduleRetry();
+      }
+    });
+  }
+
+  /** A notification failure on the current setup: reconnect rather than stay silently "ready". */
+  private onNotifyError(gen: number): void {
+    if (gen === this.gen && !this.disposed) {
+      this.onDrop();
+    }
   }
 
   private async setUp(
@@ -325,18 +355,24 @@ export class BleBoardLink implements BoardLink {
     }
 
     if (aud) {
-      const unsub = await aud.subscribe(v => this.emit('audio', v));
+      const unsub = await aud.subscribe(
+        v => this.emit('audio', v),
+        () => this.onNotifyError(gen),
+      );
       if (gen !== this.gen) {
         unsub();
         return;
       }
       this.notifyUnsubs.push(unsub);
     }
-    const ctlUnsub = await ctl.subscribe(v => {
-      if (v.length > 0) {
-        this.emit('control', {type: 'micChanged', on: v[0] !== 0});
-      }
-    });
+    const ctlUnsub = await ctl.subscribe(
+      v => {
+        if (v.length > 0) {
+          this.emit('control', { type: 'micChanged', on: v[0] !== 0 });
+        }
+      },
+      () => this.onNotifyError(gen),
+    );
     if (gen !== this.gen) {
       ctlUnsub();
       return;
@@ -380,10 +416,15 @@ export class BleBoardLink implements BoardLink {
     if (gen !== this.gen) {
       return;
     }
+    // With response, so a dead link is noticed within one interval even without a drop event.
     this.keepaliveTimer = setInterval(() => {
       const c = this.controlChar;
-      if (c) {
-        c.write(Uint8Array.of(keepaliveByte), true).catch(() => {});
+      if (c && gen === this.gen) {
+        c.write(Uint8Array.of(keepaliveByte), true).catch(() => {
+          if (gen === this.gen && !this.disposed) {
+            this.onDrop();
+          }
+        });
       }
     }, this.keepaliveIntervalMs);
     this.ready = true;
@@ -468,7 +509,7 @@ export class BleBoardLink implements BoardLink {
     if (this.disposed) {
       return;
     }
-    this.abandon();
+    detach(this.abandon());
     this.disposed = true;
     this.powerUnsub?.();
     this.powerUnsub = null;
