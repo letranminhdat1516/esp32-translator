@@ -58,6 +58,27 @@
         }
       ],
       "beforeTranslation": []
+    },
+    "ja": {
+      "pack": "ja"
+    },
+    "ko": {
+      "pack": "ko"
+    },
+    "zh-Hans": {
+      "pack": "zh-Hans"
+    },
+    "th": {
+      "pack": "th"
+    },
+    "fr": {
+      "pack": "fr"
+    },
+    "de": {
+      "pack": "de"
+    },
+    "es": {
+      "pack": "es"
     }
   },
   "cases": [
@@ -648,6 +669,90 @@
       "fn": "fixRecognition",
       "input": "ok OK oke",
       "expected": "[ok|k|] [OK|K|] oke"
+    },
+    {
+      "name": "fr pack: fixRecognition 'Vous avez le ouifi ici'",
+      "engine": "fr",
+      "fn": "fixRecognition",
+      "input": "Vous avez le ouifi ici",
+      "expected": "Vous avez le Wi-Fi ici"
+    },
+    {
+      "name": "fr pack: fixRecognition \"J'ai perdu mon aifon\"",
+      "engine": "fr",
+      "fn": "fixRecognition",
+      "input": "J'ai perdu mon aifon",
+      "expected": "J'ai perdu mon iPhone"
+    },
+    {
+      "name": "fr pack: fixRecognition \"Ouvre gugle maps s'il te plaît\"",
+      "engine": "fr",
+      "fn": "fixRecognition",
+      "input": "Ouvre gugle maps s'il te plaît",
+      "expected": "Ouvre Google Maps s'il te plaît"
+    },
+    {
+      "name": "fr pack: fixRecognition 'Le wifi est gratuit au Wi-Fi bar'",
+      "engine": "fr",
+      "fn": "fixRecognition",
+      "input": "Le wifi est gratuit au Wi-Fi bar",
+      "expected": "Le Wi-Fi est gratuit au Wi-Fi bar"
+    },
+    {
+      "name": "de pack: fixRecognition 'Haben Sie wai fai im Zimmer'",
+      "engine": "de",
+      "fn": "fixRecognition",
+      "input": "Haben Sie wai fai im Zimmer",
+      "expected": "Haben Sie Wi-Fi im Zimmer"
+    },
+    {
+      "name": "de pack: fixRecognition 'Das Grab liegt am Waifaidamm'",
+      "engine": "de",
+      "fn": "fixRecognition",
+      "input": "Das Grab liegt am Waifaidamm",
+      "expected": "Das Grab liegt am Waifaidamm"
+    },
+    {
+      "name": "es pack: fixRecognition '¿Tienen güifi en el hotel?'",
+      "engine": "es",
+      "fn": "fixRecognition",
+      "input": "¿Tienen güifi en el hotel?",
+      "expected": "¿Tienen Wi-Fi en el hotel?"
+    },
+    {
+      "name": "es pack: fixRecognition 'Busco la tienda por shopi'",
+      "engine": "es",
+      "fn": "fixRecognition",
+      "input": "Busco la tienda por shopi",
+      "expected": "Busco la tienda por Shopee"
+    },
+    {
+      "name": "ja pack: fixRecognition 'ワイファイはありますか'",
+      "engine": "ja",
+      "fn": "fixRecognition",
+      "input": "ワイファイはありますか",
+      "expected": "ワイファイはありますか"
+    },
+    {
+      "name": "ko pack: fixRecognition '와이파이 있어요?'",
+      "engine": "ko",
+      "fn": "fixRecognition",
+      "input": "와이파이 있어요?",
+      "expected": "와이파이 있어요?"
+    },
+    {
+      "name": "zh-Hans pack: forTranslation '请问有无线网吗'",
+      "engine": "zh-Hans",
+      "fn": "forTranslation",
+      "input": "请问有无线网吗",
+      "expected": "请问有无线网吗"
+    },
+    {
+      "name": "th pack: forTranslation 'มีไวไฟไหม'",
+      "engine": "th",
+      "fn": "forTranslation",
+      "input": "มีไวไฟไหม",
+      "expected": "มีไวไฟไหม"
     }
   ],
   "adversarial": {

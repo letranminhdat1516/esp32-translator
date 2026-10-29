@@ -1,4 +1,179 @@
 {
+ "de": {
+  "code": "de",
+  "appleLocale": "de-DE",
+  "androidLocale": "de-DE",
+  "whisperCode": "de",
+  "label": "Deutsch",
+  "labelLatin": "DE",
+  "script": "latin",
+  "minConfidence": null,
+  "recognition": [
+   {
+    "id": "loan.wifi",
+    "pattern": "wai fai|waifai|wi fi|wifi",
+    "template": "Wi-Fi"
+   },
+   {
+    "id": "loan.iphone",
+    "pattern": "i phone|ai phone|ai fon|aifon|iphone",
+    "template": "iPhone"
+   },
+   {
+    "id": "loan.google-maps",
+    "pattern": "google maps|google map|gugle maps|gogle maps|goggle maps",
+    "template": "Google Maps"
+   },
+   {
+    "id": "loan.shopee",
+    "pattern": "shopi|shoppy|shopee",
+    "template": "Shopee"
+   }
+  ],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
+  "hints": []
+ },
  "en": {
   "code": "en",
   "appleLocale": "en-US",
@@ -11,6 +186,869 @@
   "recognition": [],
   "beforeTranslation": [],
   "terms": [],
+  "hints": []
+ },
+ "es": {
+  "code": "es",
+  "appleLocale": "es-ES",
+  "androidLocale": "es-ES",
+  "whisperCode": "es",
+  "label": "Español",
+  "labelLatin": "ES",
+  "script": "latin",
+  "minConfidence": null,
+  "recognition": [
+   {
+    "id": "loan.wifi",
+    "pattern": "güifi|guifi|wi fi|wifi",
+    "template": "Wi-Fi"
+   },
+   {
+    "id": "loan.iphone",
+    "pattern": "i phone|ai phone|ai fon|aifon|iphone",
+    "template": "iPhone"
+   },
+   {
+    "id": "loan.google-maps",
+    "pattern": "google maps|google map|gugle maps|gogle maps|goggle maps",
+    "template": "Google Maps"
+   },
+   {
+    "id": "loan.shopee",
+    "pattern": "shopi|shoppy|shopee",
+    "template": "Shopee"
+   }
+  ],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
+  "hints": []
+ },
+ "fr": {
+  "code": "fr",
+  "appleLocale": "fr-FR",
+  "androidLocale": "fr-FR",
+  "whisperCode": "fr",
+  "label": "Français",
+  "labelLatin": "FR",
+  "script": "latin",
+  "minConfidence": null,
+  "recognition": [
+   {
+    "id": "loan.wifi",
+    "pattern": "oui fi|ouifi|ouai fai|wi fi|wifi",
+    "template": "Wi-Fi"
+   },
+   {
+    "id": "loan.iphone",
+    "pattern": "i phone|ai phone|ai fon|aifon|iphone",
+    "template": "iPhone"
+   },
+   {
+    "id": "loan.google-maps",
+    "pattern": "google maps|google map|gugle maps|gogle maps|goggle maps",
+    "template": "Google Maps"
+   },
+   {
+    "id": "loan.shopee",
+    "pattern": "shopi|shoppy|shopee",
+    "template": "Shopee"
+   }
+  ],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
+  "hints": []
+ },
+ "ja": {
+  "code": "ja",
+  "appleLocale": "ja-JP",
+  "androidLocale": "ja-JP",
+  "whisperCode": "ja",
+  "label": "日本語",
+  "labelLatin": "JA",
+  "script": "cjk",
+  "minConfidence": null,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [
+     "グラブ"
+    ],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [
+     "ショッピー"
+    ],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [
+     "アイフォン",
+     "アイフォーン"
+    ],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi",
+     "ワイファイ"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [
+     "グーグルマップ",
+     "グーグルマップス"
+    ],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [
+     "エーティーエム"
+    ],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [
+     "フェイスブック",
+     "フェースブック"
+    ],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
+  "hints": []
+ },
+ "ko": {
+  "code": "ko",
+  "appleLocale": "ko-KR",
+  "androidLocale": "ko-KR",
+  "whisperCode": "ko",
+  "label": "한국어",
+  "labelLatin": "KO",
+  "script": "hangul",
+  "minConfidence": null,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [
+     "그랩"
+    ],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [
+     "쇼피"
+    ],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [
+     "아이폰"
+    ],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi",
+     "와이파이"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [
+     "구글 지도",
+     "구글맵",
+     "구글 맵"
+    ],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [
+     "에이티엠"
+    ],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [
+     "페이스북"
+    ],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
+  "hints": []
+ },
+ "th": {
+  "code": "th",
+  "appleLocale": "th-TH",
+  "androidLocale": "th-TH",
+  "whisperCode": "th",
+  "label": "ไทย",
+  "labelLatin": "TH",
+  "script": "thai",
+  "minConfidence": null,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [
+     "แกร็บ",
+     "แกรบ"
+    ],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [
+     "ช้อปปี้"
+    ],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [
+     "ไอโฟน"
+    ],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi",
+     "ไวไฟ",
+     "ไวฟาย"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [
+     "กูเกิลแมป",
+     "กูเกิลแมพ",
+     "กูเกิลแมปส์",
+     "กูเกิลแม็ป"
+    ],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [
+     "เอทีเอ็ม"
+    ],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [
+     "เฟซบุ๊ก",
+     "เฟซบุ๊ค",
+     "เฟสบุ๊ค"
+    ],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
   "hints": []
  },
  "vi": {
@@ -146,6 +1184,166 @@
    }
   ],
   "terms": [],
+  "hints": []
+ },
+ "zh-Hans": {
+  "code": "zh-Hans",
+  "appleLocale": "zh-CN",
+  "androidLocale": "zh-CN",
+  "whisperCode": "zh",
+  "label": "中文",
+  "labelLatin": "ZH",
+  "script": "cjk",
+  "minConfidence": null,
+  "recognition": [],
+  "beforeTranslation": [],
+  "terms": [
+   {
+    "id": "brand.grab",
+    "text": "Grab",
+    "variants": [],
+    "fixed": {
+     "vi": "Grab",
+     "en": "Grab",
+     "ja": "Grab",
+     "ko": "Grab",
+     "zh-Hans": "Grab",
+     "th": "Grab",
+     "fr": "Grab",
+     "de": "Grab",
+     "es": "Grab"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.shopee",
+    "text": "Shopee",
+    "variants": [
+     "虾皮"
+    ],
+    "fixed": {
+     "vi": "Shopee",
+     "en": "Shopee",
+     "ja": "Shopee",
+     "ko": "Shopee",
+     "zh-Hans": "Shopee",
+     "th": "Shopee",
+     "fr": "Shopee",
+     "de": "Shopee",
+     "es": "Shopee"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.iphone",
+    "text": "iPhone",
+    "variants": [],
+    "fixed": {
+     "vi": "iPhone",
+     "en": "iPhone",
+     "ja": "iPhone",
+     "ko": "iPhone",
+     "zh-Hans": "iPhone",
+     "th": "iPhone",
+     "fr": "iPhone",
+     "de": "iPhone",
+     "es": "iPhone"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.wifi",
+    "text": "Wi-Fi",
+    "variants": [
+     "wifi",
+     "wi fi"
+    ],
+    "fixed": {
+     "vi": "Wi-Fi",
+     "en": "Wi-Fi",
+     "ja": "Wi-Fi",
+     "ko": "Wi-Fi",
+     "zh-Hans": "Wi-Fi",
+     "th": "Wi-Fi",
+     "fr": "Wi-Fi",
+     "de": "Wi-Fi",
+     "es": "Wi-Fi"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.google-maps",
+    "text": "Google Maps",
+    "variants": [
+     "谷歌地图"
+    ],
+    "fixed": {
+     "vi": "Google Maps",
+     "en": "Google Maps",
+     "ja": "Google Maps",
+     "ko": "Google Maps",
+     "zh-Hans": "Google Maps",
+     "th": "Google Maps",
+     "fr": "Google Maps",
+     "de": "Google Maps",
+     "es": "Google Maps"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.atm",
+    "text": "ATM",
+    "variants": [],
+    "fixed": {
+     "vi": "ATM",
+     "en": "ATM",
+     "ja": "ATM",
+     "ko": "ATM",
+     "zh-Hans": "ATM",
+     "th": "ATM",
+     "fr": "ATM",
+     "de": "ATM",
+     "es": "ATM"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.zalo",
+    "text": "Zalo",
+    "variants": [],
+    "fixed": {
+     "vi": "Zalo",
+     "en": "Zalo",
+     "ja": "Zalo",
+     "ko": "Zalo",
+     "zh-Hans": "Zalo",
+     "th": "Zalo",
+     "fr": "Zalo",
+     "de": "Zalo",
+     "es": "Zalo"
+    },
+    "origin": "builtIn"
+   },
+   {
+    "id": "brand.facebook",
+    "text": "Facebook",
+    "variants": [
+     "脸书"
+    ],
+    "fixed": {
+     "vi": "Facebook",
+     "en": "Facebook",
+     "ja": "Facebook",
+     "ko": "Facebook",
+     "zh-Hans": "Facebook",
+     "th": "Facebook",
+     "fr": "Facebook",
+     "de": "Facebook",
+     "es": "Facebook"
+    },
+    "origin": "builtIn"
+   }
+  ],
   "hints": []
  }
 }
