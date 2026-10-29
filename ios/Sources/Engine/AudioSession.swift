@@ -2,19 +2,14 @@ import AVFAudio
 import Foundation
 
 // The audio-session parts of ios/Sources/App/ConversationEngine.swift (configureAudioSession, startSilence,
-// endConversation's deactivation, observeAudioSession), without the conversation logic: Dart decides when the
-// mic is on and the engine reports interruptions and route changes as events.
+// endConversation's deactivation, observeAudioSession), without the conversation logic: the controller decides
+// when the mic is on and the engine reports interruptions and route changes as events. iOS only (AVAudioSession).
 
 /// The app's audio session: voice chat while the mic is held, mixable silent playback otherwise, so iOS keeps
 /// the app running in the background for the board (BLE keepalive, board audio) without touching other audio.
 @MainActor
-final class AudioSession {
-    enum Change {
-        case interruptionBegan
-        case interruptionEnded(shouldResume: Bool)
-        case routeChanged(AudioRoute)
-        case mediaServicesReset
-    }
+final class AudioSession: EngineAudioSession {
+    typealias Change = AudioSessionChange
 
     private let silence = SilencePlayer()
     private var observers: [NSObjectProtocol] = []

@@ -1,4 +1,4 @@
-import CoreBluetooth
+@preconcurrency import CoreBluetooth  // CBUUID, CBPeripheral: used on the BLE queue only
 import Foundation
 import os
 

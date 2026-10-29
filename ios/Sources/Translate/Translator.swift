@@ -1,8 +1,12 @@
 import Foundation
 import Translation
 
-/// Offline translation with Apple's on-device models.
-actor Translator {
+/// Offline translation with Apple's on-device models (the Swift app's ConversationEngine and AppleVoiceEngine).
+///
+/// A class, not an actor: `TranslationSession` is not Sendable, and an actor calling its nonisolated async
+/// `translate` sends it out of the actor (a Swift 6 data-race error). Calls interleave at the `await` exactly as
+/// they did on the actor; the session is never mutated by this type.
+final class Translator: @unchecked Sendable {
     private let session: TranslationSession
 
     init(from source: Locale.Language, to target: Locale.Language) {

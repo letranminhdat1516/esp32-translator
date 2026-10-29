@@ -223,8 +223,8 @@ func jsonString(_ s: String) -> String {
             var lastPartial = ""
             for (_, e) in events {
                 switch e {
-                case .partial(let t): lastPartial = t
-                case .final(let t, _): finals.append(t); lastPartial = ""
+                case .partial(let t, _): lastPartial = t
+                case .final(let t, _, _): finals.append(t); lastPartial = ""
                 }
             }
             var text = finals.filter { !$0.isEmpty }.joined(separator: " ")
@@ -236,8 +236,8 @@ func jsonString(_ s: String) -> String {
             for (t, e) in events {
                 let kind: String, s: String
                 switch e {
-                case .partial(let x): kind = "partial"; s = x
-                case .final(let x, _): kind = "final"; s = x
+                case .partial(let x, _): kind = "partial"; s = x
+                case .final(let x, _, _): kind = "final"; s = x
                 }
                 evOut.write("{\"file\":\(jsonString(path)),\"t\":\(String(format: "%.3f", t)),\"kind\":\"\(kind)\",\"text\":\(jsonString(s))}\n".data(using: .utf8)!)
             }

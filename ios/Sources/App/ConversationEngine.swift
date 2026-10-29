@@ -179,7 +179,7 @@ final class ConversationEngine {
             // Opening the app starts a conversation; the session is set up before the synthesizer touches it
             note(.userStart)
 
-            let speaker = Speaker()
+            let speaker = Speaker(language: "vi-VN")
             speaker.onBusyChange = { [weak self] busy in self?.note(busy ? .ttsStart : .ttsEnd) }
             voiceName = speaker.voiceName
             self.speaker = speaker
@@ -346,9 +346,9 @@ final class ConversationEngine {
             return
         }
         switch event {
-        case .partial(let text):
+        case .partial(let text, _):
             theirPartial = text
-        case .final(let text, let confidence):
+        case .final(let text, let confidence, _):
             theirPartial = ""
             guard text.count > 1 else { return }
             if let confidence, confidence < minConfidence {
@@ -546,8 +546,8 @@ final class ConversationEngine {
 
     private static func describe(_ event: TranscriptEvent, full: Bool = false) -> String {
         switch event {
-        case .partial(let t): "partial(\(t.count)) \"\(full ? Substring(t) : t.suffix(40))\""
-        case .final(let t, let c): "FINAL(\(t.count)) conf=\(c.map { String(format: "%.2f", $0) } ?? "-") \"\(full ? Substring(t) : t.suffix(40))\""
+        case .partial(let t, _): "partial(\(t.count)) \"\(full ? Substring(t) : t.suffix(40))\""
+        case .final(let t, let c, _): "FINAL(\(t.count)) conf=\(c.map { String(format: "%.2f", $0) } ?? "-") \"\(full ? Substring(t) : t.suffix(40))\""
         }
     }
 

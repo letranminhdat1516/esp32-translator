@@ -12,15 +12,15 @@ enum Harness {
         for (now, event) in events {
             let text: String
             switch event {
-            case .partial(let t): text = t
-            case .final(let t, _): text = t
+            case .partial(let t, _): text = t
+            case .final(let t, _, _): text = t
             }
             guard !text.isEmpty else { myPartial = ""; continue }
             if now - last > turnGap { committed = ""; lines.append("") }
             last = now
             switch event {
-            case .partial(let t): myPartial = t
-            case .final(let t, _): myPartial = ""; committed = committed.isEmpty ? t : committed + " " + t
+            case .partial(let t, _): myPartial = t
+            case .final(let t, _, _): myPartial = ""; committed = committed.isEmpty ? t : committed + " " + t
             }
             let turnText = [committed, myPartial].filter { !$0.isEmpty }.joined(separator: " ")
             if !lines.isEmpty { lines[lines.count - 1] = turnText }

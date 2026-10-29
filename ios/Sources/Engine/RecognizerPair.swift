@@ -1,6 +1,6 @@
 import AVFAudio
 import Foundation
-import Speech
+@preconcurrency import Speech  // AssetInventory.Status (a plain enum) is not marked Sendable
 
 /// What the engine needs from a speech recognizer (LiveTranscriber; fakes in tests)
 protocol Recognizer: AnyObject, Sendable {
@@ -29,7 +29,7 @@ final class RecognizerPair {
     private(set) var theirs: (any Recognizer)?
     private(set) var mine: (any Recognizer)?
 
-    private let events: EventQueue
+    private let events: EngineEventSink
     private let factory: Factory
     private let beforeStart: @MainActor () async -> Void
     /// The pair's generation, read by the board recognizer's result task
@@ -40,7 +40,7 @@ final class RecognizerPair {
     private var live = Live()
 
     /// `beforeStart` runs at the beginning of a fresh start (the app asks for the mic permission there)
-    init(events: EventQueue, factory: @escaping Factory = { await LiveTranscriber.resolve($0) },
+    init(events: EngineEventSink, factory: @escaping Factory = { await LiveTranscriber.resolve($0) },
          beforeStart: @escaping @MainActor () async -> Void = {}) {
         self.events = events
         self.factory = factory
@@ -112,7 +112,7 @@ final class RecognizerPair {
         } catch {
             live.on = false
             if token == mine { for r in built { await r.stop() } }
-            if let error = error as? PigeonError { throw error }
+            if let error = error as? EngineError { throw error }
             throw EngineErrors.notReady("recognizers did not start: \(error.localizedDescription)")
         }
         self.pair = pair
@@ -149,9 +149,9 @@ final class Live: @unchecked Sendable {
 /// The current pair generation, written on the main actor and read from the recognizer's result task
 final class Generation: @unchecked Sendable {
     private let lock = NSLock()
-    private var current: Int64 = 0
+    private var current: Int = 0
 
-    var value: Int64 {
+    var value: Int {
         get { lock.withLock { current } }
         set { lock.withLock { current = newValue } }
     }

@@ -1,1 +1,0 @@
-../../../RunnerTests/CapabilitiesTests.swift

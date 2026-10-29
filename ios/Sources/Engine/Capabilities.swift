@@ -3,18 +3,13 @@ import Foundation
 import Speech
 import Translation
 
-/// The home language before Dart has sent a pair. Vietnamese is always the home side (constraints), and
-/// `capabilities()` has no pair argument but must report translation with it and its TTS voice. A language
-/// code, not a locale (R16): the region comes from the device. Track E uses the same constant on Android.
-let defaultHomeLanguage = "vi"
-
-/// `RecognizerKind` names as Dart knows them. iOS offers only the OS on-device recognizers in Phase 1
-/// (Whisper on iOS is Phase 2 or later).
+/// `RecognizerKind` names in wire form. iOS offers only the OS on-device recognizers in Phase 1 (Whisper on iOS
+/// is Phase 2 or later).
 enum RecognizerKinds {
-    static let onDevice = "osOnDevice"
+    static let onDevice = RecognizerKind.osOnDevice.rawValue
 }
 
-/// `capabilities()` from what the device reports (R2): per language code, the on-device recognizers
+/// `capabilities(home)` from what the device reports (R2): per language code, the on-device recognizers
 /// (SpeechTranscriber or DictationTranscriber support the locale), the languages that translate both ways with
 /// home (LanguageAvailability, installed or downloadable), and whether home has a TTS voice.
 /// Whisper is not offered on iOS in Phase 1.
@@ -56,7 +51,7 @@ enum CapabilitiesAssembly {
 }
 
 /// `missing(pair)`: what must be downloaded before `start` can run the pair (R3). Unsupported items are left
-/// out (they cannot be downloaded; `capabilities()` already does not offer them).
+/// out (they cannot be downloaded; `capabilities(home)` already does not offer them).
 enum MissingAssembly {
     /// `speech`: per pair language, the asset status of its recognizer, nil when it has none.
     /// `translation`: per direction, the model status.
@@ -94,15 +89,14 @@ enum MissingAssembly {
     }
 }
 
-/// The last capabilities, gathered in the background at launch and after each download, so the synchronous
-/// pigeon call (on the main thread) usually returns at once. A call that finds no value waits a bounded time
-/// for the one gather in flight (it is not restarted); on timeout the caller throws `notReady` and the gather
-/// still fills the cache for the next call. The first framework query in a fresh process can be slow (more than
-/// 20 s once on the Mac host, cold daemons), and the main thread must not wait that long.
+/// The last capabilities per home language. `capabilities(home)` is async: a caller with no cached
+/// value suspends (no thread waits) until the one gather in flight for that home finishes. The first framework
+/// query in a fresh process can be slow (more than 20 s once on the Mac host, cold daemons).
 final class CapabilitiesCache: @unchecked Sendable {
     private let lock = NSLock()
     private var cached: (home: String, value: CapabilitiesMsg)?
-    private var inFlight: (home: String, done: DispatchGroup)?
+    private var inFlight: (home: String, id: Int, task: Task<CapabilitiesMsg, Never>)?
+    private var nextID = 0
     /// Bumped by `invalidate`: a gather started before it does not store its (stale) result
     private var epoch = 0
     private let gather: @Sendable (String) async -> CapabilitiesMsg
@@ -124,54 +118,27 @@ final class CapabilitiesCache: @unchecked Sendable {
         }
     }
 
-    /// The cached value for `home`, else waits up to `timeout` for the gather in flight; nil on timeout
-    func get(home: String, timeout: TimeInterval) -> CapabilitiesMsg? {
+    /// The cached value for `home`, else the result of the gather in flight for it (started if none)
+    func get(home: String) async -> CapabilitiesMsg {
         if let hit = lock.withLock({ cached }), hit.home == home { return hit.value }
-        let done = startGather(home: home)
-        guard done.wait(timeout: .now() + timeout) == .success else {
-            Diag.log("capabilities: not ready after \(timeout) s, still gathering")
-            return nil
-        }
-        return lock.withLock { cached?.home == home ? cached?.value : nil }
+        return await startGather(home: home).value
     }
 
-    private func startGather(home: String) -> DispatchGroup {
+    private func startGather(home: String) -> Task<CapabilitiesMsg, Never> {
         lock.lock()
         defer { lock.unlock() }
-        if let running = inFlight, running.home == home { return running.done }
-        let done = DispatchGroup()
-        done.enter()
-        inFlight = (home, done)
-        let started = epoch
-        Task.detached { [self] in
+        if let running = inFlight, running.home == home { return running.task }
+        nextID += 1
+        let id = nextID, started = epoch
+        let task = Task.detached { [self] in
             let value = await gather(home)
             lock.withLock {
-                guard epoch == started else { return }
-                cached = (home, value)
-                if inFlight?.done === done { inFlight = nil }
+                if epoch == started { cached = (home, value) }
+                if inFlight?.id == id { inFlight = nil }
             }
-            done.leave()
+            return value
         }
-        return done
-    }
-}
-
-/// Runs async framework queries for a synchronous pigeon method (`capabilities`, `missing` are sync in the
-/// contract). The work runs detached and must not need the main actor, or it waits for the timeout.
-enum Blocking {
-    private final class Box<T>: @unchecked Sendable { var value: T? }
-
-    static func run<T>(timeout: TimeInterval, _ work: @escaping @Sendable () async -> T) -> T? {
-        let box = Box<T>()
-        let done = DispatchSemaphore(value: 0)
-        Task.detached {
-            box.value = await work()
-            done.signal()
-        }
-        guard done.wait(timeout: .now() + timeout) == .success else {
-            Diag.log("blocking: gave up after \(timeout) s")
-            return nil
-        }
-        return box.value
+        inFlight = (home, id, task)
+        return task
     }
 }
