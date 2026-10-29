@@ -1,6 +1,8 @@
 # Requirements: Flutter app for iOS and Android, multi-language, special-word handling
 
-Date: 2026-10-26. Status: draft for review (replaces the 2026-10-23 iOS-only draft).
+Date: 2026-10-26, amended 2026-10-29. Status: approved.
+
+**Amendment 2026-10-29 (user decision):** the phone apps are the existing **Swift app on iPhone** (extended) and a new **React Native app on Android**, not one Flutter app. B5, P1, P8 and R16 below are reworded accordingly; everything else stands. The Flutter app built on 2026-10-26..28 (`app/`) stays in the repo only as the porting reference until the native apps reach parity, then it is deleted.
 Branch: `main` (= `claude-companion` at `3f23288`). The side branch `travel-a2dp` is not merged and is out of scope.
 
 ## Brief
@@ -13,7 +15,7 @@ No written brief exists. The brief is the user's own words from the conversation
 | B2 | "multi language" | More than the one EN ↔ VI pair |
 | B3 | "tối ưu lại các từ đặc biệt" | Handle names, brands, places, loanwords, slang and service phrases better |
 | B4 | "ko giới hạn từ mobile iOS với android nữa mà chúng ta sẽ làm cả 2 app" | One product on iOS **and** Android |
-| B5 | Chose "Flutter cho cả hai" | One Flutter codebase for both phones; the Swift app is replaced |
+| B5 | Chose "Flutter cho cả hai", then on 2026-10-29 "apple giữ swift cx đc còn android làm react native cho nhẹ" | Swift app on iPhone (kept and extended), React Native app on Android; the Flutter app is abandoned |
 | B6 | Speech: "if else các thành phần hỗ trợ" | Use whatever the phone supports, best first, with fallbacks |
 | B7 | Chose "Làm thẳng trong Flutter" | Multi-language is built into the Flutter app from the start; the board work comes first; the Swift app stays usable until the Flutter app catches up |
 | B8 | Android: "Không, chỉ dịch" | No Claude relay in the Flutter app |
@@ -38,14 +40,14 @@ Priority: M = Must, S = Should, C = Could, W = Won't (this round).
 
 | ID | From | Requirement | Acceptance criterion | Priority | Faked / simplified |
 |---|---|---|---|---|---|
-| P1 | B4, B5 | One Flutter app (`app/`) that builds and runs on iOS 26 and on Android 10+ (minSdk 29) | `flutter build ios` and `flutter build apk` succeed; the app runs a full conversation on the iPhone and on the Note 9 | M | No |
+| P1 | B4, B5 | Two apps: the Swift app (`ios/`) on iOS 26 and a React Native app (`android/`) on Android 10+ (minSdk 29) | `xcodebuild` (device, no code signing) and `./gradlew assembleRelease` succeed; the apps run a full conversation on the iPhone and on the Note 9 | M | No |
 | P2 | B1, B5 | Feature parity with the Swift app's translator: board link, their speech → Vietnamese in the earbuds, my Vietnamese → subtitles on the board, own-voice gate, turns, conversation on/off, board mic toggle, clear (with confirm), model download, the "Phụ đề" design | A parity checklist (one line per Swift feature) ticked on both phones | M | No |
 | P3 | B6 | Speech recognition picks the best engine the phone has, per language: (1) the OS on-device recognizer; (2) bundled Whisper (whisper.cpp) when the OS has none for that language; (3) the OS online recognizer as a last resort, only with the user's consent and a visible "online" mark | A unit test of the selection with fake capabilities. On the Note 9 (no on-device OS recognizer), English and Vietnamese run through Whisper with the network off | M | No |
 | P4 | B6 | Offline translation on both: Apple Translation on iOS, Google ML Kit on Android | Airplane mode after the downloads: a conversation works on both phones | M | No |
 | P5 | B6 | Speech output in Vietnamese on both: `AVSpeechSynthesizer` on iOS, Android `TextToSpeech` (offline voice); if the Vietnamese voice is missing the app says so and links to the system download | On the Note 9 with no Vietnamese voice: the app shows the message; after installing it, translations are spoken | M | No |
 | P6 | B1 | The app keeps working with the screen off and in the background while a conversation runs (iOS: background audio + Bluetooth; Android: a foreground service with a notification) | 10 minutes with the screen off on each phone: board speech is still spoken, subtitles still reach the board | M | No |
 | P7 | B1 | The Bluetooth headset mic is used for my voice (AirPods on iOS; Bluetooth SCO on Android), with echo cancellation, and other apps' audio is ducked, not stopped, during a conversation | My speech through the earbuds produces subtitles on both phones; a YouTube video gets quieter and resumes | M | Android may only get SCO quality (8–16 kHz), see list below |
-| P8 | B7 | The Swift app is kept, untouched apart from bug fixes, until P2 is ticked on the iPhone; then it is retired (code kept in git history) | — | M | No |
+| P8 | B7 | The Swift app keeps working (EN↔VI) at every commit while it is extended; the iPhone is never without a usable app | `swift test` and the device build pass on every commit of `ios/` | M | No |
 | P9 | B8 | No Claude relay in the Flutter app. The board's Claude service and the Mac app are not changed | The board still accepts the Swift app's relay while that app exists | M | No |
 
 ### Multi-language (B2)
@@ -77,7 +79,7 @@ Priority: M = Must, S = Should, C = Could, W = Won't (this round).
 | ID | From | Requirement | Acceptance criterion | Priority | Faked / simplified |
 |---|---|---|---|---|---|
 | R15 | B1, B3 | Repeatable measurement per language and per engine: term accuracy (R10) and recognizer WER. Vietnamese on Apple stays within ±0.6 points of the README table | Harness output in a README table, for Apple, Android on-device (if any) and Whisper | M | Synthetic TTS voices |
-| R16 | B1 | Nothing language-specific hard-coded: languages, engines, rules and fonts come from one language description. All pure logic is Dart with `flutter test` coverage | `grep` finds no locale literals outside the catalog. The ported Swift tests plus new tests pass | M | No |
+| R16 | B1 | Nothing language-specific hard-coded: languages, engines, rules and fonts come from one language description in `shared/`. Pure logic exists in Swift and in TypeScript and both are driven by the same fixtures in `shared/fixtures/`, so they cannot drift | `grep` finds no locale literals outside `shared/` and the catalogs. Both suites pass every fixture case | M | Simplified: two copies of the logic, kept equal by fixtures |
 | R17 | B1 | On device: no network in the translator path after downloads, except P3's opt-in online recognizer. The glossary never leaves the phone | Code review plus an airplane-mode run on both phones | M | No |
 | R18 | B2 | Auto-detect the other person's language | — | C | Left out this round |
 | R20 | B2 | My own language other than Vietnamese | — | W | Left out |

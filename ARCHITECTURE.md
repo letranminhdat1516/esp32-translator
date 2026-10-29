@@ -245,3 +245,59 @@ Fonts in their own flash partition loaded at runtime (`lv_binfont_create_from_bu
 - The exact `pigeon` schema, the package layout inside `lib/`, and the state management library (Riverpod or plain `ChangeNotifier`, matching the small scope).
 - Whisper model size per device (from measured real-time factor), the token shape per pair, the CJK character lists.
 - Screen layouts for the language list and glossary, inside the existing "Phụ đề" design.
+
+---
+
+# Revision 2026-10-29: Swift on iPhone, React Native on Android
+
+The user replaced the one-Flutter-app decision (B5) with: keep and extend the Swift app on the iPhone; build the Android app in React Native. Sections 2–8 (flow, state machines, data model, failures, security, measurement) stay as written; this revision replaces §1, §5's channel, D1's "logic in Dart", §10 and §11. The Flutter app in `app/` is the reference implementation of every pure-logic module and of both native engines, frozen until P2.9 deletes it.
+
+## R1. Overview
+
+```
+shared/                 the single source of language-specific data and of the logic contract
+├── languages/*.json    language packs (rules, placeholder shape, names, scripts)
+├── board_glyphs/*.txt  exact code points of the board's CJK / Hangul / Thai fonts
+└── fixtures/*.json     test vectors every core module must pass, in Swift and in TypeScript
+ios/                    the Swift app (SwiftUI), extended
+├── Sources/Core        pure logic: TurnAssembler, ConversationActivity, VoiceGate, SubtitleTranslator (existing)
+│                       + Model, SessionMachine, RuleEngine, TermProtector, TextPipeline, BoardText, Glossary, LanguageCatalog
+├── Sources/Engine      AppleVoiceEngine: SpeechAnalyzer per language, TranslationSession, AVSpeech, audio session, downloads
+├── Sources/BLE         ESPLink (+ label, board info, services reset)
+└── Sources/UI, App     screens, ConversationController
+android/                the React Native app (Android only; Hermes, New Architecture, TypeScript)
+├── src/core            the same pure logic in TypeScript, Jest against shared/fixtures
+├── src/engine          VoiceEngine interface, NativeVoiceEngine TurboModule spec, ConversationController
+├── src/board           BLE link (react-native-ble-plx), protocol, ADPCM
+├── src/ui              screens
+└── android/app/…/engine  Kotlin engine (foreground service, SCO, VoiceGate, Whisper via JNI, ML Kit, TTS) + VoiceEngineModule
+firmware/               unchanged (done)
+app/                    Flutter reference, frozen, deleted at the end
+```
+
+## R2. Why two copies of the logic are acceptable here
+
+The logic is small (about 3,500 lines of Dart incl. contracts) and stable; the cost of drift is handled by making **fixtures the contract**: every rule, term, board-text, catalog, activity, turn and protocol case lives once in `shared/fixtures/` and both suites load it. Adding a behaviour means adding a fixture case first, which fails in both suites until both are updated. The language packs and glyph lists are loaded, not copied, so data never drifts.
+
+## R3. Native engine interface (replaces §5's pigeon channel)
+
+Same calls and events as §5, per platform:
+
+| | iOS | Android |
+|---|---|---|
+| Interface | `protocol VoiceEngine` (async functions, `AsyncStream` events) implemented by `AppleVoiceEngine`; `FakeVoiceEngine` for tests | `interface VoiceEngine` (TS, Promises, event subscriptions) implemented by `NativeVoiceEngine` over a Kotlin TurboModule; `FakeVoiceEngine` for tests |
+| `capabilities(home)` / `missing(pair)` | async, off the main actor | async, off the main thread, home passed from JS (no constant in Kotlin) |
+| Board PCM into the recognizer | in-process `Int16` arrays | base64 string per packet across the bridge (or `ArrayBuffer` when codegen allows); measured in T4 |
+| Background | background audio + bluetooth-central (as today) | foreground service (microphone) keeps the process and the JS thread alive |
+
+## R4. Bluetooth
+
+Both apps talk the same protocol (`BoardProtocol.swift`, `protocol.ts`, both from `app/lib/board/protocol.dart`): kinds 0–3, `…0005` board info, clock + label resend on ready, 20 s keepalive, services-reset re-setup, generation-guarded write queue, backoff on failed connect. iOS: CoreBluetooth in `ESPLink`; Android: `react-native-ble-plx`.
+
+## R5. Build order
+
+1. `shared/` and fixtures extracted from the Dart tests (the Dart suite proves the extraction).
+2. In parallel: RN skeleton on the Note 9; TS contracts; Swift contracts.
+3. In parallel: TS core, RN BLE, RN UI, Kotlin engine as TurboModule (phone); Swift core, Swift engine + BLE, Swift UI.
+4. Controllers and wiring, device runs, parity checklists, term and WER harnesses, starter packs, README.
+5. Delete `app/`.
