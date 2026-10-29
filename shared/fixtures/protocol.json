@@ -183,6 +183,30 @@
       "epochMs": 1761400000999,
       "utcOffsetMinutes": 0,
       "expected": "1761400000 0"
+    },
+    {
+      "name": "UTC+7 (Vietnam)",
+      "epochMs": 1761400000999,
+      "utcOffsetMinutes": 420,
+      "expected": "1761400000 420"
+    },
+    {
+      "name": "UTC-5",
+      "epochMs": 1761400000000,
+      "utcOffsetMinutes": -300,
+      "expected": "1761400000 -300"
+    },
+    {
+      "name": "UTC+5:30",
+      "epochMs": 1761400000500,
+      "utcOffsetMinutes": 330,
+      "expected": "1761400000 330"
+    },
+    {
+      "name": "UTC-9:30",
+      "epochMs": 1761400001000,
+      "utcOffsetMinutes": -570,
+      "expected": "1761400001 -570"
     }
   ]
 }
