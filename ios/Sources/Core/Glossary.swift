@@ -21,6 +21,8 @@ enum GlossaryError: Error, Equatable, Sendable {
     case unknownTerm(id: String)
     /// The glossary file could not be written; nothing was changed.
     case writeFailed(String)
+    /// The store opened read-only: its file could not be read nor set aside, so nothing may overwrite it.
+    case readOnly
 }
 
 /// The user's glossary (R11): a JSON list of `Term` (the pack term format) in one file, on the phone only (R17).
@@ -28,8 +30,10 @@ enum GlossaryError: Error, Equatable, Sendable {
 /// and bidirectional overrides (U+202A–U+202E, U+2066–U+2069) are rejected, and every term or variant is unique
 /// ignoring case.
 ///
-/// A file that cannot be read back is renamed to `glossary.corrupt-<yyyyMMdd-HHmmss>.json` beside it and the store
-/// starts empty (`recoveredFromCorruption`). Changes run one at a time (actor) and are announced on `changes()`.
+/// A file that cannot be read back (bad content, or a read error such as permissions or file protection) is renamed
+/// to `glossary.corrupt-<yyyyMMdd-HHmmss>.json` beside it and the store starts empty (`recoveredFromCorruption`). If
+/// even the rename fails the store opens read-only (`isReadOnly`: every change throws `readOnly`), so the user's data
+/// is never overwritten. Changes run one at a time (actor) and are announced on `changes()` until `close()`.
 actor GlossaryStore {
     static let maxTerms = 500
     static let maxLength = 64
@@ -48,8 +52,10 @@ actor GlossaryStore {
 
     /// The terms, in the order they were added.
     private(set) var terms: [Term]
-    /// True when the file was unreadable when the store opened and has been set aside.
+    /// True when the file was unreadable when the store opened (set aside, or left alone when `isReadOnly`).
     let recoveredFromCorruption: Bool
+    /// True when an unreadable file could not be set aside: changes are refused so it is never overwritten.
+    let isReadOnly: Bool
 
     /// Opens `directory/glossary.json` (neither need exist yet; the directory is created on the first change).
     /// `clock` (names a corrupt file set aside) and `newId` are injectable for tests.
@@ -57,7 +63,16 @@ actor GlossaryStore {
          newId: @escaping @Sendable () -> String = { GlossaryStore.randomId() }) {
         file = directory.appendingPathComponent(Self.fileName)
         self.newId = newId
-        (terms, recoveredFromCorruption) = Self.load(file, clock: clock)
+        (terms, recoveredFromCorruption, isReadOnly) = Self.load(file, clock: clock)
+    }
+
+    deinit {
+        broadcast.finish()
+    }
+
+    /// Ends every `changes()` stream, current and future.
+    func close() {
+        broadcast.finish()
     }
 
     /// The new list after every successful change, from now on. Subscribes synchronously (call it before the change
@@ -69,6 +84,7 @@ actor GlossaryStore {
     /// Adds a term (always `TermOrigin.user`) and returns it with its id.
     @discardableResult
     func add(text: String, variants: [String] = [], fixed: [String: String] = [:]) throws(GlossaryError) -> Term {
+        if isReadOnly { throw .readOnly }
         if terms.count >= Self.maxTerms { throw .tooManyTerms(limit: Self.maxTerms) }
         let term = try validated(id: newId(), text: text, variants: variants, fixed: fixed, ignoring: nil)
         try commit(terms + [term])
@@ -79,6 +95,7 @@ actor GlossaryStore {
     @discardableResult
     func update(_ id: String, text: String, variants: [String] = [],
                 fixed: [String: String] = [:]) throws(GlossaryError) -> Term {
+        if isReadOnly { throw .readOnly }
         guard let index = terms.firstIndex(where: { $0.id == id }) else { throw .unknownTerm(id: id) }
         let term = try validated(id: id, text: text, variants: variants, fixed: fixed, ignoring: id)
         var next = terms
@@ -89,6 +106,7 @@ actor GlossaryStore {
 
     /// Deletes the term `id`.
     func remove(_ id: String) throws(GlossaryError) {
+        if isReadOnly { throw .readOnly }
         guard terms.contains(where: { $0.id == id }) else { throw .unknownTerm(id: id) }
         try commit(terms.filter { $0.id != id })
     }
@@ -139,6 +157,7 @@ actor GlossaryStore {
     }
 
     private func commit(_ next: [Term]) throws(GlossaryError) {
+        if isReadOnly { throw .readOnly }
         do {
             try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
@@ -152,15 +171,18 @@ actor GlossaryStore {
         broadcast.send(next)
     }
 
-    /// Reads the file: the terms, and whether a corrupt file was set aside. A hand-edited file must not get around
-    /// the limits: any bad entry, an entry over the limits or duplicates set the whole file aside.
-    private static func load(_ file: URL, clock: () -> Date) -> ([Term], Bool) {
-        guard let data = try? Data(contentsOf: file) else { return ([], false) }  // not there yet
+    /// Reads the file: the terms, whether it was unreadable, and whether the store must stay read-only. Only an
+    /// absent file is an empty glossary; any read error is treated like corruption. A hand-edited file must not get
+    /// around the limits: any bad entry, an entry over the limits, duplicate texts or duplicate ids set it aside.
+    private static func load(_ file: URL, clock: () -> Date) -> ([Term], Bool, Bool) {
+        if !FileManager.default.fileExists(atPath: file.path) { return ([], false, false) }  // not there yet
         do {
-            let loaded = try JSONDecoder().decode([Term].self, from: data)
+            let loaded = try JSONDecoder().decode([Term].self, from: Data(contentsOf: file))
             if loaded.count > maxTerms { throw GlossaryError.tooManyTerms(limit: maxTerms) }
             var seen = Set<String>()
+            var ids = Set<String>()
             for t in loaded {
+                if !ids.insert(t.id).inserted { throw GlossaryError.duplicateTerm(field: "id", value: t.id) }
                 _ = try check("text", t.text)
                 if t.variants.count > maxVariants { throw GlossaryError.tooManyVariants(limit: maxVariants) }
                 for v in t.variants { _ = try check("variants", v) }
@@ -169,15 +191,15 @@ actor GlossaryStore {
                     throw GlossaryError.duplicateTerm(field: "text", value: s)
                 }
             }
-            return (loaded, false)
+            return (loaded, false, false)
         } catch {
-            setAside(file, now: clock())
-            return ([], true)
+            return ([], true, !setAside(file, now: clock()))
         }
     }
 
-    /// Renames a corrupt file to `glossary.corrupt-<yyyyMMdd-HHmmss>[-n].json` (local time) beside it.
-    private static func setAside(_ file: URL, now: Date) {
+    /// Renames a corrupt file to `glossary.corrupt-<yyyyMMdd-HHmmss>[-n].json` (local time) beside it. False when
+    /// the rename failed.
+    private static func setAside(_ file: URL, now: Date) -> Bool {
         let c = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: now)
         func two(_ n: Int?) -> String { String(format: "%02d", n ?? 0) }
         let stamp = String(format: "%04d", c.year ?? 0) + two(c.month) + two(c.day) + "-" + two(c.hour)
@@ -189,8 +211,12 @@ actor GlossaryStore {
             target = directory.appendingPathComponent("glossary.corrupt-\(stamp)-\(n).json")
             n += 1
         }
-        // If even the rename fails, the next change overwrites the bad file; the store still starts empty.
-        try? FileManager.default.moveItem(at: file, to: target)
+        do {
+            try FileManager.default.moveItem(at: file, to: target)
+            return true
+        } catch {
+            return false
+        }
     }
 
     static func randomId() -> String {

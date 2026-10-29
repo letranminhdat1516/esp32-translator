@@ -38,6 +38,7 @@ private func describe(_ e: GlossaryError) -> [String: AnyHashable] {
     case let .duplicateTerm(field, value): ["error": "DuplicateTerm", "field": field, "value": value]
     case let .unknownTerm(id): ["error": "UnknownTerm", "id": id]
     case let .writeFailed(reason): ["error": "WriteFailed", "reason": reason]
+    case .readOnly: ["error": "ReadOnly"]
     }
 }
 
@@ -225,6 +226,80 @@ private func run(_ op: String, on s: GlossaryStore, input: [String: Any],
             #expect(list.map(\.text) == ["A", "C"])
             break
         }
+    }
+
+    @Test func anUnreadableFileIsSetAsideNotOverwritten() async throws {
+        let dir = try temporaryDirectory()
+        let file = dir.appendingPathComponent(GlossaryStore.fileName)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(#"[{"id":"a","text":"Zalo"}]"#.utf8).write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)  // cannot be read
+        let s = store(dir)
+        #expect(await s.recoveredFromCorruption)
+        #expect(await s.terms.isEmpty)
+        #expect(await !s.isReadOnly)
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        let aside = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix("glossary.corrupt-") }
+        #expect(aside.count == 1)
+        let asideURL = dir.appendingPathComponent(aside[0])
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: asideURL.path)
+        #expect(try String(contentsOf: asideURL, encoding: .utf8) == #"[{"id":"a","text":"Zalo"}]"#)
+        _ = try await s.add(text: "Grab")  // a fresh file beside the one set aside
+        #expect(await store(dir).terms.map(\.text) == ["Grab"])
+    }
+
+    @Test func aFileThatCannotBeSetAsideOpensReadOnly() async throws {
+        let dir = try temporaryDirectory()
+        let file = dir.appendingPathComponent(GlossaryStore.fileName)
+        let content = Data(#"[{"id":"a","text":"Zalo"}]"#.utf8)
+        try content.write(to: file)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)  // no rename
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let s = store(dir)
+        #expect(await s.recoveredFromCorruption)
+        #expect(await s.isReadOnly)
+        #expect(await s.terms.isEmpty)
+        let changes = s.changes()
+        // Every write is refused, before touching the disk
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        await #expect(throws: GlossaryError.readOnly) { try await s.add(text: "Grab") }
+        await #expect(throws: GlossaryError.readOnly) { try await s.update("a", text: "Grab") }
+        await #expect(throws: GlossaryError.readOnly) { try await s.remove("a") }
+        // The user's data is untouched
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+        #expect(try Data(contentsOf: file) == content)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == [GlossaryStore.fileName])
+        await s.close()
+        for await list in changes { Issue.record("no change expected, got \(list)") }
+    }
+
+    @Test func duplicateIdsOnLoadAreCorruption() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(#"[{"id":"a","text":"Zalo"},{"id":"a","text":"Grab"}]"#.utf8)
+            .write(to: dir.appendingPathComponent(GlossaryStore.fileName))
+        let s = store(dir)
+        #expect(await s.recoveredFromCorruption)
+        #expect(await s.terms.isEmpty)
+    }
+
+    @Test func closeEndsTheChangeStreams() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let s = store(dir)
+        let changes = s.changes()
+        _ = try await s.add(text: "A")
+        await s.close()
+        var seen: [[String]] = []
+        for await list in changes { seen.append(list.map(\.text)) }  // ends after close
+        #expect(seen == [["A"]])
+        // A stream asked for after close is already finished
+        for await _ in s.changes() { Issue.record("stream after close must be finished") }
     }
 
     @Test func theDefaultDirectoryIsApplicationSupport() throws {
