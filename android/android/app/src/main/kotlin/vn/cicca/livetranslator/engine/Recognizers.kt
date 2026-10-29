@@ -50,6 +50,11 @@ class RecognizerRequest(
     val onResult: (Recognized) -> Unit,
     /** Speech started / stopped, for a recognizer that owns the mic (drives the `gate` event) */
     val onSpeech: (Boolean) -> Unit = {},
+    /**
+     * The recognizer gave up for good (it will not resume: the model cannot load, permission lost, the
+     * language or service is gone). On the their side this makes `feedTheirAudio` reject ([TheirFeed]).
+     */
+    val onFatal: (String) -> Unit = {},
 )
 
 /**
