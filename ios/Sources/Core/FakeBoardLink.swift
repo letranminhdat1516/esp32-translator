@@ -8,9 +8,10 @@ final class FakeBoardLink: BoardLink, @unchecked Sendable {
     private var _sentTexts: [(text: String, kind: TextKind)] = []
     private var _micCalls: [Bool] = []
     private var _info = BoardInfo(protocolVersion: 0, fontSets: .latinVI)
+    private var _currentState = BoardState.off
 
     private let stateEvents = Broadcast<BoardState>()
-    private let audioEvents = Broadcast<Data>()
+    private let audioEvents = Broadcast<Data>(bufferingPolicy: .bufferingNewest(BoardProtocol.audioBufferPackets))
     private let controlEvents = Broadcast<BoardControl>()
 
     init() {}
@@ -25,6 +26,8 @@ final class FakeBoardLink: BoardLink, @unchecked Sendable {
         set { lock.withLock { _info = newValue } }
     }
 
+    var currentState: BoardState { lock.withLock { _currentState } }
+
     var state: AsyncStream<BoardState> { stateEvents.stream() }
     var audio: AsyncStream<Data> { audioEvents.stream() }
     var control: AsyncStream<BoardControl> { controlEvents.stream() }
@@ -37,7 +40,19 @@ final class FakeBoardLink: BoardLink, @unchecked Sendable {
         lock.withLock { _micCalls.append(on) }
     }
 
-    func emitState(_ s: BoardState) { stateEvents.send(s) }
+    /// Sets `currentState`, then sends `s` to the `state` subscribers.
+    func emitState(_ s: BoardState) {
+        lock.withLock { _currentState = s }
+        stateEvents.send(s)
+    }
+
     func emitAudio(_ data: Data) { audioEvents.send(data) }
     func emitControl(_ c: BoardControl) { controlEvents.send(c) }
+
+    /// Finishes every event stream (current and future subscribers), so `for await` loops in tests end.
+    func finishEvents() {
+        stateEvents.finish()
+        audioEvents.finish()
+        controlEvents.finish()
+    }
 }

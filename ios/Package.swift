@@ -13,7 +13,8 @@ let package = Package(
             exclude: ["Info.plist", "UI", "BLE", "Relay", "App/ESPTranslatorApp.swift", "App/ConversationEngine.swift",
                       "Audio/AudioSources.swift", "Audio/ADPCMDecoder.swift", "Speech/Speaker.swift",
                       "Translate/Translator.swift"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            // Language mode 5 as in the app; complete concurrency checking so data-race diagnostics show up here
+            swiftSettings: [.swiftLanguageMode(.v5), .unsafeFlags(["-strict-concurrency=complete"])]
         ),
         .testTarget(
             name: "TranslatorCoreTests",

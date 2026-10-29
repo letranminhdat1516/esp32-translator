@@ -56,6 +56,17 @@ actor FakeVoiceEngine: VoiceEngine {
     nonisolated func emitAudioSession(_ msg: AudioSessionMsg) { audioSessionEvents.send(msg) }
     nonisolated func emitDownload(_ msg: DownloadMsg) { downloadEvents.send(msg) }
 
+    /// Finishes every event stream (current and future subscribers), so `for await` loops in tests end.
+    nonisolated func finishEvents() {
+        mineEvents.finish()
+        theirsEvents.finish()
+        gateEvents.finish()
+        ttsStartEvents.finish()
+        ttsEndEvents.finish()
+        audioSessionEvents.finish()
+        downloadEvents.finish()
+    }
+
     nonisolated var mine: AsyncStream<MineMsg> { mineEvents.stream() }
     nonisolated var theirs: AsyncStream<TheirsMsg> { theirsEvents.stream() }
     nonisolated var gate: AsyncStream<Bool> { gateEvents.stream() }

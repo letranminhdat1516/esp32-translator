@@ -74,11 +74,11 @@ struct Rule: Codable, Hashable, Sendable {
     init(from decoder: Decoder) throws {
         let path = packPath(decoder.codingPath)
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        pattern = try c.decode(String.self, forKey: .pattern)
-        template = try c.decode(String.self, forKey: .template)
-        atClauseStart = try c.decodeIfPresent(Bool.self, forKey: .atClauseStart) ?? false
-        context = try c.decodeIfPresent(String.self, forKey: .context)
+        id = try c.packString(.id, path)
+        pattern = try c.packString(.pattern, path)
+        template = try c.packString(.template, path)
+        atClauseStart = try c.packOptional(Bool.self, .atClauseStart, path, dartType: "bool") ?? false
+        context = try c.packOptional(String.self, .context, path, dartType: "String")
         try checkRegex(pattern, field: joinPath(path, "pattern"))
         if let context { try checkRegex(context, field: joinPath(path, "context")) }
     }
@@ -106,13 +106,10 @@ struct Term: Codable, Hashable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        // Same check order as Dart `Term.fromJson`: origin, fixed (a map), id, text, variants, fixed entries.
         let path = packPath(decoder.codingPath)
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        text = try c.decode(String.self, forKey: .text)
-        variants = try c.decodeIfPresent([String].self, forKey: .variants) ?? []
-        fixed = try c.decodeIfPresent([String: String].self, forKey: .fixed) ?? [:]
-        if let name = try c.decodeIfPresent(String.self, forKey: .origin) {
+        if let name = try c.packOptional(String.self, .origin, path, dartType: "String") {
             guard let origin = TermOrigin(rawValue: name) else {
                 throw PackError(field: joinPath(path, "origin"), reason: "unknown origin \"\(name)\"")
             }
@@ -120,6 +117,20 @@ struct Term: Codable, Hashable, Sendable {
         } else {
             origin = .user
         }
+        let fixedMap = try c.packMap(.fixed, path)
+        id = try c.packString(.id, path)
+        text = try c.packString(.text, path)
+        variants = try c.packStringList(.variants, path)
+        var fixed: [String: String] = [:]
+        if let fixedMap {
+            for key in fixedMap.allKeys {
+                guard let value = try? fixedMap.decode(String.self, forKey: key) else {
+                    throw PackError(field: joinPath(path, "fixed"), reason: "values must be strings")
+                }
+                fixed[key.stringValue] = value
+            }
+        }
+        self.fixed = fixed
     }
 }
 
@@ -156,23 +167,24 @@ struct LanguagePack: Codable, Hashable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
+        // Same check order as Dart `LanguagePack.fromJson`.
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        let scriptName = try c.decode(String.self, forKey: .script)
+        let scriptName = try c.packString(.script, "")
         guard let script = Script(rawValue: scriptName) else {
             throw PackError(field: "script", reason: "unknown script \"\(scriptName)\"")
         }
         self.script = script
-        code = try c.decode(String.self, forKey: .code)
-        appleLocale = try c.decode(String.self, forKey: .appleLocale)
-        androidLocale = try c.decode(String.self, forKey: .androidLocale)
-        whisperCode = try c.decode(String.self, forKey: .whisperCode)
-        label = try c.decode(String.self, forKey: .label)
-        labelLatin = try c.decode(String.self, forKey: .labelLatin)
-        minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence)
-        recognition = try c.decodeIfPresent([Rule].self, forKey: .recognition) ?? []
-        beforeTranslation = try c.decodeIfPresent([Rule].self, forKey: .beforeTranslation) ?? []
-        terms = try c.decodeIfPresent([Term].self, forKey: .terms) ?? []
-        hints = try c.decodeIfPresent([String].self, forKey: .hints) ?? []
+        minConfidence = try c.packOptional(Double.self, .minConfidence, "", dartType: "num")
+        code = try c.packString(.code, "")
+        appleLocale = try c.packString(.appleLocale, "")
+        androidLocale = try c.packString(.androidLocale, "")
+        whisperCode = try c.packString(.whisperCode, "")
+        label = try c.packString(.label, "")
+        labelLatin = try c.packString(.labelLatin, "")
+        recognition = try c.packObjectList(Rule.self, .recognition)
+        beforeTranslation = try c.packObjectList(Rule.self, .beforeTranslation)
+        terms = try c.packObjectList(Term.self, .terms)
+        hints = try c.packStringList(.hints, "")
     }
 
     /// Parses and validates pack JSON. Throws `PackError` on invalid JSON, a missing or mistyped field, an unknown
@@ -241,29 +253,96 @@ private func checkRegex(_ pattern: String, field: String) throws {
     }
 }
 
+/// Any string key, for walking a JSON object of unknown keys (`Term.fixed`).
+private struct AnyKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+}
+
+/// Ports of the Dart helpers `_str`, `_opt<T>`, `_strList`, `_objList`: same field paths and reasons.
+private extension KeyedDecodingContainer {
+    func isAbsent(_ key: Key) throws -> Bool {
+        try !contains(key) || decodeNil(forKey: key)
+    }
+
+    /// Dart `_str`: a required string.
+    func packString(_ key: Key, _ path: String) throws -> String {
+        let field = joinPath(path, key.stringValue)
+        if try isAbsent(key) { throw PackError(field: field, reason: "missing") }
+        guard let value = try? decode(String.self, forKey: key) else {
+            throw PackError(field: field, reason: "must be a string")
+        }
+        return value
+    }
+
+    /// Dart `_opt<T>`: absent or null → nil. `dartType` is how Dart prints `T`, for the same reason text.
+    func packOptional<T: Decodable>(_ type: T.Type, _ key: Key, _ path: String, dartType: String) throws -> T? {
+        if try isAbsent(key) { return nil }
+        guard let value = try? decode(T.self, forKey: key) else {
+            throw PackError(field: joinPath(path, key.stringValue), reason: "must be a \(dartType)")
+        }
+        return value
+    }
+
+    /// Dart `_opt<Map>`.
+    func packMap(_ key: Key, _ path: String) throws -> KeyedDecodingContainer<AnyKey>? {
+        if try isAbsent(key) { return nil }
+        guard let map = try? nestedContainer(keyedBy: AnyKey.self, forKey: key) else {
+            throw PackError(field: joinPath(path, key.stringValue), reason: "must be a Map<dynamic, dynamic>")
+        }
+        return map
+    }
+
+    /// Dart `_opt<List>`.
+    func packList(_ key: Key, _ path: String) throws -> UnkeyedDecodingContainer? {
+        if try isAbsent(key) { return nil }
+        guard let list = try? nestedUnkeyedContainer(forKey: key) else {
+            throw PackError(field: joinPath(path, key.stringValue), reason: "must be a List<dynamic>")
+        }
+        return list
+    }
+
+    /// Dart `_strList`: a bad entry reports the list's path, not the entry's.
+    func packStringList(_ key: Key, _ path: String) throws -> [String] {
+        guard var list = try packList(key, path) else { return [] }
+        var out: [String] = []
+        while !list.isAtEnd {
+            guard let s = try? list.decode(String.self) else {
+                throw PackError(field: joinPath(path, key.stringValue), reason: "entries must be strings")
+            }
+            out.append(s)
+        }
+        return out
+    }
+
+    /// Dart `_objList` (top-level keys only): a non-object entry is `key[i]`, "must be an object". Errors inside an
+    /// entry are already `PackError`s (its fields are read with the helpers above).
+    func packObjectList<T: Decodable>(_ type: T.Type, _ key: Key) throws -> [T] {
+        guard var list = try packList(key, "") else { return [] }
+        var out: [T] = []
+        while !list.isAtEnd {
+            let index = list.currentIndex
+            do {
+                out.append(try list.decode(T.self))
+            } catch is DecodingError {
+                throw PackError(field: "\(key.stringValue)[\(index)]", reason: "must be an object")
+            }
+        }
+        return out
+    }
+}
+
 private extension PackError {
+    /// What is left for JSONDecoder itself to report: invalid JSON, or a document that is not an object.
     init(decoding error: DecodingError) {
         switch error {
-        case let .keyNotFound(key, context):
-            self.init(field: packPath(context.codingPath + [key]), reason: "missing")
-        case let .valueNotFound(_, context):
-            self.init(field: packPath(context.codingPath), reason: "missing")
-        case let .typeMismatch(type, context):
-            let field = packPath(context.codingPath)
-            if field.isEmpty {
-                self.init(field: "", reason: "pack must be a JSON object")
-            } else if type is [String: Any].Type {
-                self.init(field: field, reason: "must be an object")
-            } else {
-                self.init(field: field, reason: "must be a \(type)")
-            }
-        case let .dataCorrupted(context):
-            if context.codingPath.isEmpty {
-                self.init(field: "", reason: "invalid JSON: \(context.debugDescription)")
-            } else {
-                self.init(field: packPath(context.codingPath), reason: context.debugDescription)
-            }
-        @unknown default:
+        case let .dataCorrupted(context) where context.codingPath.isEmpty:
+            self.init(field: "", reason: "invalid JSON: \(context.debugDescription)")
+        case let .typeMismatch(_, context) where context.codingPath.isEmpty:
+            self.init(field: "", reason: "pack must be a JSON object")
+        default:
             self.init(field: "", reason: "\(error)")
         }
     }

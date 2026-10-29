@@ -116,7 +116,11 @@ struct DownloadMsg: Codable, Hashable, Sendable {
 /// `start` → `.notReady`, `downloadItem` → `.downloadFailed`); other errors are passed through unchanged.
 ///
 /// Events are broadcast: every access to an event property returns a new `AsyncStream` that receives every event
-/// sent after that access (like the Dart broadcast streams). Subscribe before triggering what emits.
+/// sent after that access (like the Dart broadcast streams).
+///
+/// Subscribing inside a Task is a race: in `Task { for await x in engine.ttsStart { … } }` the property is read only
+/// when the Task first runs, so events sent before that are lost. Call `events()` first (it subscribes to every stream
+/// synchronously) and hand its streams to the Task: `let ev = engine.events(); Task { for await x in ev.ttsStart … }`.
 protocol VoiceEngine: AnyObject, Sendable {
     /// Fast, no downloads; called at launch and after any download. `home` is the user's language ("vi").
     func capabilities(home: String) async throws -> Capabilities
@@ -148,19 +152,52 @@ protocol VoiceEngine: AnyObject, Sendable {
     var download: AsyncStream<DownloadMsg> { get }
 }
 
+/// One subscription to every `VoiceEngine` event stream, all made before `events()` returns.
+struct EngineEvents: Sendable {
+    let mine: AsyncStream<MineMsg>
+    let theirs: AsyncStream<TheirsMsg>
+    let gate: AsyncStream<Bool>
+    let ttsStart: AsyncStream<Int>
+    let ttsEnd: AsyncStream<Int>
+    let audioSession: AsyncStream<AudioSessionMsg>
+    let download: AsyncStream<DownloadMsg>
+}
+
+extension VoiceEngine {
+    /// Subscribes to all seven event streams now (synchronously); see the race note on `VoiceEngine`.
+    func events() -> EngineEvents {
+        EngineEvents(mine: mine, theirs: theirs, gate: gate, ttsStart: ttsStart, ttsEnd: ttsEnd,
+                     audioSession: audioSession, download: download)
+    }
+}
+
 /// Fan-out of events to any number of `AsyncStream` subscribers; thread safe. Used by engines and board links to
 /// give each event property broadcast semantics.
 final class Broadcast<Element: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
+    private let bufferingPolicy: AsyncStream<Element>.Continuation.BufferingPolicy
     private var continuations: [UUID: AsyncStream<Element>.Continuation] = [:]
+    private var finished = false
 
-    init() {}
+    /// `bufferingPolicy` applies to each subscriber's unread elements (e.g. `.bufferingNewest(64)` for audio).
+    init(bufferingPolicy: AsyncStream<Element>.Continuation.BufferingPolicy = .unbounded) {
+        self.bufferingPolicy = bufferingPolicy
+    }
 
     /// A new subscription: receives every element sent after this call, until the stream is dropped or `finish()`.
+    /// After `finish()` the stream is already finished.
     func stream() -> AsyncStream<Element> {
-        AsyncStream { continuation in
+        AsyncStream(bufferingPolicy: bufferingPolicy) { continuation in
             let id = UUID()
-            lock.withLock { continuations[id] = continuation }
+            let added = lock.withLock { () -> Bool in
+                guard !finished else { return false }
+                continuations[id] = continuation
+                return true
+            }
+            guard added else {
+                continuation.finish()
+                return
+            }
             continuation.onTermination = { [weak self] _ in
                 guard let self else { return }
                 _ = self.lock.withLock { self.continuations.removeValue(forKey: id) }
@@ -174,10 +211,13 @@ final class Broadcast<Element: Sendable>: @unchecked Sendable {
         }
     }
 
-    /// Ends every current subscription.
+    /// Ends every subscription, current and future; later `send`s are dropped.
     func finish() {
-        for continuation in lock.withLock({ Array(continuations.values) }) {
-            continuation.finish()
+        let ending = lock.withLock { () -> [AsyncStream<Element>.Continuation] in
+            finished = true
+            defer { continuations.removeAll() }
+            return Array(continuations.values)
         }
+        for continuation in ending { continuation.finish() }
     }
 }

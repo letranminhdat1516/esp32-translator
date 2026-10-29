@@ -69,19 +69,33 @@ private func packErrorField(_ json: String) -> String? {
         #expect(packErrorField(encode(m)) == "label")
     }
 
-    @Test func mistypedFieldThrowsWithItsPath() throws {
+    /// Same field and reason as the Dart helpers (`_str`, `_opt<T>` with Dart's `$T`, `_strList`, `_objList`,
+    /// `_fixedVal`): a bad list or map entry reports the list's or map's path.
+    @Test(arguments: [
+        (#"{"code": 5}"#, PackError(field: "code", reason: "must be a string")),
+        (#"{"label": null}"#, PackError(field: "label", reason: "missing")),
+        (#"{"minConfidence": "high"}"#, PackError(field: "minConfidence", reason: "must be a num")),
+        (#"{"hints": ["a", 1]}"#, PackError(field: "hints", reason: "entries must be strings")),
+        (#"{"hints": "a"}"#, PackError(field: "hints", reason: "must be a List<dynamic>")),
+        (#"{"terms": 5}"#, PackError(field: "terms", reason: "must be a List<dynamic>")),
+        (#"{"terms": [5]}"#, PackError(field: "terms[0]", reason: "must be an object")),
+        (#"{"terms": [{"id": "t", "text": "x", "variants": ["a", 2]}]}"#,
+         PackError(field: "terms[0].variants", reason: "entries must be strings")),
+        (#"{"terms": [{"id": "t", "text": "x", "fixed": {"en": 1}}]}"#,
+         PackError(field: "terms[0].fixed", reason: "values must be strings")),
+        (#"{"terms": [{"id": "t", "text": "x", "fixed": "en"}]}"#,
+         PackError(field: "terms[0].fixed", reason: "must be a Map<dynamic, dynamic>")),
+        (#"{"terms": [{"text": "x"}]}"#, PackError(field: "terms[0].id", reason: "missing")),
+        (#"{"recognition": [{"id": "r", "pattern": "a", "template": "b", "atClauseStart": "yes"}]}"#,
+         PackError(field: "recognition[0].atClauseStart", reason: "must be a bool")),
+        (#"{"recognition": [{"id": "r", "pattern": "a", "template": "b", "context": 1}]}"#,
+         PackError(field: "recognition[0].context", reason: "must be a String")),
+    ])
+    func mistypedFieldThrowsDartPathAndReason(override: String, expected: PackError) throws {
         var m = try base()
-        m["code"] = 5
-        #expect(packErrorField(encode(m)) == "code")
-        m = try base()
-        m["recognition"] = [["id": "r", "pattern": "a", "template": "b", "atClauseStart": "yes"]]
-        #expect(packErrorField(encode(m)) == "recognition[0].atClauseStart")
-        m = try base()
-        m["terms"] = [5]
-        #expect(packErrorField(encode(m)) == "terms[0]")
-        #expect(throws: PackError(field: "terms[0]", reason: "must be an object")) {
-            try LanguagePack.parse(encode(m))
-        }
+        let patch = try JSONSerialization.jsonObject(with: Data(override.utf8)) as! [String: Any]
+        for (k, v) in patch { m[k] = v }
+        #expect(throws: expected) { try LanguagePack.parse(encode(m)) }
     }
 
     @Test func invalidRecognitionPatternThrowsWithPath() throws {
