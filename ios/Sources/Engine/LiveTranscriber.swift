@@ -34,6 +34,11 @@ final class LiveTranscriber: @unchecked Sendable {
     private var resultsTask: Task<Void, Never>?
     /// Seconds of audio fed so far (diagnostics: lag = fed - result end)
     private let fedSeconds = OSAllocatedUnfairLock(initialState: 0.0)
+    /// Started; the results stream ended (an analysis error, which it never recovers from); stopped
+    private let lifecycle = OSAllocatedUnfairLock(initialState: (started: false, ended: false, stopped: false))
+
+    /// Started, not stopped, and the analysis has not ended: false for good after a fatal error
+    var isAlive: Bool { lifecycle.withLock { $0.started && !$0.ended && !$0.stopped } }
 
     init(locale: Locale, engine: Engine) {
         self.locale = locale
@@ -116,8 +121,11 @@ final class LiveTranscriber: @unchecked Sendable {
             } catch {
                 Diag.log("[\(self.locale.identifier)] results stream ENDED with error: \(error)")
             }
+            // Either way no result will come again: the recognizer is dead until it is rebuilt
+            self.lifecycle.withLock { $0.ended = true }
         }
         try await analyzer.start(inputSequence: stream)
+        lifecycle.withLock { $0.started = true }
     }
 
     /// Words the recognizer should expect (names, places, glossary terms). Empty clears them.
@@ -151,6 +159,7 @@ final class LiveTranscriber: @unchecked Sendable {
     }
 
     func stop() async {
+        lifecycle.withLock { $0.stopped = true }
         input?.finish()
         resultsTask?.cancel()
         await analyzer?.cancelAndFinishNow()

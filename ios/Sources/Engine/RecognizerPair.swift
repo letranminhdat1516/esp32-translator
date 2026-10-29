@@ -12,6 +12,8 @@ protocol Recognizer: AnyObject, Sendable {
     func feed(_ buffer: AVAudioPCMBuffer)
     func finalizeNow()
     func stop() async
+    /// Started, not stopped, and its analysis has not ended (an error ends it for good)
+    var isAlive: Bool { get }
 }
 
 extension LiveTranscriber: Recognizer {}
@@ -51,7 +53,9 @@ final class RecognizerPair {
     /// generation and hints changed), true for a fresh start. Throws `notReady` when a recognizer is missing,
     /// fails, or a later `start`/`stop` overtook this one.
     func start(_ pair: PairMsg, hints: [String]) async throws -> Bool {
-        if let running = self.pair, running.home == pair.home, running.other == pair.other, let x = theirs {
+        // A dead X recognizer (its analysis ended with an error) is rebuilt even for the same languages
+        if let running = self.pair, running.home == pair.home, running.other == pair.other, let x = theirs,
+           x.isAlive {
             self.pair = pair
             generation.value = pair.generation
             await x.setHints(hints)
@@ -133,6 +137,10 @@ final class RecognizerPair {
     }
 
     var isRunning: Bool { theirs != nil }
+
+    /// The X recognizer runs: false before a start, after a stop, and once its analysis ended with an error,
+    /// until the next successful start
+    var theirsAlive: Bool { theirs?.isAlive ?? false }
 }
 
 /// A switch read from the recognizers' result tasks

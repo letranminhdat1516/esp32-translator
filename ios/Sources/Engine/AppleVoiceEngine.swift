@@ -154,7 +154,9 @@ final class AppleVoiceEngine: VoiceEngine {
         guard recognizerX == RecognizerKinds.onDevice else {
             throw EngineErrors.notReady("recognizer \(recognizerX) is not available on iOS")
         }
-        let sameLanguages = self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false
+        // A dead X recognizer counts as a different pair: everything is rebuilt
+        let sameLanguages = recognizers.theirsAlive
+            && (self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false)
         if !sameLanguages { tearDown() }
         guard try await recognizers.start(pair, hints: hints) else { return }
         // A fresh pair is running. No await from here on, so no stop or start can interleave.
@@ -261,8 +263,11 @@ final class AppleVoiceEngine: VoiceEngine {
 
     // MARK: Board audio
 
-    /// PCM from the board (the controller decodes the BLE ADPCM). Audio before `start` finishes is dropped.
+    /// PCM from the board (the controller decodes the BLE ADPCM). Throws `notReady` whenever the X recognizer is
+    /// not running (before `start`, after `stop`, or after its analysis ended with an error) until the next
+    /// successful `start`: the controller takes that as "recognizer died" (restart once, then failed).
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
+        guard recognizers.theirsAlive else { throw EngineErrors.notReady("their recognizer is not running") }
         guard let x = theirRecognizer, let converter = theirConverter,
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }
@@ -316,24 +321,30 @@ final class AppleVoiceEngine: VoiceEngine {
 
     // MARK: Audio session
 
-    /// A phone call or Siri interrupts the session and stops the mic engine. When it ends the mic comes back only
-    /// if the controller still wants it and iOS says to resume (then `resumed`); otherwise the mic is released and
-    /// no `resumed` follows, so the app never grabs the mic back while you watch a video. While idle only the
-    /// mixable silence is restarted. A media services reset rebuilds whichever runs.
+    /// A phone call or Siri interrupts the session and stops the mic engine. `interrupted` is sent only when the
+    /// mic is really lost; the interruption's begin sends nothing. When it ends with resume and the controller
+    /// still wants the mic, the engine takes it back itself and then sends `resumed` (a failed retake sends
+    /// `interrupted`); an end without resume releases the mic and sends `interrupted`, so the app never grabs the
+    /// mic back while you watch a video. While idle only the mixable silence is restarted. A media services reset
+    /// rebuilds whichever runs.
     private func sessionChanged(_ change: AudioSessionChange) {
         switch change {
         case .interruptionBegan:
-            sink.send(.audioSession(AudioSessionMsg(kind: .interrupted)))
+            Diag.log("conversation: interruption began")
         case .interruptionEnded(let shouldResume):
             guard pair != nil else { return }
             if !micWanted {
                 session.startSilence()
                 sink.send(.audioSession(AudioSessionMsg(kind: .resumed, route: session.currentRoute)))
-            } else if shouldResume, restartMic(reason: "interruption ended") {
-                sink.send(.audioSession(AudioSessionMsg(kind: .resumed, route: session.currentRoute)))
+            } else if shouldResume {
+                // restartMic sends `interrupted` itself when the mic cannot be taken back
+                if restartMic(reason: "interruption ended") {
+                    sink.send(.audioSession(AudioSessionMsg(kind: .resumed, route: session.currentRoute)))
+                }
             } else {
                 Diag.log("conversation: interruption ended without resume, mic released")
                 try? micOnNow(false)
+                sink.send(.audioSession(AudioSessionMsg(kind: .interrupted)))
             }
         case .routeChanged(let route):
             sink.send(.audioSession(AudioSessionMsg(kind: .routeChanged, route: route)))

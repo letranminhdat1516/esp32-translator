@@ -91,6 +91,25 @@ final class RecognizerPairTests: XCTestCase {
         XCTAssertEqual(theirTexts(), ["hello@5"])
     }
 
+    func testTheirRecognizerAliveFollowsStartStopAndFatalErrors() async throws {
+        let dead = FakeRecognizer("en"), fresh = FakeRecognizer("en")
+        var xs = [dead, fresh], homes = [FakeRecognizer("vi"), FakeRecognizer("vi")]
+        let engine = RecognizerPair(events: sink, factory: { language in
+            language == "en" ? (xs.isEmpty ? nil : xs.removeFirst()) : (homes.isEmpty ? nil : homes.removeFirst())
+        })
+        XCTAssertFalse(engine.theirsAlive, "never started")
+        _ = try await engine.start(PairMsg(home: "vi", other: "en", generation: 1), hints: [])
+        XCTAssertTrue(engine.theirsAlive)
+        dead.failFatally()
+        XCTAssertFalse(engine.theirsAlive, "the analysis ended with an error")
+        let rebuilt = try await engine.start(PairMsg(home: "vi", other: "en", generation: 2), hints: [])
+        XCTAssertTrue(rebuilt, "a dead recognizer is rebuilt even for the same languages")
+        XCTAssertTrue(engine.theirs === fresh)
+        XCTAssertTrue(engine.theirsAlive)
+        engine.stop()
+        XCTAssertFalse(engine.theirsAlive, "stopped")
+    }
+
     func testStopSilencesTheRunningRecognizers() async throws {
         let x = FakeRecognizer("en"), home = FakeRecognizer("vi")
         let engine = pair(["en": x, "vi": home])
