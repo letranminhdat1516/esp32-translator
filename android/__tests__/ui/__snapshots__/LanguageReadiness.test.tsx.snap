@@ -1,0 +1,271 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ReadinessView snapshot: needs download and downloading: downloading 1`] = `
+<View
+  style={
+    {
+      "flex": 1,
+    }
+  }
+>
+  <RCTScrollView
+    contentContainerStyle={
+      {
+        "alignItems": "center",
+        "flexGrow": 1,
+        "justifyContent": "center",
+        "padding": 24,
+      }
+    }
+  >
+    <View>
+      <View
+        accessibilityRole="progressbar"
+        accessibilityValue={
+          {
+            "max": 100,
+            "min": 0,
+            "now": 50,
+          }
+        }
+        style={
+          {
+            "backgroundColor": "#16171A",
+            "borderRadius": 2,
+            "height": 4,
+            "overflow": "hidden",
+            "width": 220,
+          }
+        }
+        testID="progressBar"
+      >
+        <View
+          style={
+            [
+              {
+                "backgroundColor": "#1E6FD9",
+                "height": 4,
+              },
+              {
+                "width": "50%",
+              },
+            ]
+          }
+        />
+      </View>
+      <View
+        style={
+          {
+            "height": 16,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#8A919C",
+              "fontSize": 15,
+              "paddingVertical": 3,
+            },
+          ]
+        }
+      >
+        Đang tải… 50%
+      </Text>
+    </View>
+  </RCTScrollView>
+</View>
+`;
+
+exports[`ReadinessView snapshot: needs download and downloading: needsDownload 1`] = `
+<View
+  style={
+    {
+      "flex": 1,
+    }
+  }
+>
+  <RCTScrollView
+    contentContainerStyle={
+      {
+        "alignItems": "center",
+        "flexGrow": 1,
+        "justifyContent": "center",
+        "padding": 24,
+      }
+    }
+  >
+    <View>
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            {
+              "color": "#4C8FE8",
+              "fontSize": 40,
+              "marginBottom": 16,
+            },
+          ]
+        }
+      >
+        ⭳
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            [
+              {
+                "fontSize": 18,
+              },
+              {
+                "textAlign": "center",
+              },
+            ],
+          ]
+        }
+      >
+        Cần tải về trước khi dùng
+      </Text>
+      <View
+        style={
+          {
+            "height": 12,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            [
+              {
+                "color": "#8A919C",
+                "fontSize": 15,
+                "paddingVertical": 3,
+              },
+              {
+                "textAlign": "center",
+              },
+            ],
+          ]
+        }
+      >
+        Mô hình nhận giọng
+      </Text>
+      <View
+        style={
+          {
+            "height": 12,
+          }
+        }
+      />
+      <Text
+        style={
+          [
+            {
+              "color": "#E3EAF0",
+              "fontFamily": "BeVietnamPro-SemiBold",
+            },
+            [
+              {
+                "color": "#8A919C",
+                "fontSize": 15,
+                "paddingVertical": 3,
+              },
+              {
+                "textAlign": "center",
+              },
+            ],
+          ]
+        }
+      >
+        Tải một lần, sau đó dịch hoàn toàn trên máy: không cần mạng và nhanh hơn.
+      </Text>
+      <View
+        style={
+          {
+            "height": 16,
+          }
+        }
+      />
+      <View
+        accessibilityLabel="Tải về"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          [
+            {
+              "alignItems": "center",
+              "backgroundColor": "#1E6FD9",
+              "borderRadius": 999,
+              "paddingHorizontal": 28,
+              "paddingVertical": 14,
+            },
+            undefined,
+          ]
+        }
+      >
+        <Text
+          style={
+            [
+              {
+                "color": "#E3EAF0",
+                "fontFamily": "BeVietnamPro-SemiBold",
+              },
+              {
+                "color": "#FFFFFF",
+                "fontSize": 15,
+              },
+            ]
+          }
+        >
+          Tải về
+        </Text>
+      </View>
+    </View>
+  </RCTScrollView>
+</View>
+`;
