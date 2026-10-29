@@ -10,7 +10,7 @@ let languagesDirectory = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()  // Tests
     .deletingLastPathComponent()  // ios
     .deletingLastPathComponent()  // repository root
-    .appendingPathComponent("app/assets/languages")
+    .appendingPathComponent("shared/languages")
 
 func packJSON(_ name: String) throws -> String {
     try String(contentsOf: languagesDirectory.appendingPathComponent("\(name).json"), encoding: .utf8)
