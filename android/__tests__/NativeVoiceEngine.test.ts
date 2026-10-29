@@ -188,6 +188,23 @@ test('an event with an unknown enum name is dropped, not forwarded', () => {
   warn.mockRestore();
 });
 
+test('a throwing handler is logged, never thrown into the native emitter; other handlers still run', () => {
+  const {events, spec} = fakeModule();
+  const engine = new NativeVoiceEngineAdapter(spec);
+  const got: number[] = [];
+  const boom = new Error('handler bug');
+  engine.on('ttsEnd', () => {
+    throw boom;
+  });
+  engine.on('ttsEnd', id => got.push(id));
+  const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+  expect(() => events.onTtsEnd.fire(3)).not.toThrow();
+  expect(got).toEqual([3]);
+  expect(error).toHaveBeenCalledTimes(1);
+  expect(error.mock.calls[0]).toContain(boom);
+  error.mockRestore();
+});
+
 test('dispose removes the native subscriptions and the handlers', () => {
   const {events, spec} = fakeModule();
   const engine = new NativeVoiceEngineAdapter(spec);
