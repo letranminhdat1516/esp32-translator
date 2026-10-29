@@ -30,6 +30,21 @@ private final class FakeChar {}
         #expect(q.pendingCount == 0)
     }
 
+    /// A subtitle sent between discovery and the end of setup is kept (as the Swift app always did) and written
+    /// only once the link is ready, after the clock and the label
+    @Test func chunksQueuedDuringSetupAreWrittenOnceReady() {
+        var q = BoardWriteQueue<FakeChar>()
+        q.attach(FakeChar(), ready: false)
+        let queued = q.replace([Data([5]), Data([6])])
+        #expect(queued)
+        var written: [Data] = []
+        q.drain(canSend: { true }) { _, chunk in written.append(chunk) }
+        #expect(written.isEmpty)
+        q.markReady()
+        q.drain(canSend: { true }) { _, chunk in written.append(chunk) }
+        #expect(written == [Data([5]), Data([6])])
+    }
+
     @Test func aNewTextReplacesTheUnsentOne() {
         var q = BoardWriteQueue<FakeChar>()
         q.attach(FakeChar())
@@ -90,27 +105,46 @@ private final class FakeChar {}
     }
 }
 
+/// Review Focus 1: a characteristics discovery that started before a services reset must not set up (and mark
+/// ready) the dead characteristics
+@Suite struct SetupGuardTests {
+    @Test func onlyTheServiceBeingSetUpIsCurrent() {
+        var setup = SetupGuard<FakeChar>()
+        let old = FakeChar(), fresh = FakeChar()
+        #expect(!setup.isCurrent(old))
+        setup.begin(old)
+        #expect(setup.isCurrent(old))
+        setup.reset()  // services reset or drop
+        #expect(!setup.isCurrent(old), "a late discovery of the old service is ignored")
+        setup.begin(fresh)
+        #expect(!setup.isCurrent(old))
+        #expect(setup.isCurrent(fresh))
+    }
+}
+
 @Suite struct ReconnectBackoffTests {
-    @Test func doublesFromHalfASecondUpToTenSeconds() {
+    /// The first rescan after a drop is immediate (as the Swift app always did); from the second consecutive
+    /// failure it waits 0.5 s, doubling up to 10 s
+    @Test func firstRescanIsImmediateThenDoublesFromHalfASecondUpToTenSeconds() {
         var b = ReconnectBackoff()
-        let delays = (0..<8).map { _ in b.nextDelay() }
-        #expect(delays == [0.5, 1, 2, 4, 8, 10, 10, 10])
+        let delays = (0..<9).map { _ in b.nextDelay() }
+        #expect(delays == [0, 0.5, 1, 2, 4, 8, 10, 10, 10])
     }
 
-    @Test func resetStartsAgainAtHalfASecond() {
+    @Test func resetMakesTheNextRescanImmediateAgain() {
         var b = ReconnectBackoff()
         _ = b.nextDelay()
         _ = b.nextDelay()
         _ = b.nextDelay()
         b.reset()  // the link became ready, or Bluetooth was switched on
-        let again = [b.nextDelay(), b.nextDelay()]
-        #expect(again == [0.5, 1])
+        let again = [b.nextDelay(), b.nextDelay(), b.nextDelay()]
+        #expect(again == [0, 0.5, 1])
     }
 
     @Test func customBounds() {
         var b = ReconnectBackoff(base: 1, max: 3)
-        let delays = (0..<4).map { _ in b.nextDelay() }
-        #expect(delays == [1, 2, 3, 3])
+        let delays = (0..<5).map { _ in b.nextDelay() }
+        #expect(delays == [0, 1, 2, 3, 3])
     }
 }
 
@@ -125,6 +159,20 @@ private final class FakeChar {}
         label.boardInfo(parsed: true)
         let after = label.send("English")
         #expect(after == "English")
+    }
+
+    /// The next link may be older firmware: until its board info is read no label goes out, but the label is
+    /// remembered for the resend on ready
+    @Test func aLostLinkForgetsLabelSupportButKeepsTheLabel() {
+        var label = BoardLabel()
+        label.boardInfo(parsed: true)
+        _ = label.send("English")
+        label.linkGone()
+        let meanwhile = label.send("日本語")
+        #expect(meanwhile == nil)
+        #expect(label.last == "日本語")
+        let date = Date(timeIntervalSince1970: 0), utc = TimeZone(secondsFromGMT: 0)!
+        #expect(label.readyFrames(maxWrite: 185, at: date, in: utc) == [BoardProtocol.timeFrame(at: date, in: utc)])
     }
 
     @Test func aLabelIsCutTo32BytesAtACharacterBoundary() {

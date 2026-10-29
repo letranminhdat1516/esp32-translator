@@ -8,7 +8,8 @@ import os
 ///
 /// `BoardLink` (ARCHITECTURE R4): state/audio/control streams, the board info read from `…0005` on connect, the
 /// clock and the language label (kind 3) resent whenever the link becomes ready, the 20 s keepalive, a services
-/// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff (0.5 s → 10 s).
+/// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff
+/// (first rescan at once, then 0.5 s → 10 s).
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
 final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     typealias State = BoardState
@@ -69,6 +70,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// Pause before the next scan after a drop or a failed connect (BLE queue)
     private var backoff = ReconnectBackoff()
     private var retry: DispatchWorkItem?
+    /// The translator service being set up; callbacks for an older one are ignored (BLE queue)
+    private var setup = SetupGuard<CBService>()
     /// Keepalive on the control characteristic while connected (BLE queue). The board stops streaming audio after
     /// 60 s without any app write: a bonded iPhone keeps the link for notifications (ANCS) after the app is gone.
     private var keepalive: DispatchSourceTimer?
@@ -192,6 +195,10 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         controlCharacteristic = nil
         infoCharacteristic = nil
         textQueue.detach()
+        setup.reset()
+        // The next board may be older firmware: no label and Latin-only until its board info is read
+        label.linkGone()
+        shared.withLock { $0.info = BoardLabel.info(from: nil) }
     }
 
     /// The board link is gone (BLE queue)
@@ -235,6 +242,10 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private func scheduleRescan() {
         retry?.cancel()
         let delay = backoff.nextDelay()
+        guard delay > 0 else {
+            startScan()  // the first rescan after a drop is immediate
+            return
+        }
         Diag.log("ble: rescan in \(delay) s")
         setState(.scanning)
         let work = DispatchWorkItem { [weak self] in
@@ -299,9 +310,11 @@ extension ESPLink: CBCentralManagerDelegate {
 
 extension ESPLink: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard peripheral === self.peripheral else { return }
         for s in peripheral.services ?? [] {
             switch s.uuid {
             case Self.service:
+                setup.begin(s)
                 peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar],
                                                    for: s)
             case Self.claudeService where claudeRequestChar == nil:
@@ -328,7 +341,9 @@ extension ESPLink: CBPeripheralDelegate {
             }
             return
         }
-        guard service.uuid == Self.service else { return }
+        // Only the service being set up: a discovery from before a services reset or a drop must not mark its dead
+        // characteristics ready (Review Focus 1)
+        guard service.uuid == Self.service, peripheral === self.peripheral, setup.isCurrent(service) else { return }
         var info: CBCharacteristic?
         for c in service.characteristics ?? [] {
             switch c.uuid {
@@ -341,6 +356,8 @@ extension ESPLink: CBPeripheralDelegate {
             default: break
             }
         }
+        // A subtitle sent from now on is kept and written once the clock and the label are out
+        if let textCharacteristic { textQueue.attach(textCharacteristic, ready: false) }
         // Board info first (absent on older firmware): it decides whether the label is sent
         if let info {
             infoCharacteristic = info
@@ -359,12 +376,13 @@ extension ESPLink: CBPeripheralDelegate {
         Diag.log("ble: board info v\(boardInfo.protocolVersion) fonts \(boardInfo.fontSets)")
         // Set the board clock, then the label it forgot (with response: never dropped or replaced by a subtitle)
         if let textCharacteristic {
-            // Subtitles are queued only from here on, after the clock and the label
-            textQueue.attach(textCharacteristic)
             let maxWrite = peripheral.maximumWriteValueLength(for: .withoutResponse)
             for frame in label.readyFrames(maxWrite: maxWrite) {
                 write(peripheral, frame, for: textCharacteristic, type: .withResponse)
             }
+            // Then whatever subtitle came in during setup
+            textQueue.markReady()
+            flush(peripheral)
         }
         // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {

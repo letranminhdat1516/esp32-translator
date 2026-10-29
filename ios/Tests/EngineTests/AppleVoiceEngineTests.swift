@@ -254,7 +254,9 @@ final class AppleVoiceEngineTests: XCTestCase {
         speaker.onStart?(7)
         speaker.onEnd?(7)
         await until { recorder.all.count >= 2 }
-        XCTAssertEqual(recorder.all, [.ttsStart(7), .ttsEnd(7)])
+        // ttsStart and ttsEnd are separate streams: their relative arrival order is not part of the contract
+        XCTAssertEqual(Set(recorder.all.map { "\($0)" }), ["ttsStart(7)", "ttsEnd(7)"])
+        XCTAssertEqual(recorder.all.count, 2)
         try await r.engine.stopSpeaking()
         XCTAssertEqual(r.log.calls.last, "speaker.stop")
     }

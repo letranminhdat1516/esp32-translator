@@ -12,20 +12,27 @@ struct BoardWriteQueue<Target: AnyObject> {
     private(set) var generation = 0
     private(set) var target: Target?
     private var pending: [Data] = []
+    /// False while the link is being set up: chunks are kept but not written until `markReady`
+    private(set) var ready = false
 
     var pendingCount: Int { pending.count }
 
-    /// The link has a (new) text characteristic
-    mutating func attach(_ target: Target) {
+    /// The link has a (new) text characteristic; `ready: false` while the clock and label still have to go first
+    mutating func attach(_ target: Target, ready: Bool = true) {
         generation += 1
         self.target = target
+        self.ready = ready
         pending.removeAll()
     }
+
+    /// Setup is done: queued chunks may be written
+    mutating func markReady() { ready = true }
 
     /// The characteristic is gone (drop, Bluetooth off, services reset)
     mutating func detach() {
         generation += 1
         target = nil
+        ready = false
         pending.removeAll()
     }
 
@@ -38,7 +45,7 @@ struct BoardWriteQueue<Target: AnyObject> {
 
     /// Writes chunks in order while `canSend` (CoreBluetooth's write-without-response flow control)
     mutating func drain(canSend: () -> Bool, write: (Target, Data) -> Void) {
-        guard let target else { return }
+        guard let target, ready else { return }
         while !pending.isEmpty && canSend() {
             write(target, pending.removeFirst())
         }
@@ -52,8 +59,18 @@ struct BoardWriteQueue<Target: AnyObject> {
     }
 }
 
-/// Pause before rescanning after a drop or a failed connect: doubles per consecutive failure from `base` up to
-/// `max`; `reset` when the link is ready or Bluetooth comes on.
+/// The object (the translator service) whose setup is in progress. Callbacks for any other object (a discovery
+/// that started before a services reset or a drop) are ignored, so dead characteristics are never set up.
+struct SetupGuard<Object: AnyObject> {
+    private(set) var current: Object?
+
+    mutating func begin(_ object: Object) { current = object }
+    mutating func reset() { current = nil }
+    func isCurrent(_ object: Object) -> Bool { object === current }
+}
+
+/// Pause before rescanning after a drop or a failed connect: the first rescan is immediate, then `base`, doubling
+/// per consecutive failure up to `max`; `reset` when the link is ready or Bluetooth comes on.
 struct ReconnectBackoff {
     let base: TimeInterval
     let max: TimeInterval
@@ -65,9 +82,10 @@ struct ReconnectBackoff {
     }
 
     mutating func nextDelay() -> TimeInterval {
+        defer { failures += 1 }
+        guard failures > 0 else { return 0 }
         var delay = base
-        for _ in 0..<failures where delay < max { delay *= 2 }
-        failures += 1
+        for _ in 1..<failures where delay < max { delay *= 2 }
         return min(delay, max)
     }
 
@@ -90,6 +108,10 @@ struct BoardLabel {
 
     /// Whether the board info of the current link was read and parsed
     mutating func boardInfo(parsed: Bool) { supported = parsed }
+
+    /// The link is gone: the next board may be older firmware, so no label goes out until its info is read.
+    /// The label itself is kept for the resend on ready.
+    mutating func linkGone() { supported = false }
 
     /// Text-characteristic writes when the link becomes ready (each written with response): the clock, then the
     /// remembered label if the board takes labels
