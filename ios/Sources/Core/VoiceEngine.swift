@@ -15,6 +15,8 @@ enum MissingKind: String, Codable, CaseIterable, Sendable {
     case speechModel, translation, ttsVoice
 }
 
+/// `interrupted`: the mic is really lost (an interruption ended without resume, or retaking the mic failed); the
+/// interruption's begin sends nothing. `resumed`: the engine took a wanted mic back itself after an interruption.
 enum AudioSessionKind: String, Codable, CaseIterable, Sendable {
     case interrupted, resumed, routeChanged
 }

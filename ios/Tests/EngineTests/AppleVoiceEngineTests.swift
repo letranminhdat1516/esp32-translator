@@ -172,28 +172,64 @@ final class AppleVoiceEngineTests: XCTestCase {
 
     // MARK: Audio session
 
-    func testInterruptionEndedResumesAWantedMic() async throws {
+    // Ruling: `.interrupted` only when the mic is really lost; the interruption's begin emits nothing; an end with
+    // resume retakes a wanted mic and then emits `.resumed` (as the Swift app's ConversationEngine did)
+
+    func testInterruptionBeginEmitsNothing() async throws {
+        let r = rig()
+        let recorder = EventRecorder(r.engine.events())
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        r.session.onChange?(.interruptionBegan)
+        await settle()
+        XCTAssertEqual(recorder.all, [])
+        XCTAssertEqual(r.mics.count, 1)
+        XCTAssertFalse(r.mics[0].stopped, "the mic is left to the system until the interruption ends")
+    }
+
+    func testInterruptionEndedWithResumeRetakesAWantedMicThenEmitsResumed() async throws {
         let r = rig()
         let recorder = EventRecorder(r.engine.events())
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
         try await r.engine.micOn(true)
         r.session.onChange?(.interruptionBegan)
         r.session.onChange?(.interruptionEnded(shouldResume: true))
-        await until { recorder.all.count >= 2 }
-        XCTAssertEqual(r.mics.count, 2, "the mic is rebuilt")
-        let sessionEvents = recorder.all.compactMap { if case .audioSession(let m) = $0 { return m } else { return nil } }
-        XCTAssertEqual(sessionEvents, [AudioSessionMsg(kind: .interrupted),
-                                       AudioSessionMsg(kind: .resumed, route: .headset)])
+        XCTAssertEqual(r.mics.count, 2, "the mic is rebuilt before the event")
+        XCTAssertTrue(r.mics[1].started)
+        await until { !recorder.all.isEmpty }
+        await settle()
+        XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .resumed, route: .headset))])
     }
 
-    func testInterruptionEndedWithoutResumeReleasesTheMic() async throws {
+    func testInterruptionEndedWithResumeButAFailingMicEmitsInterrupted() async throws {
         let r = rig()
+        let recorder = EventRecorder(r.engine.events())
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
         try await r.engine.micOn(true)
+        r.micFails = true
+        r.session.onChange?(.interruptionBegan)
+        r.session.onChange?(.interruptionEnded(shouldResume: true))
+        XCTAssertEqual(r.log.calls.last, "session.startSilence", "idle silence keeps the app alive")
+        await until { !recorder.all.isEmpty }
+        await settle()
+        XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .interrupted))])
+    }
+
+    func testInterruptionEndedWithoutResumeReleasesTheMicAndEmitsInterrupted() async throws {
+        let r = rig()
+        let recorder = EventRecorder(r.engine.events())
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        r.session.onChange?(.interruptionBegan)
         r.session.onChange?(.interruptionEnded(shouldResume: false))
         XCTAssertTrue(r.mics[0].stopped)
         XCTAssertEqual(r.mics.count, 1, "the mic is not grabbed back")
         XCTAssertEqual(Array(r.log.calls.suffix(2)), ["session.deactivate", "session.startSilence"])
+        await until { !recorder.all.isEmpty }
+        await settle()
+        XCTAssertEqual(recorder.all, [.audioSession(AudioSessionMsg(kind: .interrupted))])
+        let micAgain = await engineError { try await r.engine.micOn(true) }
+        XCTAssertNil(micAgain, "the controller may take the mic again later")
     }
 
     func testRouteChangesAreReported() async throws {
