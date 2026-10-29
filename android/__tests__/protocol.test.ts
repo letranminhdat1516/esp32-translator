@@ -6,9 +6,8 @@ import {
   boardInfoUuid,
   boardServiceUuid,
   boardTextUuid,
-  defaultGraphemes,
-  fallbackGraphemes,
   frameText,
+  graphemes,
   labelText,
   maxLabelBytes,
   maxTextBytes,
@@ -40,51 +39,133 @@ test('TextKind codes and limits', () => {
   expect(maxLabelBytes).toBe(fixture.maxLabelBytes);
 });
 
-// Hermes may lack Intl.Segmenter; the fallback segmentation must pass the same cases.
-describe.each([
-  ['Intl.Segmenter', undefined],
-  ['fallback graphemes', fallbackGraphemes],
-])('with %s', (_label, graphemes) => {
-  describe('frameText', () => {
-    for (const c of casesOf(fixture, 'frameText')) {
-      test(c.name as string, () => {
-        const f = frameText(c.text as string, c.kind as TextKind, c.maxWrite as number, graphemes);
-        expect(f.map(hexOf)).toEqual(c.expected);
-      });
-    }
-  });
-
-  describe('labelText', () => {
-    for (const c of casesOf(fixture, 'labelText')) {
-      test(c.name as string, () => {
-        expect(labelText(c.input as string, graphemes)).toBe(c.expected);
-      });
-    }
-  });
+describe('frameText', () => {
+  for (const c of casesOf(fixture, 'frameText')) {
+    test(c.name as string, () => {
+      const f = frameText(c.text as string, c.kind as TextKind, c.maxWrite as number);
+      expect(f.map(hexOf)).toEqual(c.expected);
+    });
+  }
 });
 
-describe('fallback graphemes', () => {
-  test('Node has Intl.Segmenter, so both paths above ran', () => {
-    expect(defaultGraphemes).not.toBe(fallbackGraphemes);
+describe('labelText', () => {
+  for (const c of casesOf(fixture, 'labelText')) {
+    test(c.name as string, () => {
+      expect(labelText(c.input as string)).toBe(c.expected);
+    });
+  }
+});
+
+// The board text never uses Intl.Segmenter (its answer depends on the engine's Unicode version);
+// where the engine has one, it is an oracle for the fixture strings.
+type Segmenter = {segment(text: string): Iterable<{segment: string}>};
+const SegmenterCtor = (
+  Intl as unknown as {
+    Segmenter?: new (l?: string, o?: {granularity: 'grapheme'}) => Segmenter;
+  }
+).Segmenter;
+const testWithSegmenter = SegmenterCtor ? test : test.skip;
+
+testWithSegmenter('graphemes equal Intl.Segmenter on every fixture string', () => {
+  const seg = new (SegmenterCtor as NonNullable<typeof SegmenterCtor>)(undefined, {
+    granularity: 'grapheme',
+  });
+  const strings = [
+    ...casesOf(fixture, 'frameText').map(c => c.text as string),
+    ...casesOf(fixture, 'labelText').map(c => c.input as string),
+    // Samples of the scripts the app meets (none uses a post-15.1 conjunct linker).
+    'Xin chào, hôm nay trời đẹp quá. Tiếng Việt',
+    'こんにちは、世界。カタカナ ｶﾀｶﾅ',
+    '안녕하세요 각 각',
+    'สวัสดีครับ น้ำ กำลัง',
+    'ສະບາຍດີ ນ້ຳ',
+    'नमस्ते दुनिया, क्षत्रिय श्रीमान',
+    'আমি বাংলায় কথা বলি ক্ষ',
+    'தமிழ் ஸ்ரீ',
+    'Привет, мир! Ελληνικά',
+    'مرحبا بالعالم',
+    '👍🏽 👩‍💻 🇻🇳🇯🇵 ❤️ 1️⃣',
+    'a\r\nb\tc­d',
+  ];
+  for (const s of strings) {
+    expect(graphemes(s)).toEqual(Array.from(seg.segment(s), x => x.segment));
+  }
+});
+
+test('graphemes do not depend on Intl.Segmenter', () => {
+  const intl = Intl as unknown as {Segmenter?: unknown};
+  const saved = intl.Segmenter;
+  delete intl.Segmenter;
+  try {
+    jest.isolateModules(() => {
+      const p = require('../src/board/protocol') as typeof import('../src/board/protocol');
+      for (const c of casesOf(fixture, 'labelText')) {
+        expect(p.labelText(c.input as string)).toBe(c.expected);
+      }
+      for (const c of casesOf(fixture, 'frameText')) {
+        const f = p.frameText(c.text as string, c.kind as TextKind, c.maxWrite as number);
+        expect(f.map(hexOf)).toEqual(c.expected);
+      }
+    });
+  } finally {
+    intl.Segmenter = saved;
+  }
+});
+
+describe('graphemes (UAX #29 with the Unicode 15.1 conjunct linkers)', () => {
+  test('marks, emoji sequences, flags, CR LF and controls', () => {
+    expect(graphemes('éa')).toEqual(['é', 'a']);
+    expect(graphemes('\u{1F44D}\u{1F3FD}x')).toEqual(['\u{1F44D}\u{1F3FD}', 'x']);
+    expect(graphemes('\u{1F469}‍\u{1F4BB}!')).toEqual(['\u{1F469}‍\u{1F4BB}', '!']);
+    expect(graphemes('\u{1F1FB}\u{1F1F3}\u{1F1EF}\u{1F1F5}')).toEqual([
+      '\u{1F1FB}\u{1F1F3}',
+      '\u{1F1EF}\u{1F1F5}',
+    ]);
+    expect(graphemes('\r\nb')).toEqual(['\r\n', 'b']);
+    expect(graphemes('a\u0000́b')).toEqual(['a', '\u0000', '́', 'b']);
+    expect(graphemes('')).toEqual([]);
   });
 
-  test('keeps marks, emoji sequences and flags together', () => {
-    expect(fallbackGraphemes('éa')).toEqual(['é', 'a']);
-    expect(fallbackGraphemes('👍🏽x')).toEqual(['👍🏽', 'x']);
-    expect(fallbackGraphemes('👩‍💻!')).toEqual(['👩‍💻', '!']);
-    expect(fallbackGraphemes('🇻🇳🇯🇵')).toEqual(['🇻🇳', '🇯🇵']);
-    expect(fallbackGraphemes('\r\nb')).toEqual(['\r\n', 'b']);
-    expect(fallbackGraphemes('')).toEqual([]);
+  test('Thai and Lao AM extend', () => {
+    expect(graphemes('กำา')).toEqual(['กำ', 'า']);
+    expect(graphemes('ສຳ')).toEqual(['ສຳ']);
+  });
+
+  test('conjuncts of the Unicode 15.1 linker scripts', () => {
+    expect(graphemes('नमस्ते')).toEqual(['न', 'म', 'स्ते']);
+    expect(graphemes('क्षत्रिय')).toEqual(['क्ष', 'त्रि', 'य']);
+    // Bengali, Gujarati, Oriya, Telugu, Malayalam: consonant + virama + consonant.
+    for (const [c, v] of [
+      [0x995, 0x9cd],
+      [0xa95, 0xacd],
+      [0xb15, 0xb4d],
+      [0xc15, 0xc4d],
+      [0xd15, 0xd4d],
+    ]) {
+      const s = String.fromCodePoint(c, v, c);
+      expect(graphemes(s)).toEqual([s]);
+    }
+    // A virama before a non-consonant (independent vowel) does not join.
+    expect(graphemes('स्अ')).toEqual(['स्', 'अ']);
+    // Khmer coeng is not a 15.1 linker (Dart and Swift split it too).
+    expect(graphemes('ក្យ')).toEqual(['ក្', 'យ']);
+  });
+
+  test('Hangul jamo L/V/T/LV/LVT', () => {
+    expect(graphemes('ᄀᄀ하')).toEqual(['ᄀᄀ하']); // L L LVT
+    expect(graphemes('각')).toEqual(['각']); // L V T
+    expect(graphemes('가ᅡᆨ')).toEqual(['가ᅡᆨ']); // LV V T
+    expect(graphemes('각ᆨᅡ')).toEqual(['각ᆨ', 'ᅡ']); // LVT T | V
+    expect(graphemes('가가')).toEqual(['가', '가']);
+    expect(graphemes('aᅡ')).toEqual(['a', 'ᅡ']);
   });
 
   test('a cut never splits a combining sequence', () => {
     // 50 × "ệ" decomposed (e + U+0323 + U+0302 = 5 UTF-8 bytes): the tail is cut between clusters.
     const text = 'ệ'.repeat(50);
-    for (const graphemes of [undefined, fallbackGraphemes]) {
-      const payload = frameText(text, 'subtitle', 512, graphemes)[0].subarray(2);
-      const body = new TextDecoder().decode(payload).slice(1); // after "…"
-      expect(body).toBe('ệ'.repeat(30));
-    }
+    const payload = frameText(text, 'subtitle', 512)[0].subarray(2);
+    const body = new TextDecoder().decode(payload).slice(1); // after "…"
+    expect(body).toBe('ệ'.repeat(30));
   });
 });
 

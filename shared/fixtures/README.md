@@ -91,8 +91,9 @@ Dart agree on; `rule_engine_test.dart` lints every pattern and context of every
 
 - `digits: "ascii"`: `\d` means `[0-9]` only. Dart and JS already do this; ICU and Swift `Regex` match every Unicode decimal digit, so the Swift port must make `\d` ASCII-only (e.g. rewrite `\d` to `[0-9]` outside character-class escapes before compiling, or Swift `Regex` with `.asciiOnlyDigits()`). Cases `dialect: …` check it (an Arabic-Indic or fullwidth digit is not a price).
 - `lookbehind: "bounded"`: a lookbehind body has no `*`, `+` or `{n,}` (ICU rejects unbounded lookbehind); alternatives of different fixed lengths are fine.
-- `forbidden`: none of these regexes may match a pattern: possessive quantifiers, atomic groups, inline flags, named groups and `\k<…>`, `\A \Z \z \G \h \H \R \X \K`, POSIX classes, `\p{…}` other than `\p{L}`, `\p{N}`, `\p{M}`.
+- `forbidden`: none of these regexes may match a pattern: possessive quantifiers, atomic groups, inline flags, named groups and `\k<…>`, `\A \Z \z \G \h \H \R \X \K`, POSIX classes, `\p{…}` other than `\p{L}`, `\p{N}`, `\p{M}`, `\D \w \W \b \B` (ASCII in Dart/JS, Unicode in ICU), a nested `[` inside a class and `&&` inside a class (ICU set syntax; literal or an error in JS). The Swift port also rewrites `\D` to `[^0-9]` outside a class.
 - `\s` is left to each engine (Unicode whitespace in all three; packs only use it before punctuation or the end).
+- Known differences the packs must not rely on: ICU case-insensitive matching uses full case folding (`ß` matches `ss`, `ﬁ` matches `fi`), Dart and JS (`iu`) use simple case folding; ICU `$` also matches before a final line terminator (`\n`, `\r\n`, U+0085, U+2028, U+2029) at the end of the input, Dart and JS `$` (no `m` flag) only at the very end.
 
 `adversarial` (timing, not exact output): build each subject as `prefix` +
 `unit` repeated until its length is at least `minLength`; every compiled rule of
@@ -274,8 +275,8 @@ Each case starts from an empty store and adds every `existing` input in order
   `limit`, `codePoint` and the offending `value` when given; the list and the
   stored data are unchanged.
 
-Rules: every string trimmed and non-empty; at most 64 characters (Unicode
-scalars, not UTF-16 units; one case uses U+1D400); no U+0000–U+001F,
+Rules: every string trimmed and non-empty; at most 64 grapheme clusters (Dart
+`characters.length`: not UTF-16 units, not scalars; cases use U+1D400 and NFD Vietnamese); no U+0000–U+001F,
 U+007F–U+009F, U+202A–U+202E, U+2066–U+2069; at most 8 variants and 500 terms;
 text and variants unique across the glossary ignoring case (NFC + lower case),
 a term's own old text excluded on update.

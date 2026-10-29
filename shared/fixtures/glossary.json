@@ -170,6 +170,29 @@
       }
     },
     {
+      "name": "length counts grapheme clusters, not scalars: NFD Vietnamese (64 allowed)",
+      "op": "add",
+      "input": {
+        "text": "ệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệ"
+      },
+      "expect": {
+        "ok": true,
+        "text": "ệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệ"
+      }
+    },
+    {
+      "name": "length counts grapheme clusters, not scalars: NFD Vietnamese (65 too long)",
+      "op": "add",
+      "input": {
+        "text": "ệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệệ"
+      },
+      "expect": {
+        "error": "TooLong",
+        "field": "text",
+        "limit": 64
+      }
+    },
+    {
       "name": "the error names the variant index",
       "op": "add",
       "input": {
