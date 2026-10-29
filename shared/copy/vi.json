@@ -73,5 +73,9 @@
   "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác",
   "menu.relay": "Claude relay",
   "legacy.modelsTitle": "Cần tải mô hình English ↔ Tiếng Việt",
-  "legacy.modelsButton": "Tải mô hình"
+  "legacy.modelsButton": "Tải mô hình",
+  "status.preparing": "Đang chuẩn bị…",
+  "failed.noRecognizer": "Máy này chưa nhận giọng được ngôn ngữ này.",
+  "permission.microphone": "Cần quyền dùng micro để nghe bạn nói. Cho phép trong Cài đặt của máy rồi thử lại.",
+  "line.unclear": "Không nghe rõ"
 }

@@ -10,6 +10,12 @@ const files = [
     .filter(f => /\.tsx?$/.test(f))
     .map(f => path.join(uiDir, f)),
   path.join(__dirname, '../../App.tsx'),
+  // P2.1: the controller writes the status and failure texts; the composition root has none yet.
+  path.join(__dirname, '../../src/engine/ConversationController.ts'),
+  ...fs
+    .readdirSync(path.join(__dirname, '../../src/app'))
+    .filter(f => /\.tsx?$/.test(f))
+    .map(f => path.join(__dirname, '../../src/app', f)),
 ];
 const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const source = (f: string) => stripComments(fs.readFileSync(f, 'utf8'));

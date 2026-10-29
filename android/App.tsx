@@ -1,22 +1,27 @@
 /**
  * Root of the app. Wires the "Phụ đề" screens to a UI state and intents.
  *
- * Production: P2.1 passes `intents` (the controller) and `initialState`, and keeps the `update`
- * of `useUiState` for engine events; `intents` is required then (App throws without it).
- * Development (`__DEV__`) without `intents`: sample intents that only change the sample state, so
- * the screens can be tried by hand; a console warning says so.
+ * The product (no props, as index.js registers it): builds the real graph once, before the first
+ * render (src/app/bootstrap.ts: native engine, BLE board, AsyncStorage, the board glyph lists,
+ * permissions), starts the ConversationController and renders its UiState; the controller is the
+ * intents. `controller` injects another one (tests).
  *
- * The picked language is saved on every pick and loaded on mount (src/ui/pickStorage.ts).
+ * Screens only (`initialState` and/or `intents` given, no `controller`): the state is local
+ * (`useUiState`). Outside development `intents` is required then (App throws without it).
+ * Development (`__DEV__`) without `intents`: sample intents that only change the sample state, so
+ * the screens can be tried by hand; a console warning says so. The picked language is saved on
+ * every pick and loaded on mount (src/ui/pickStorage.ts).
  *
  * Development only: a small "dev" button opens the voice engine probe (src/dev/EngineProbe.tsx, T4).
  *
  * @format
  */
 
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 import {Pressable, StatusBar, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaProvider, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {EngineProbe} from './src/dev/EngineProbe';
+import type {Unsubscribe} from './src/engine/VoiceEngine';
 import {t} from './src/ui/copy';
 import {ConversationScreen} from './src/ui/ConversationScreen';
 import {GlossaryScreen} from './src/ui/GlossaryScreen';
@@ -34,33 +39,63 @@ export const sampleState: UiState = {
   languageNames: {vi: t('header.home'), en: 'English'},
 };
 
-export interface AppProps {
-  initialState?: UiState;
-  /** Intents of the controller. Required outside development. */
-  intents?: UiIntents;
+/** What App needs of the ConversationController (src/engine/ConversationController.ts). */
+export interface AppController extends UiIntents {
+  getState(): UiState;
+  subscribe(listener: (state: UiState) => void): Unsubscribe;
+  start(): Promise<void>;
+  dispose(): void;
 }
 
-function App({initialState = sampleState, intents}: AppProps) {
-  if (!__DEV__ && !intents) {
+export interface AppProps {
+  initialState?: UiState;
+  /** Intents of the screens-only mode. Required outside development. */
+  intents?: UiIntents;
+  /** The controller to run instead of the real graph (tests). */
+  controller?: AppController;
+}
+
+function App({initialState, intents, controller}: AppProps) {
+  const screensOnly =
+    controller === undefined && (initialState !== undefined || intents !== undefined);
+  if (screensOnly && !__DEV__ && !intents) {
     throw new Error('App needs the controller intents outside development');
   }
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" />
-      <AppContent initialState={initialState} intents={intents} />
+      {screensOnly ? (
+        <ScreensOnly initialState={initialState ?? sampleState} intents={intents} />
+      ) : (
+        <Product controller={controller} />
+      )}
     </SafeAreaProvider>
   );
 }
 
-function AppContent({
+/** Builds the real graph; required lazily, so the screens-only mode never binds native modules. */
+function realController(): AppController {
+  const bootstrap = require('./src/app/bootstrap') as typeof import('./src/app/bootstrap');
+  return bootstrap.createAppGraph().controller;
+}
+
+/** The real app: the controller's state and intents. */
+function Product({controller: given}: {controller?: AppController}) {
+  // Built once, before the first render (the glyph lists are loaded inside).
+  const [controller] = useState<AppController>(() => given ?? realController());
+  useEffect(() => {
+    controller.start().catch(e => console.error('App: the controller did not start', e));
+    return () => controller.dispose();
+  }, [controller]);
+  const state = useSyncExternalStore(controller.subscribe, controller.getState);
+  return <AppContent state={state} intents={controller} />;
+}
+
+function ScreensOnly({
   initialState,
   intents: given,
 }: Required<Pick<AppProps, 'initialState'>> & Pick<AppProps, 'intents'>) {
-  const insets = useSafeAreaInsets();
   const {state, update} = useUiState(initialState);
-  const [sheet, setSheet] = useState(false);
-  const [glossary, setGlossary] = useState(false);
-  const [probe, setProbe] = useState(false);
 
   useEffect(() => {
     if (!given) {
@@ -108,6 +143,15 @@ function AppContent({
       },
     };
   }, [given, update]);
+
+  return <AppContent state={state} intents={intents} />;
+}
+
+function AppContent({state, intents}: {state: UiState; intents: UiIntents}) {
+  const insets = useSafeAreaInsets();
+  const [sheet, setSheet] = useState(false);
+  const [glossary, setGlossary] = useState(false);
+  const [probe, setProbe] = useState(false);
 
   if (__DEV__ && probe) {
     return <EngineProbe onClose={() => setProbe(false)} />;
