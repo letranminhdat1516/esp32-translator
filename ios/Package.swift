@@ -10,7 +10,7 @@ let package = Package(
         .target(
             name: "TranslatorCore",
             path: "Sources",
-            exclude: ["Info.plist", "UI", "BLE", "Relay", "App/ESPTranslatorApp.swift", "App/ConversationEngine.swift",
+            exclude: ["Info.plist", "UI", "BLE/ESPLink.swift", "Relay", "App/ESPTranslatorApp.swift", "App/ConversationEngine.swift",
                       "Audio/AudioSources.swift", "Audio/ADPCMDecoder.swift", "Speech/Speaker.swift",
                       "Translate/Translator.swift"],
             // Language mode 5 as in the app; complete concurrency checking so data-race diagnostics show up here
