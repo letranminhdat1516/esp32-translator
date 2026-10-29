@@ -26,6 +26,9 @@ import kotlinx.coroutines.launch
  * - Calls run in coroutines on the main thread; the slow ones (capabilities, missing, download, translate,
  *   building a session) move to an IO thread inside the engine and resolve back on the main thread.
  * - `feedTheirAudio` (about 50 calls/s) runs on the calling thread: base64 → samples → the recognizer's queue.
+ *   It rejects with `notReady` whenever the their-side recognizer is not running (never started, stopped, or
+ *   given up after a fatal error) until the next successful `start` ([TheirFeed]); the JS controller reads
+ *   that as "their recognizer died".
  * - Failures reject with `code` = an `EngineErrorCode` name ([EngineWire.errorCode]).
  * - Events go out through the generated emitters, in order, from the main thread.
  */

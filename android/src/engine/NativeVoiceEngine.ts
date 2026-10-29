@@ -13,6 +13,7 @@
 //   parameters (com.facebook.react.bridge.ArrayBuffer); per the plan's track note, T4 measures
 //   the base64 cost and may propose that switch as a contract change.
 // - Failures reject the promise with `code` = an `EngineErrorCode` name.
+// - `feedTheirAudio` rejects with `notReady` while the their-side recognizer is not running (never started, stopped, or gave up) until the next successful `start`.
 // - Events use codegen `EventEmitter<T>` (RN ≥ 0.76): Kotlin calls `emitOnMine(…)` etc.
 import {TurboModuleRegistry} from 'react-native';
 import type {CodegenTypes, EventSubscription, TurboModule} from 'react-native';

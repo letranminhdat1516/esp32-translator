@@ -194,6 +194,9 @@ class OsRecognizer(
             lastError = error
             // Fed mode: this utterance is over; the next audio opens a new pipe
             utterances?.finished()
+            if (isFatal(error) && !closed) {
+                request.onFatal("${request.kind} ${request.language}: ${errorName(error)}")
+            }
             if (!fed && listening && !closed) {
                 // Silence and no-match are routine while listening continuously; back off on the rest
                 val routine = error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
@@ -234,6 +237,15 @@ class OsRecognizer(
     companion object {
         private const val TAG = "OsRecognizer"
 
+        /** Errors after which the recognizer does not work again in this session (the others are per utterance) */
+        fun isFatal(error: Int) = when (error) {
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS,
+            SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> true
+            else -> false
+        }
+
         fun errorName(error: Int) = when (error) {
             SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "network timeout"
             SpeechRecognizer.ERROR_NETWORK -> "network"
@@ -244,6 +256,9 @@ class OsRecognizer(
             SpeechRecognizer.ERROR_NO_MATCH -> "no match"
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "busy"
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "permissions"
+            SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "server disconnected"
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "language not supported"
+            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "language unavailable"
             else -> "other"
         }
     }

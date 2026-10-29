@@ -109,6 +109,8 @@ class NativeVoiceEngine(
 
     private val lock = Any()
     private var session: Session? = null
+    /** Board PCM into the running session's their-side recognizer; rejects when it is not running */
+    private val their = TheirFeed()
     /** Bumped by every start() and stop(); a start whose token is no longer current gives up */
     private var startToken = 0L
     private var foregroundUp = false
@@ -117,6 +119,8 @@ class NativeVoiceEngine(
         val pair: PairMsg,
         val mine: UtteranceRecognizer,
         val theirs: UtteranceRecognizer,
+        /** Cleared by the their-side recognizer's onFatal */
+        val theirLife: TheirFeed.Life,
         startElapsed: Long,
     ) {
         val mic = MicCapture(gate, events, object : UtteranceSink {
@@ -193,6 +197,7 @@ class NativeVoiceEngine(
             }
             old = session
             session = built
+            their.attach(built.theirs, built.theirLife)
         }
         Log.i(TAG, "started ${pair.home}↔${pair.other} gen ${pair.generation} with $recognizerX")
         if (old != null) {
@@ -219,18 +224,19 @@ class NativeVoiceEngine(
                     )
                 }, onSpeech = { events.gate(it) }),
             )
+            val theirLife = their.newLife()
             val theirs = try {
                 recognizers.create(
                     RecognizerRequest(recognizerX, pair.other, hints, mine = false, clock = clock, onResult = { r ->
                         if (r.final) events.theirs(TheirsMsg(r.text, r.confidence, generation))
-                    }),
+                    }, onFatal = theirLife::die),
                 )
             } catch (e: Exception) {
                 mine.close()
                 throw e
             }
             Log.i(TAG, "recognizers: mine $mineKind (${pair.home}), theirs $recognizerX (${pair.other})")
-            Session(pair, mine, theirs, startElapsed)
+            Session(pair, mine, theirs, theirLife, startElapsed)
         }
     }
 
@@ -242,6 +248,7 @@ class NativeVoiceEngine(
             startToken++
             s = session
             session = null
+            their.detach()
             wasUp = foregroundUp
             foregroundUp = false
         }
@@ -266,11 +273,13 @@ class NativeVoiceEngine(
     fun feedTheirAudio(pcm16le: ByteArray, sampleRate: Long) =
         feedTheirAudio(VoiceGate.pcm16FromBytes(pcm16le), sampleRate.toInt())
 
-    /** Board PCM, mono samples; dropped when no conversation runs */
+    /**
+     * Board PCM, mono samples. Throws `notReady` whenever the their-side recognizer is not running (no session
+     * yet, stopped, or it gave up after a fatal error) until the next successful start ([TheirFeed]).
+     */
     fun feedTheirAudio(pcm: ShortArray, sampleRate: Int) {
-        val s = synchronized(lock) { session } ?: return
-        s.theirSamples += pcm.size
-        s.theirs.audio(pcm, sampleRate)
+        their.feed(pcm, sampleRate)
+        synchronized(lock) { session }?.let { it.theirSamples += pcm.size }
     }
 
     suspend fun translate(text: String, from: String, to: String): String =

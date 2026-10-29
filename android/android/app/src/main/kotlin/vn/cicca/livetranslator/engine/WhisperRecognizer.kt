@@ -101,7 +101,11 @@ class WhisperModel(
             Log.i(TAG, "whisper $language: %.1f s without speech skipped (%.2f s voiced)".format(audio, voiced))
             return Transcript(null, emptyList(), audio, 0.0)
         }
-        if (!load()) return Transcript(null, emptyList(), audio, 0.0)
+        // The model was there when the session started (create() loaded it): failing now means it is gone
+        if (!load()) {
+            if (closed) return Transcript(null, emptyList(), audio, 0.0)
+            throw EngineErrors.notReady("Whisper: the model could not load")
+        }
         val started = SystemClock.elapsedRealtime()
         val segments = try {
             native.transcribe(handle, samples, language, prompt, threads)?.toList().orEmpty()
@@ -235,7 +239,13 @@ class WhisperRecognizer(
         val prompt = hints.takeIf { it.isNotEmpty() }?.joinToString(", ")
         model.submit {
             if (closed) return@submit
-            val t = model.transcribe(samples, request.language, prompt)
+            val t = try {
+                model.transcribe(samples, request.language, prompt)
+            } catch (e: EngineException) {
+                // The model cannot run (missing JNI bindings, model gone): this recognizer gives up
+                if (!closed) request.onFatal(e.message ?: "Whisper failed")
+                return@submit
+            }
             val text = t.text ?: return@submit
             if (!closed) request.onResult(Recognized(text, final = true, confidence = t.confidence, startMs = startMs, endMs = endMs))
         }
