@@ -34,7 +34,6 @@ final class AppleVoiceEngineTests: XCTestCase {
 
     func testIdleCallsAreHarmless() async throws {
         let e = rig().engine
-        try await e.feedTheirAudio([0, 1], sampleRate: 16_000)
         try await e.setHints(["Đà Nẵng"])
         try await e.stopSpeaking()
         try await e.micOn(false)
@@ -332,13 +331,52 @@ final class AppleVoiceEngineTests: XCTestCase {
     func testBoardAudioIsFedToTheirRecognizerAndFinalizedOnAPause() async throws {
         let x = FakeRecognizer("en")
         let r = rig(en: [x])
-        try await r.engine.feedTheirAudio([Int16](repeating: 0, count: 320), sampleRate: 16_000)
-        XCTAssertEqual(x.fedFrames, 0, "audio before start is dropped")
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
         try await r.engine.feedTheirAudio([Int16](repeating: 100, count: 320), sampleRate: 16_000)
         XCTAssertGreaterThan(x.fedFrames, 0)
         await until { x.finalized >= 1 }
         XCTAssertEqual(x.finalized, 1, "a pause in board audio finalizes the phrase")
+    }
+
+    // MARK: Board audio while their recognizer is not running (the controller's "recognizer died" signal)
+
+    private let pcm = [Int16](repeating: 100, count: 320)
+
+    func testBoardAudioBeforeStartIsNotReady() async {
+        let x = FakeRecognizer("en")
+        let r = rig(en: [x])
+        let error = await engineError { try await r.engine.feedTheirAudio(self.pcm, sampleRate: 16_000) }
+        XCTAssertEqual(error, .notReady)
+        XCTAssertEqual(x.fedFrames, 0)
+    }
+
+    func testBoardAudioAfterStopIsNotReady() async throws {
+        let r = rig()
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.stop()
+        let error = await engineError { try await r.engine.feedTheirAudio(self.pcm, sampleRate: 16_000) }
+        XCTAssertEqual(error, .notReady)
+    }
+
+    /// Their recognizer's analysis ended with an error (it will not resume): every feed throws `notReady` until
+    /// a start succeeds again, and that start (same pair) builds a fresh recognizer
+    func testBoardAudioAfterAFatalRecognizerErrorIsNotReadyUntilARestart() async throws {
+        let dead = FakeRecognizer("en"), fresh = FakeRecognizer("en")
+        let r = rig(en: [dead, fresh], vi: [FakeRecognizer("vi"), FakeRecognizer("vi")])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        dead.failFatally()
+        for _ in 0..<2 {
+            let error = await engineError { try await r.engine.feedTheirAudio(self.pcm, sampleRate: 16_000) }
+            XCTAssertEqual(error, .notReady)
+        }
+        let fedBeforeFailure = dead.fedFrames
+        try await r.engine.start(pair: PairMsg(home: "vi", other: "en", generation: 2), recognizerX: onDevice,
+                                 hints: [])
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        XCTAssertGreaterThan(fresh.fedFrames, 0, "the restart runs a fresh recognizer")
+        XCTAssertEqual(dead.fedFrames, fedBeforeFailure)
+        XCTAssertTrue(dead.stopped)
     }
 
     func testHintsGoToTheirRecognizer() async throws {

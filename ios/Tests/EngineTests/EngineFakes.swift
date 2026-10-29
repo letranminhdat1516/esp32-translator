@@ -55,6 +55,12 @@ final class FakeRecognizer: Recognizer, @unchecked Sendable {
     func feed(_ buffer: AVAudioPCMBuffer) { lock.withLock { _fedFrames += Int(buffer.frameLength) } }
     func finalizeNow() { lock.withLock { _finalized += 1 } }
     func stop() async { lock.withLock { stopped = true } }
+
+    private var failed = false
+    /// Running: started, not stopped, and no fatal error
+    var isAlive: Bool { lock.withLock { started && !stopped && !failed } }
+    /// Simulates the analysis ending with an error (it will not resume)
+    func failFatally() { lock.withLock { failed = true } }
 }
 
 /// Every call to the fake session and speaker, in order

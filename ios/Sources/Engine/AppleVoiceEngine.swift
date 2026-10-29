@@ -154,7 +154,9 @@ final class AppleVoiceEngine: VoiceEngine {
         guard recognizerX == RecognizerKinds.onDevice else {
             throw EngineErrors.notReady("recognizer \(recognizerX) is not available on iOS")
         }
-        let sameLanguages = self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false
+        // A dead X recognizer counts as a different pair: everything is rebuilt
+        let sameLanguages = recognizers.theirsAlive
+            && (self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false)
         if !sameLanguages { tearDown() }
         guard try await recognizers.start(pair, hints: hints) else { return }
         // A fresh pair is running. No await from here on, so no stop or start can interleave.
@@ -261,8 +263,11 @@ final class AppleVoiceEngine: VoiceEngine {
 
     // MARK: Board audio
 
-    /// PCM from the board (the controller decodes the BLE ADPCM). Audio before `start` finishes is dropped.
+    /// PCM from the board (the controller decodes the BLE ADPCM). Throws `notReady` whenever the X recognizer is
+    /// not running (before `start`, after `stop`, or after its analysis ended with an error) until the next
+    /// successful `start`: the controller takes that as "recognizer died" (restart once, then failed).
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
+        guard recognizers.theirsAlive else { throw EngineErrors.notReady("their recognizer is not running") }
         guard let x = theirRecognizer, let converter = theirConverter,
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }
