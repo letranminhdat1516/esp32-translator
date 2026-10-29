@@ -2,85 +2,86 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/board/protocol_test.dart.
+// Port of app/test/board/protocol_test.dart, driven by shared/fixtures/protocol.json, plus Swift-only edge cases.
 
 private func hex(_ d: Data) -> String {
-    d.map { String(format: "%02x", $0) }.joined(separator: " ")
+    d.map { String(format: "%02x", $0) }.joined()
+}
+
+private func bytes(_ hex: String) -> Data {
+    var out = Data()
+    var i = hex.startIndex
+    while i < hex.endIndex {
+        let j = hex.index(i, offsetBy: 2)
+        out.append(UInt8(hex[i..<j], radix: 16)!)
+        i = j
+    }
+    return out
+}
+
+private let fixture = Fixtures.load("protocol")
+
+@Suite struct BoardProtocolFixtureTests {
+    @Test func uuids() {
+        let u = fixture["uuids"] as! [String: String]
+        #expect(BoardProtocol.serviceUUID == u["service"])
+        #expect(BoardProtocol.audioUUID == u["audio"])
+        #expect(BoardProtocol.textUUID == u["text"])
+        #expect(BoardProtocol.controlUUID == u["control"])
+        #expect(BoardProtocol.infoUUID == u["info"])
+    }
+
+    @Test func textKindsAndLimits() {
+        let kinds = fixture["textKinds"] as! [String: Int]
+        #expect(kinds.count == TextKind.allCases.count)
+        for kind in TextKind.allCases {
+            #expect(kinds["\(kind)"] == Int(kind.rawValue), "\(kind)")
+        }
+        #expect(BoardProtocol.maxTextBytes == fixture["maxTextBytes"] as! Int)
+        #expect(BoardProtocol.maxLabelBytes == fixture["maxLabelBytes"] as! Int)
+    }
+
+    @Test(arguments: Fixtures.cases(in: fixture, "frameText", fixture: "protocol"))
+    func frameText(_ c: FixtureCase) throws {
+        let j = c.json
+        let kind = try #require(TextKind.allCases.first { "\($0)" == j["kind"] as! String })
+        let chunks = BoardProtocol.frameText(j["text"] as! String, kind: kind, maxWrite: j["maxWrite"] as! Int)
+        #expect(chunks.map(hex) == j["expected"] as! [String])
+    }
+
+    @Test(arguments: Fixtures.cases(in: fixture, "labelText", fixture: "protocol"))
+    func labelText(_ c: FixtureCase) {
+        let j = c.json
+        #expect(BoardProtocol.labelText(j["input"] as! String) == j["expected"] as! String)
+    }
+
+    @Test(arguments: Fixtures.cases(in: fixture, "boardInfo", fixture: "protocol"))
+    func boardInfo(_ c: FixtureCase) {
+        let j = c.json
+        let info = BoardProtocol.parseBoardInfo(bytes(j["hex"] as! String))
+        if let e = j["expected"] as? [String: Any] {
+            #expect(info == BoardInfo(protocolVersion: e["protocolVersion"] as! Int,
+                                      fontSets: FontSets(rawValue: UInt32(e["fontSets"] as! Int))))
+        } else {
+            #expect(info == nil)
+        }
+    }
+
+    @Test(arguments: Fixtures.cases(in: fixture, "timeText", fixture: "protocol"))
+    func timeText(_ c: FixtureCase) throws {
+        let j = c.json
+        let date = Date(timeIntervalSince1970: Double(j["epochMs"] as! Int) / 1000)
+        let zone = try #require(TimeZone(secondsFromGMT: (j["utcOffsetMinutes"] as! Int) * 60))
+        #expect(BoardProtocol.timeText(at: date, in: zone) == j["expected"] as! String)
+    }
 }
 
 @Suite struct BoardProtocolTests {
-    @Test func uuids() {
-        #expect(BoardProtocol.serviceUUID == "A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-        #expect(BoardProtocol.audioUUID == "A7C00002-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-        #expect(BoardProtocol.textUUID == "A7C00003-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-        #expect(BoardProtocol.controlUUID == "A7C00004-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-        #expect(BoardProtocol.infoUUID == "A7C00005-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    }
-
-    @Test func textKindCodes() {
-        #expect(TextKind.allCases.map(\.rawValue) == [0, 1, 2, 3])
-    }
-
-    // MARK: frameText
-
-    @Test func tenBytesAt185IsOneChunkFlags03() {
-        let f = BoardProtocol.frameText("0123456789", kind: .subtitle, maxWrite: 185)
-        #expect(f.count == 1)
-        #expect(f[0][0] == 0x03)
-        #expect(f[0][1] == 0)
-        #expect(f[0].count == 12)
-    }
-
-    @Test func oneHundredTwentyBytesAt50GivesPayload48ThreeChunks() {
-        let f = BoardProtocol.frameText(String(repeating: "a", count: 120), kind: .status, maxWrite: 50)
-        #expect(f.map { $0.first! } == [0x01, 0x00, 0x02])
-        #expect(f.map { $0.count - 2 } == [48, 48, 24])
-        #expect(f.allSatisfy { $0[$0.startIndex + 1] == 1 })
-    }
-
-    @Test func maxWrite10BehavesAs20() {
-        let f = BoardProtocol.frameText(String(repeating: "a", count: 40), kind: .subtitle, maxWrite: 10)
-        #expect(f.map { $0.count - 2 } == [18, 18, 4])
-    }
-
-    @Test func emptyTextIsOneChunkFlags03() {
-        #expect(BoardProtocol.frameText("", kind: .subtitle, maxWrite: 185).map(hex) == ["03 00"])
-    }
-
-    @Test func longTextKeepsTheTailAfterAWordBoundaryWithEllipsis() throws {
-        let text = (0..<40).map { String(format: "w%03d", $0) }.joined(separator: " ")
-        #expect(text.utf8.count == 199)
-        let f = BoardProtocol.frameText(text, kind: .subtitle, maxWrite: 400)
-        #expect(f.count == 1)
-        let s = try #require(String(data: f[0].dropFirst(2), encoding: .utf8))
-        #expect(s.hasPrefix("…"))
-        #expect(s.dropFirst().hasPrefix("w"))
-        #expect(text.hasSuffix(String(s.dropFirst())))
-        #expect(s.utf8.count <= 150 + 3)
-    }
-
     @Test func longTextWithoutSpacesKeepsTheByteTail() throws {
         let text = String(repeating: "ạ", count: 100)  // 3 bytes each
         let f = BoardProtocol.frameText(text, kind: .subtitle, maxWrite: 400)
         let s = try #require(String(data: f[0].dropFirst(2), encoding: .utf8))
         #expect(s == "…" + String(repeating: "ạ", count: 50))
-    }
-
-    @Test func xinChaoKind0MatchesTheSwiftBytes() {
-        #expect(BoardProtocol.frameText("Xin chào", kind: .subtitle, maxWrite: 185).map(hex)
-            == ["03 00 58 69 6e 20 63 68 c3 a0 6f"])
-    }
-
-    @Test func labelKindIs3() {
-        #expect(BoardProtocol.frameText("JA", kind: .label, maxWrite: 185).map(hex) == ["03 03 4a 41"])
-    }
-
-    // MARK: time
-
-    @Test func timeTextIsUnixSecondsAndUTCOffsetMinutes() {
-        let t = Date(timeIntervalSince1970: 1_761_400_000.999)
-        #expect(BoardProtocol.timeText(at: t, in: TimeZone(identifier: "UTC")!) == "1761400000 0")
-        #expect(BoardProtocol.timeText(at: t, in: TimeZone(secondsFromGMT: 7 * 3600)!) == "1761400000 420")
     }
 
     @Test func timeFrameIsOneKind2Chunk() {
@@ -90,35 +91,6 @@ private func hex(_ d: Data) -> String {
         let text = String(data: frame.dropFirst(2), encoding: .utf8)!
         #expect(text == BoardProtocol.timeText(at: t))
         #expect(text.range(of: #"^1761400000 -?\d+$"#, options: .regularExpression) != nil)
-    }
-
-    // MARK: labelText
-
-    @Test func labelCutsAtACharacterBoundaryNoEllipsis() {
-        let s = BoardProtocol.labelText("日本語日本語日本語日本語")
-        #expect(s.utf8.count == 30)
-        #expect(s.unicodeScalars.count == 10)
-    }
-
-    @Test func shortLabelUnchanged() {
-        #expect(BoardProtocol.labelText("Nhật") == "Nhật")
-    }
-
-    // MARK: parseBoardInfo
-
-    @Test func versionAndFontSets() throws {
-        let i = try #require(BoardProtocol.parseBoardInfo(Data([1, 3, 0, 0, 0])))
-        #expect(i.protocolVersion == 1)
-        #expect(i.fontSets == FontSets.latinVI | FontSets.latinExtA)
-    }
-
-    @Test func shortInputIsNil() {
-        #expect(BoardProtocol.parseBoardInfo(Data([1, 3, 0, 0])) == nil)
-    }
-
-    @Test func littleEndianAcrossBytes() throws {
-        let i = try #require(BoardProtocol.parseBoardInfo(Data([2, 0x10, 0x01, 0, 0])))
-        #expect(i.fontSets.value == 0x0110)
     }
 
     @Test func sliceWithNonZeroStartIndexParses() throws {
