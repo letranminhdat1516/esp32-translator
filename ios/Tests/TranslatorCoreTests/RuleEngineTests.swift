@@ -93,6 +93,16 @@ private func unboundedLookbehind(_ pattern: String) -> Bool {
                           ("\\p{Lu}", "Unicode class other than \\p{L}, \\p{N}, \\p{M}")] {
             #expect(violations(s).contains(name), "\(s)")
         }
+        let classes = "\\D \\w \\W \\b \\B (ASCII in one engine, Unicode in another)"
+        for (s, name) in [("a\\Db", classes), ("\\w+", classes), ("x\\W", classes), ("\\bok\\b", classes),
+                          ("\\Bk", classes), ("[a[b]]", "nested class"), ("[^,[]", "nested class"),
+                          ("[a-z&&[^x]]", "class intersection &&")] {
+            #expect(violations(s).contains(name), "\(s)")
+        }
+        // Escapes and plain text that only look like them
+        for s in ["\\\\D", "\\[a[b]", "[\\[]", "a&&b", "[\\d.,]", "(?:x|y)\\s*$"] {
+            #expect(violations(s).isEmpty, "\(s): \(violations(s))")
+        }
         #expect(violations("(?<=xe )(?:a|b)*?\\d{3,}[\\d.,]+\\p{L}").isEmpty)
         #expect(unboundedLookbehind("(?<=a+)b"))
         #expect(!unboundedLookbehind("(?<!(?:x|yz) )b"))
@@ -126,6 +136,7 @@ private func unboundedLookbehind(_ pattern: String) -> Bool {
     @Test(arguments: [
         ("\\d", "[0-9]"), ("[\\d.,]", "[0-9.,]"), ("\\d+[.,]\\d{3}", "[0-9]+[.,][0-9]{3}"),
         ("\\\\d", "\\\\d"), ("a\\.d", "a\\.d"), ("[^\\d]", "[^0-9]"), ("[\\]\\d]", "[\\]0-9]"),
+        ("\\D", "[^0-9]"), ("a\\D+b", "a[^0-9]+b"), ("\\\\D", "\\\\D"),
     ])
     func asciiDigitsRewrite(pattern: String, expected: String) {
         #expect(RuleEngine.portablePattern(pattern) == expected)

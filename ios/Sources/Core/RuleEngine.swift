@@ -78,7 +78,9 @@ struct RuleEngine: Sendable {
     }
 
     /// A pack pattern in ICU's dialect: `\d` means ASCII digits only, as in Dart and JavaScript (ICU would take every
-    /// Unicode decimal digit). `\d` becomes `[0-9]`, or `0-9` inside a character class; everything else is kept.
+    /// Unicode decimal digit). `\d` becomes `[0-9]`, or `0-9` inside a character class, and `\D` outside a class
+    /// becomes `[^0-9]`; everything else is kept. Remaining ICU differences (full case folding, `$` before a final
+    /// line terminator) are listed in shared/fixtures/README.md; the packs do not rely on them.
     static func portablePattern(_ pattern: String) -> String {
         var out = ""
         var inClass = false
@@ -92,6 +94,8 @@ struct RuleEngine: Sendable {
                 }
                 if next == "d" {
                     out += inClass ? "0-9" : "[0-9]"
+                } else if next == "D" && !inClass {
+                    out += "[^0-9]"  // inside a class it has no equivalent; the portable-syntax lint forbids \D
                 } else {
                     out.unicodeScalars.append(c)
                     out.unicodeScalars.append(next)

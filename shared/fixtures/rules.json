@@ -710,6 +710,18 @@
       {
         "name": "Unicode class other than \\p{L}, \\p{N}, \\p{M}",
         "regex": "\\\\[pP]\\{(?!L\\}|N\\}|M\\})"
+      },
+      {
+        "name": "\\D \\w \\W \\b \\B (ASCII in one engine, Unicode in another)",
+        "regex": "(?<!\\\\)(?:\\\\\\\\)*\\\\[DwWbB]"
+      },
+      {
+        "name": "nested class",
+        "regex": "(?<!\\\\)\\[(?:\\\\.|[^\\]\\\\\\[])*\\["
+      },
+      {
+        "name": "class intersection &&",
+        "regex": "(?<!\\\\)\\[(?:\\\\.|[^\\]\\\\])*&&"
       }
     ],
     "lookbehind": "bounded"
