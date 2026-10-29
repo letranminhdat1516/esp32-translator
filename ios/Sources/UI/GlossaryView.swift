@@ -20,9 +20,9 @@ struct GlossaryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Từ điển riêng").font(.system(size: 18, weight: .semibold))
+                Text(Copy.t("glossary.title")).font(.system(size: 18, weight: .semibold))
                 Spacer()
-                Button("Xong") { dismiss() }
+                Button(Copy.t("language.close")) { dismiss() }
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Palette.accentLight)
             }
@@ -32,7 +32,7 @@ struct GlossaryView: View {
             addRow
             if ui.glossaryTerms.isEmpty {
                 Spacer()
-                Text("Chưa có từ nào").font(.system(size: 15)).foregroundStyle(Palette.muted)
+                Text(Copy.t("glossary.empty")).font(.system(size: 15)).foregroundStyle(Palette.muted)
                 Spacer()
             } else {
                 ScrollView {
@@ -53,11 +53,11 @@ struct GlossaryView: View {
 
     private var addRow: some View {
         HStack(alignment: .top, spacing: 12) {
-            field("Thêm từ giữ nguyên", text: $addText, error: addError)
+            field(Copy.t("glossary.addHint"), text: $addText, error: addError)
                 .onSubmit(add)
                 .onChange(of: addText) { addError = nil }
             Button(action: add) {
-                Text("Thêm")
+                Text(Copy.t("glossary.add"))
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 22)
@@ -75,7 +75,7 @@ struct GlossaryView: View {
     private func field(_ hint: String, text: Binding<String>, error: String?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             TextField("", text: text, prompt: Text(hint).foregroundStyle(Palette.faint))
-                .accessibilityLabel(hint.isEmpty ? "Sửa từ" : hint)
+                .accessibilityLabel(hint.isEmpty ? Copy.t("glossary.editLabel") : hint)
                 .modifier(PlainTextInput())
                 .submitLabel(.done)
                 .padding(.horizontal, 16)
@@ -83,7 +83,7 @@ struct GlossaryView: View {
                 .background(Palette.surface, in: Capsule())
             if let error {
                 Text(error).font(.system(size: 12)).foregroundStyle(Self.errorColor).padding(.horizontal, 16)
-                    .accessibilityLabel("Lỗi: \(error)")
+                    .accessibilityLabel(Copy.t("glossary.errorLabel", ["error": error]))
             }
         }
         .padding(.top, 4)
@@ -99,13 +99,13 @@ struct GlossaryView: View {
             }
             Spacer()
             if term.origin == .user {
-                iconButton("pencil", label: "Sửa \(term.text)") {
+                iconButton("pencil", label: Copy.t("glossary.edit", ["term": term.text])) {
                     editingId = term.id
                     editError = nil
                     editText = term.text
                     editFocused = true
                 }
-                iconButton("trash", label: "Xoá \(term.text)") { delete(term.id) }
+                iconButton("trash", label: Copy.t("glossary.delete", ["term": term.text])) { delete(term.id) }
             }
         }
         .padding(.horizontal, 20)
@@ -125,11 +125,11 @@ struct GlossaryView: View {
                 .onSubmit { save(term.id) }
                 .onChange(of: editText) { editError = nil }
             HStack(spacing: 16) {
-                Button("Huỷ") {
+                Button(Copy.t("glossary.cancel")) {
                     editingId = nil
                     editError = nil
                 }
-                Button("Lưu") { save(term.id) }.fontWeight(.semibold)
+                Button(Copy.t("glossary.save")) { save(term.id) }.fontWeight(.semibold)
             }
             .font(.system(size: 16))
             .foregroundStyle(Palette.accentLight)
@@ -148,7 +148,7 @@ struct GlossaryView: View {
     }
 
     private func message(_ error: Error) -> String {
-        (error as? GlossaryValidationError)?.message ?? "Không lưu được"
+        (error as? GlossaryValidationError)?.message ?? Copy.t("glossary.saveFailed")
     }
 
     private func add() {

@@ -23,17 +23,17 @@ enum StatusChip: Hashable, Sendable {
 
     var text: String {
         switch self {
-        case .online: "online"
-        case .phoneMic: "mic điện thoại"
-        case .noBoard: "không có board"
+        case .online: Copy.t("chip.online")
+        case .phoneMic: Copy.t("chip.phoneMic")
+        case .noBoard: Copy.t("chip.noBoard")
         }
     }
 
     var accessibilityText: String {
         switch self {
-        case .online: "Đang nhận giọng qua mạng"
-        case .phoneMic: "Đang dùng mic điện thoại"
-        case .noBoard: "Chưa kết nối board"
+        case .online: Copy.t("chip.online.a11y")
+        case .phoneMic: Copy.t("chip.phoneMic.a11y")
+        case .noBoard: Copy.t("chip.noBoard.a11y")
         }
     }
 
@@ -74,42 +74,42 @@ enum ReadinessText {
     /// The Vietnamese name of one missing item.
     static func missing(_ m: MissingMsg, names: [String: String]) -> String {
         switch m.kind {
-        case .speechModel: "Mô hình nhận giọng"
-        case .translation: "Bản dịch \(name(m.from ?? m.language, names)) → \(name(m.to, names))"
-        case .ttsVoice: "Giọng đọc tiếng Việt"
+        case .speechModel: Copy.t("missing.speechModel")
+        case .translation: Copy.t("missing.translation", ["from": name(m.from ?? m.language, names), "to": name(m.to, names)])
+        case .ttsVoice: Copy.t("missing.ttsVoice")
         }
     }
 
-    static let choose = "Chọn ngôn ngữ"
-    static let unavailable = "Ngôn ngữ đã chọn trước đó không còn dùng được trên máy này."
-    static let needsDownloadTitle = "Cần tải về trước khi dùng"
-    static let needsDownloadNote = "Tải một lần, sau đó dịch hoàn toàn trên máy: không cần mạng và nhanh hơn."
-    static let downloadFailed = "Chưa tải xong. Kiểm tra mạng rồi thử lại."
-    static let failedTitle = "Không khởi động được"
+    static var choose: String { Copy.t("readiness.choose") }
+    static var unavailable: String { Copy.t("readiness.unavailable") }
+    static var needsDownloadTitle: String { Copy.t("readiness.needsDownloadTitle") }
+    static var needsDownloadNote: String { Copy.t("readiness.needsDownloadNote") }
+    static var downloadFailed: String { Copy.t("readiness.downloadFailed") }
+    static var failedTitle: String { Copy.t("failed.title") }
 
-    static func button(failed: Bool) -> String { failed ? "Thử lại" : "Tải về" }
+    static func button(failed: Bool) -> String { Copy.t(failed ? "readiness.retry" : "readiness.download") }
 
     static func progress(_ p: Double?) -> String {
-        guard let p else { return "Đang tải…" }
-        return "Đang tải… \(Int((min(max(p, 0), 1) * 100).rounded()))%"
+        guard let p else { return Copy.t("readiness.downloading") }
+        return Copy.t("readiness.downloadingPercent", ["percent": String(Int((min(max(p, 0), 1) * 100).rounded()))])
     }
 
     /// The reason shown under "Không khởi động được"; the machine's own reason for a dead recognizer is English.
     static func failureReason(_ reason: String) -> String {
-        reason == "recognizer stopped" ? "Bộ nhận giọng đã dừng." : reason
+        reason == "recognizer stopped" ? Copy.t("failed.recognizerStopped") : reason
     }
 }
 
 /// The footer of the language list: why a language is missing, and the online opt-in.
 enum LanguageFooterText {
-    static let optInTitle = "Nhận giọng qua mạng"
-    static let optInNote = "Âm thanh được gửi lên máy chủ nhận giọng của hệ thống và ngôn ngữ này sẽ có nhãn \"online\"."
+    static var optInTitle: String { Copy.t("language.optInTitle") }
+    static var optInNote: String { Copy.t("language.optInNote") }
 
     /// nil when every language is offered.
     static func why(missing: [LanguagePack]) -> String? {
         guard !missing.isEmpty else { return nil }
         let names = missing.map(\.label).joined(separator: ", ")
-        return "Chưa có: \(names). Máy này chưa nhận giọng ngoại tuyến được các ngôn ngữ này."
+        return Copy.t("language.why", ["names": names])
     }
 }
 
@@ -120,10 +120,26 @@ struct GlossaryValidationError: Error, Equatable {
 
 /// The Vietnamese glossary validation messages.
 enum GlossaryMessages {
-    static let empty = "Từ không được để trống"
-    static let tooLong = "Tối đa 64 ký tự"
-    static let tooMany = "Tối đa 500 từ"
-    static let badCharacters = "Có ký tự không hợp lệ"
+    static var empty: String { Copy.t("glossary.error.empty") }
+    static var tooLong: String { Copy.t("glossary.error.tooLong") }
+    static var tooMany: String { Copy.t("glossary.error.tooMany") }
+    static var badCharacters: String { Copy.t("glossary.error.badCharacters") }
+    static var duplicate: String { Copy.t("glossary.error.duplicate") }
+    static var tooManyVariants: String { Copy.t("glossary.error.tooManyVariants") }
+
+    /// The message for a glossary store rejection by its error name (`EmptyText`, `TooLong`, `TooManyVariants`,
+    /// `TooManyTerms`, `ForbiddenCharacter`, `DuplicateTerm`); nil for the ones the user cannot cause (`UnknownTerm`).
+    static func forErrorName(_ name: String) -> String? {
+        switch name {
+        case "EmptyText": empty
+        case "TooLong": tooLong
+        case "TooManyVariants": tooManyVariants
+        case "TooManyTerms": tooMany
+        case "ForbiddenCharacter": badCharacters
+        case "DuplicateTerm": duplicate
+        default: nil
+        }
+    }
 }
 
 @Observable @MainActor

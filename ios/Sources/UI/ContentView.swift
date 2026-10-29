@@ -92,9 +92,9 @@ struct ContentView: View {
         .sheet(isPresented: $showLanguages) { LanguageSheet(ui: ui) }
         .sheet(isPresented: $showGlossary) { GlossaryView(ui: ui) }
         // The trash sits next to the listen button: a stray tap must not wipe the conversation
-        .confirmationDialog("Xoá toàn bộ hội thoại?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Xoá", role: .destructive) { if ui.session != nil { ui.clear() } else { engine.clearHistory() } }
-            Button("Huỷ", role: .cancel) {}
+        .confirmationDialog(Copy.t("dialog.clearTitle"), isPresented: $confirmClear, titleVisibility: .visible) {
+            Button(Copy.t("dialog.clearConfirm"), role: .destructive) { if ui.session != nil { ui.clear() } else { engine.clearHistory() } }
+            Button(Copy.t("dialog.cancel"), role: .cancel) {}
         }
     }
 
@@ -116,9 +116,9 @@ struct ContentView: View {
                 Spacer()
             case .failed(let message):
                 Spacer()
-                ContentUnavailableView("Không khởi động được", systemImage: "exclamationmark.triangle",
+                ContentUnavailableView(Copy.t("failed.title"), systemImage: "exclamationmark.triangle",
                                        description: Text(message))
-                Button("Thử lại") { Task { await engine.start() } }
+                Button(Copy.t("failed.retry")) { Task { await engine.start() } }
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.accent)
                 Spacer()
@@ -142,12 +142,12 @@ private struct TtsBanner: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "speaker.slash").foregroundStyle(Palette.accentLight)
-            Text("Chưa có giọng đọc tiếng Việt. Bản dịch chỉ hiện dạng chữ.")
+            Text(Copy.t("banner.text"))
                 .font(.system(size: 13))
                 .foregroundStyle(Palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: open) {
-                Text("Mở cài đặt")
+                Text(Copy.t("banner.open"))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
@@ -177,7 +177,7 @@ private struct Header: View {
             HStack {
                 Button { showLanguages = true } label: {
                     HStack(spacing: 8) {
-                        Text("Tiếng Việt")
+                        Text(Copy.t("header.home"))
                         Image(systemName: "arrow.left.arrow.right").foregroundStyle(Palette.muted)
                         Text(live.label)
                     }
@@ -190,18 +190,18 @@ private struct Header: View {
                 // Without a controller there is nothing to pick yet: the pair stays English
                 .disabled(ui.offeredPacks.isEmpty)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Tiếng Việt sang \(live.label)")
+                .accessibilityLabel(Copy.t("header.pair", ["label": live.label]))
                 .accessibilityAddTraits(.isButton)
                 Spacer()
                 Menu {
-                    Button("Ngôn ngữ", systemImage: "globe") { showLanguages = true }
+                    Button(Copy.t("menu.languages"), systemImage: "globe") { showLanguages = true }
                         .disabled(ui.offeredPacks.isEmpty)
                     // Without a controller the glossary has nothing to edit
                     if ui.session != nil {
-                        Button("Từ điển riêng", systemImage: "character.book.closed") { showGlossary = true }
+                        Button(Copy.t("menu.glossary"), systemImage: "character.book.closed") { showGlossary = true }
                     }
-                    Button("Claude relay", systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
-                    Button("Xoá hội thoại", systemImage: "trash", role: .destructive) { confirmClear = true }
+                    Button(Copy.t("menu.relay"), systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
+                    Button(Copy.t("menu.clear"), systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(!live.running || !live.hasHistory)
                 } label: {
                     Image(systemName: "gearshape")
@@ -210,14 +210,14 @@ private struct Header: View {
                         .frame(width: 44, height: 44)
                         .background(Palette.surface, in: Circle())
                 }
-                .accessibilityLabel("Cài đặt")
+                .accessibilityLabel(Copy.t("settings.label"))
             }
             FlowLayout(spacing: 8, runSpacing: 6) {
                 HStack(spacing: 8) {
                 Circle()
                     .fill(live.listening ? Palette.accentLight : Palette.faint)
                     .frame(width: 8, height: 8)
-                Text(live.listening ? "Đang nghe" : "Đang chờ")
+                Text(Copy.t(live.listening ? "status.listening" : "status.waiting"))
                     .fontWeight(.semibold)
                     .foregroundStyle(live.listening ? Palette.text : Palette.muted)
                 }
@@ -235,10 +235,10 @@ private struct Header: View {
 
     private var boardText: String {
         switch live.board {
-        case .off: "Bluetooth đang tắt"
-        case .scanning: "Đang tìm board…"
-        case .connecting: "Đang kết nối…"
-        case .ready: live.boardMicOn ? "Board đã kết nối" : "Board đã kết nối · mic tắt"
+        case .off: Copy.t("board.off")
+        case .scanning: Copy.t("board.scanning")
+        case .connecting: Copy.t("board.connecting")
+        case .ready: Copy.t(live.boardMicOn ? "board.ready" : "board.readyMicOff")
         }
     }
 }
@@ -255,7 +255,7 @@ private struct ConversationView: View {
                         EmptyHint(listening: live.listening)
                     }
                     ForEach(live.lines) { line in
-                        Bubble(label: line.mine ? "Bạn nói" : "Họ nói", source: line.source,
+                        Bubble(label: Copy.t(line.mine ? "bubble.mine" : "bubble.theirs"), source: line.source,
                                target: line.target, mine: line.mine, unclear: line.unclear)
                             .id(line.id)
                     }
@@ -322,9 +322,9 @@ private struct EmptyHint: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Text(listening ? "Cứ nói đi" : "Chạm \"Bắt đầu nghe\" trước khi nói")
+            Text(Copy.t(listening ? "hint.listening" : "hint.idle"))
                 .font(.system(size: 17, weight: .semibold))
-            Text("Người đối diện nói vào board, bạn nghe tiếng Việt qua AirPods. Bạn nói tiếng Việt, họ đọc phụ đề trên board.")
+            Text(Copy.t("hint.body"))
                 .font(.system(size: 14))
                 .foregroundStyle(Palette.muted)
                 .multilineTextAlignment(.center)
@@ -352,11 +352,11 @@ private struct ControlBar: View {
                     .overlay(Circle().strokeBorder(live.boardMicOn ? Palette.accent : .clear, lineWidth: 2))
             }
             .disabled(live.board != .ready)
-            .accessibilityLabel(live.boardMicOn ? "Tắt mic của board" : "Bật mic của board")
+            .accessibilityLabel(Copy.t(live.boardMicOn ? "control.micOff" : "control.micOn"))
             Spacer()
             Button(action: startStop) {
                 // The header already says "Đang nghe": the button says what a tap does
-                Label(live.listening ? "Dừng nghe" : "Bắt đầu nghe",
+                Label(Copy.t(live.listening ? "control.stop" : "control.start"),
                       systemImage: live.listening ? "stop.fill" : "mic.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -376,7 +376,7 @@ private struct ControlBar: View {
                     .background(Palette.surface, in: Circle())
             }
             .disabled(!live.running || !live.hasHistory)
-            .accessibilityLabel("Xoá hội thoại")
+            .accessibilityLabel(Copy.t("control.clear"))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
@@ -397,17 +397,17 @@ private struct ModelDownloadView: View {
         VStack(spacing: 16) {
             Spacer()
             Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(Palette.accentLight)
-            Text("Cần tải mô hình English ↔ Tiếng Việt").font(.system(size: 18, weight: .semibold))
-            Text("Tải một lần, sau đó dịch hoàn toàn trên máy: không cần mạng và nhanh hơn.")
+            Text(Copy.t("legacy.modelsTitle")).font(.system(size: 18, weight: .semibold))
+            Text(Copy.t("readiness.needsDownloadNote"))
                 .font(.system(size: 15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Palette.muted)
             if failed {
-                Text("Chưa tải xong. Kiểm tra mạng rồi thử lại.")
+                Text(Copy.t("readiness.downloadFailed"))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.accentLight)
             }
-            Button(failed ? "Thử lại" : "Tải mô hình") {
+            Button(Copy.t(failed ? "readiness.retry" : "legacy.modelsButton")) {
                 failed = false
                 if config == nil {
                     step = 1
