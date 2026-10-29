@@ -124,6 +124,6 @@ const isUpper = (g: string): boolean => g.toLowerCase() !== g && g.toUpperCase()
  * Dart `characters` package gives for a sentence start (letters with combining marks).
  */
 function firstGrapheme(s: string): string {
-  const m = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|‍.)*/su.exec(s);
+  const m = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*/su.exec(s);
   return m ? m[0] : s;
 }

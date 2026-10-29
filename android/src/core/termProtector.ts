@@ -214,8 +214,8 @@ export function escapeRegExp(s: string): string {
 
 // Grapheme edges without Intl.Segmenter (absent on Hermes): a code point plus the marks, emoji
 // modifiers and zero-width-joiner sequences after it, which is what decides a word edge here.
-const graphemeAtStart = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|‍.)*/su;
-const graphemeAtEnd = /.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|‍.)*$/su;
+const graphemeAtStart = /^.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*/su;
+const graphemeAtEnd = /.(?:[\p{M}\u{1F3FB}-\u{1F3FF}]|\u200d.)*$/su;
 
 function firstGrapheme(s: string): string {
   return graphemeAtStart.exec(s)?.[0] ?? s;

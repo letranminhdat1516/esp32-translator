@@ -72,8 +72,8 @@ describe('details not in the fixture', () => {
 
   test('a mark at the edge counts with its letter (bound kept)', () => {
     // "é" written as e + U+0301 at the end: the last character is a letter.
-    const re = TermProtector.wholeWordRegex('café');
-    expect('cafés'.match(re)).toBeNull();
-    expect('café s'.match(re)?.[0]).toBe('café');
+    const re = TermProtector.wholeWordRegex('cafe\u0301');
+    expect('cafe\u0301s'.match(re)).toBeNull();
+    expect('cafe\u0301 s'.match(re)?.[0]).toBe('cafe\u0301');
   });
 });
