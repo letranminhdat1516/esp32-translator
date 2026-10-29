@@ -14,15 +14,19 @@ import {androidPermissionGate} from './permissions';
 
 export interface AppGraph {
   readonly controller: ConversationController;
+  /** Ends the app: the controller (and engine session), the board link, the BleManager. */
+  destroy(): void;
 }
 
 /** Builds the real object graph. Loads the board glyph lists first (BoardText needs them). */
 export function createAppGraph(): AppGraph {
   const glyphs = BoardGlyphSets.load();
   const kv = asyncStorageKeyValueStore();
+  const manager = new BleManager();
+  const board = new BleBoardLink(new BlePlxAdapter(manager));
   const controller = new ConversationController({
     engine: new NativeVoiceEngineAdapter(),
-    board: new BleBoardLink(new BlePlxAdapter(new BleManager())),
+    board,
     packs: bundledPacks(),
     pickStore: {load: loadPickedLanguage, save: savePickedLanguage},
     openGlossary: () => GlossaryStore.open(kv),
@@ -31,5 +35,17 @@ export function createAppGraph(): AppGraph {
     glyphs,
     platform: 'android',
   });
-  return {controller};
+  let destroyed = false;
+  return {
+    controller,
+    destroy: () => {
+      if (destroyed) {
+        return;
+      }
+      destroyed = true;
+      controller.dispose();
+      board.dispose();
+      Promise.resolve(manager.destroy()).catch(e => console.warn('BleManager.destroy failed', e));
+    },
+  };
 }

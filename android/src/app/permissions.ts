@@ -34,13 +34,46 @@ export async function requestSessionPermissions(
   return results['android.permission.RECORD_AUDIO'] === 'granted';
 }
 
-/** The app's permission gate on the real platform. */
+/**
+ * The app's permission gate on the real platform. Android shows one permission dialog at a time
+ * (a second request while one is open fails), so requests never overlap: they run one after the
+ * other in the order asked (the controller asks Bluetooth at launch, so the session's request
+ * waits for it), and asking again while the same request is pending reuses that pending promise.
+ */
 export function androidPermissionGate(
   platform: PlatformInfo = Platform,
   permissions: PermissionRequester = PermissionsAndroid,
 ): PermissionGate {
+  let tail: Promise<unknown> = Promise.resolve();
+  const pending: {board?: Promise<boolean>; session?: Promise<boolean>} = {};
+  const ask = (kind: 'board' | 'session', request: () => Promise<boolean>): Promise<boolean> => {
+    const open = pending[kind];
+    if (open) {
+      return open;
+    }
+    const run = tail.then(request, request);
+    pending[kind] = run;
+    tail = run.catch(() => undefined);
+    const clear = () => {
+      if (pending[kind] === run) {
+        delete pending[kind];
+      }
+    };
+    run.then(clear, clear);
+    return run;
+  };
+  let boardAsked = false;
+  const board = () => {
+    boardAsked = true;
+    return ask('board', () => requestBlePermissions(platform, permissions));
+  };
   return {
-    session: () => requestSessionPermissions(platform, permissions),
-    board: () => requestBlePermissions(platform, permissions),
+    board,
+    session: () => {
+      if (!boardAsked) {
+        board().catch(() => undefined); // Bluetooth first, even when the session asks first
+      }
+      return ask('session', () => requestSessionPermissions(platform, permissions));
+    },
   };
 }

@@ -142,27 +142,34 @@ const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123
  * view's offset. This is how board PCM crosses the TurboModule bridge (`feedTheirAudio`).
  */
 export function pcm16leBase64(pcm: Int16Array): string {
+  // ~50 calls/s: a 12-bit → two-character lookup table (built once, kept on the function) turns
+  // each 3 bytes into two lookups, and the pieces are joined once instead of concatenated.
+  const cache = pcm16leBase64 as unknown as {pairs?: string[]};
+  let pairs = cache.pairs;
+  if (pairs === undefined) {
+    pairs = new Array<string>(4096);
+    for (let v = 0; v < 4096; v++) {
+      pairs[v] = base64Alphabet[v >> 6] + base64Alphabet[v & 63];
+    }
+    cache.pairs = pairs;
+  }
   const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-  let out = '';
+  const parts = new Array<string>(Math.ceil(bytes.length / 3));
+  let p = 0;
   let i = 0;
   for (; i + 2 < bytes.length; i += 3) {
     const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-    out +=
-      base64Alphabet[n >> 18] +
-      base64Alphabet[(n >> 12) & 63] +
-      base64Alphabet[(n >> 6) & 63] +
-      base64Alphabet[n & 63];
+    parts[p++] = pairs[n >> 12] + pairs[n & 4095];
   }
   const rest = bytes.length - i;
   if (rest === 1) {
     const n = bytes[i] << 16;
-    out += base64Alphabet[n >> 18] + base64Alphabet[(n >> 12) & 63] + '==';
+    parts[p++] = pairs[n >> 12] + '==';
   } else if (rest === 2) {
     const n = (bytes[i] << 16) | (bytes[i + 1] << 8);
-    out +=
-      base64Alphabet[n >> 18] + base64Alphabet[(n >> 12) & 63] + base64Alphabet[(n >> 6) & 63] + '=';
+    parts[p++] = pairs[n >> 12] + base64Alphabet[(n >> 6) & 63] + '=';
   }
-  return out;
+  return parts.join('');
 }
 
 // --- events -----------------------------------------------------------------------

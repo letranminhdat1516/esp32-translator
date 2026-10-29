@@ -8,9 +8,12 @@ import {
 } from '../src/app/permissions';
 import type {PermissionRequester} from '../src/board/BleAdapter';
 
+const mockDestroy = jest.fn();
+const mockRemove = jest.fn();
 jest.mock('react-native-ble-plx', () => ({
   BleManager: jest.fn().mockImplementation(() => ({
-    onStateChange: () => ({remove: () => {}}),
+    onStateChange: () => ({remove: mockRemove}),
+    destroy: mockDestroy,
   })),
 }));
 jest.mock('../src/engine/NativeVoiceEngine', () => {
@@ -34,6 +37,61 @@ describe('createAppGraph', () => {
     expect(BoardGlyphSets.shared.rangesFor(FontSets.cjk).length).toBeGreaterThan(0);
     expect(BoardGlyphSets.load()).toBe(BoardGlyphSets.shared);
     controller.dispose();
+  });
+
+  it('destroy disposes the controller, the board link and the BleManager', () => {
+    const {createAppGraph} = require('../src/app/bootstrap') as typeof import('../src/app/bootstrap');
+    const graph = createAppGraph();
+    const dispose = jest.spyOn(graph.controller, 'dispose');
+    mockDestroy.mockClear();
+    mockRemove.mockClear();
+    graph.destroy();
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(mockRemove).toHaveBeenCalled(); // the link dropped its power subscription
+    expect(mockDestroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('permission requests never overlap', () => {
+  /** A PermissionsAndroid that throws when a request starts while another is still open. */
+  function strictRequester() {
+    let open = false;
+    const asked: string[][] = [];
+    const answer = async (ps: string[]) => {
+      if (open) {
+        throw new Error('concurrent permission request');
+      }
+      open = true;
+      asked.push(ps);
+      await new Promise<void>(r => setTimeout(r, 10));
+      open = false;
+      return Object.fromEntries(ps.map(p => [p, 'granted']));
+    };
+    const requester: PermissionRequester = {
+      request: async p => (await answer([p]))[p],
+      requestMultiple: async ps => answer(ps),
+    };
+    return {requester, asked};
+  }
+
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('Bluetooth first, the session after it; a second ask reuses the pending one', async () => {
+    const {requester, asked} = strictRequester();
+    const gate = androidPermissionGate({OS: 'android', Version: 34}, requester);
+    const results = Promise.all([gate.session(), gate.board(), gate.session(), gate.board()]);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(await results).toEqual([true, true, true, true]);
+    expect(asked).toEqual([
+      ['android.permission.BLUETOOTH_SCAN', 'android.permission.BLUETOOTH_CONNECT'],
+      ['android.permission.RECORD_AUDIO', 'android.permission.POST_NOTIFICATIONS'],
+    ]);
+    // Later asks run again (the user may have changed the settings), still one at a time.
+    const again = Promise.all([gate.board(), gate.session()]);
+    await jest.advanceTimersByTimeAsync(100);
+    expect(await again).toEqual([true, true]);
+    expect(asked).toHaveLength(4);
   });
 });
 

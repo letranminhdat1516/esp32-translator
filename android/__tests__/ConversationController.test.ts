@@ -3,6 +3,7 @@
 // §3, §6; PLAN.md Review Focus 1 and 2).
 import {FakeBoardLink} from '../src/board/FakeBoardLink';
 import {BoardGlyphSets} from '../src/core/boardGlyphs';
+import {ConversationActivity} from '../src/core/conversationActivity';
 import {GlossaryStore, MemoryKeyValueStore} from '../src/core/glossary';
 import {FontSets, type Capabilities} from '../src/core/model';
 import {bundledPacks} from '../src/core/sharedAssets';
@@ -308,11 +309,11 @@ describe('ConversationController', () => {
     expect(subtitles(board).at(-1)?.text).toBe('tôi muốn mua cái này');
   });
 
-  it('shows an unclear phrase dimmed and does not speak it', async () => {
+  it('shows an unclear phrase dimmed, speaks only the cue, never its translation', async () => {
     const {engine, c} = await running();
     engine.emit('theirs', {text: 'mumble mumble', confidence: 0.2, generation: 0});
     await flush();
-    expect(engine.spoken).toEqual([]);
+    expect(engine.spoken).toEqual([{text: t('cue.unclear'), id: 1}]);
     expect(engine.translateCalls).toEqual([]);
     expect(c.getState().theirLines).toMatchObject([
       {source: 'mumble mumble', target: t('line.unclear'), unclear: true},
@@ -428,14 +429,17 @@ describe('ConversationController', () => {
 
     engine.failNext('downloadItem', new EngineError('downloadFailed', 'no network'));
     c.onDownload();
-    await flush();
-    expect(c.currentSession.state).toMatchObject({type: 'needsDownload', error: 'no network'});
-
-    c.onRetry();
     expect(c.currentSession.state.type).toBe('downloading');
     engine.emit('download', {item: missing[0], progress: 0.5, done: false, error: null});
     expect(c.getState().downloadProgress).toBe(0.25);
-    engine.missingResult = [];
+    await flush();
+    expect(c.currentSession.state).toMatchObject({type: 'needsDownload', error: 'no network'});
+
+    // Retry asks the engine again (everything still missing here), then checks once more.
+    const answers: MissingMsg[][] = [missing, []];
+    engine.missing = async () => answers.shift() ?? [];
+    c.onRetry();
+    expect(c.currentSession.state.type).toBe('downloading');
     await flush();
     expect(engine.downloaded).toEqual(missing);
     expect(engine.capabilitiesCalls).toEqual(['vi', 'vi']);
@@ -466,8 +470,16 @@ describe('ConversationController', () => {
     expect(again.c.getState().onlineAllowed).toEqual(['de']);
   });
 
-  it('follows the board mic button and the board control', async () => {
+  it('the board mic starts a conversation only when it goes from off to on', async () => {
     const {board, c, engine} = await running();
+    c.stopListening();
+    await flush();
+    expect(engine.micStates).toEqual([true, false]);
+    // Already on: a repeated "on" is no tap.
+    board.emitControl({type: 'micChanged', on: true});
+    await flush();
+    expect(c.getState().listening).toBe(false);
+
     c.toggleBoardMic();
     expect(board.micCalls).toEqual([false]);
     expect(c.getState().boardMicOn).toBe(false);
@@ -475,7 +487,172 @@ describe('ConversationController', () => {
     await flush();
     expect(c.getState().boardMicOn).toBe(true);
     expect(c.getState().listening).toBe(true);
+    expect(engine.micStates).toEqual([true, false, true]);
+
+    c.stopListening();
+    c.toggleBoardMic(); // on → off
+    c.toggleBoardMic(); // off → on: a tap
+    await flush();
+    expect(board.micCalls).toEqual([false, false, true]);
+    expect(c.getState().listening).toBe(true);
+  });
+
+  // --- fix round 1 -------------------------------------------------------------------------
+
+  it('opening the app starts listening once the session first runs', async () => {
+    const {c, engine} = await running();
+    expect(c.getState().listening).toBe(true);
     expect(engine.micStates).toEqual([true]);
+    c.stopListening();
+    c.pickLanguage('fr'); // a later running is no launch
+    await flush();
+    expect(c.currentSession.state.type).toBe('running');
+    expect(c.getState().listening).toBe(false);
+    expect(engine.micStates).toEqual([true, false]);
+  });
+
+  it('speaks the unclear cue at most once per 4 s, the line still dimmed', async () => {
+    const {engine, c, advance} = await running();
+    engine.emit('theirs', {text: 'mumble one', confidence: 0.2, generation: 0});
+    advance(1000);
+    engine.emit('theirs', {text: 'mumble two', confidence: 0.2, generation: 0});
+    await flush();
+    expect(engine.spoken).toEqual([{text: t('cue.unclear'), id: 1}]);
+    advance(4001);
+    engine.emit('theirs', {text: 'mumble three', confidence: 0.2, generation: 0});
+    await flush();
+    expect(engine.spoken.map(s => s.text)).toEqual([t('cue.unclear'), t('cue.unclear')]);
+    expect(c.getState().theirLines.every(l => l.unclear === true)).toBe(true);
+    expect(engine.translateCalls).toEqual([]);
+  });
+
+  it('the echo hold clears their pending partial', async () => {
+    const {engine, c} = await running();
+    engine.emit('mine', {kind: 'partial', text: 'xin chào', startMs: 0, endMs: 300});
+    engine.emit('theirs', {text: 'echo of you', confidence: 0.9, generation: 0});
+    await flush();
+    expect(c.getState().theirPartial).toBe('');
+    expect(engine.spoken).toEqual([]);
+  });
+
+  it('writes to the board one at a time, in order (subtitles too)', async () => {
+    const events: string[] = [];
+    class SlowBoard extends FakeBoardLink {
+      busy = false;
+      async sendText(text: string, kind: 'subtitle' | 'status' | 'time' | 'label'): Promise<void> {
+        if (this.busy) {
+          throw new Error('overlapping board write');
+        }
+        this.busy = true;
+        events.push(`${kind}:${text}`);
+        await new Promise<void>(r => setTimeout(r, 50));
+        this.busy = false;
+        return super.sendText(text, kind);
+      }
+    }
+    const board = new SlowBoard();
+    const {engine, advance, logs} = await running({board});
+    board.emitState('ready');
+    advance(3000);
+    engine.emit('mine', {kind: 'finalText', text: 'chào anh', startMs: 0, endMs: 500});
+    for (let i = 0; i < 10; i++) {
+      await flush();
+      jest.advanceTimersByTime(50);
+    }
+    await flush();
+    expect(logs.filter(l => l.includes('overlapping'))).toEqual([]);
+    expect(board.sentTexts.map(s => s.kind)).toEqual(['label', 'time', 'label', 'subtitle']);
+    expect(events).toHaveLength(4);
+  });
+
+  it('after a recognizer restart retakes the mic only if the conversation was active', async () => {
+    const active = await running();
+    active.engine.failNext('feedTheirAudio', new EngineError('notReady'));
+    active.board.emitAudio(packet());
+    await flush();
+    expect(active.engine.starts).toHaveLength(2);
+    expect(active.engine.micStates).toEqual([true, true]);
+
+    const idle = await running();
+    idle.c.stopListening();
+    await flush();
+    idle.engine.failNext('feedTheirAudio', new EngineError('notReady'));
+    idle.board.emitAudio(packet());
+    await flush();
+    expect(idle.engine.starts).toHaveLength(2);
+    // The packet is board audio, but a stop tap keeps automatic starts off until the next tap.
+    expect(idle.engine.micStates).toEqual([true, false]);
+  });
+
+  it('a refused Bluetooth permission shows the message; the phone side keeps working', async () => {
+    const permissions: PermissionGate = {session: async () => true, board: async () => false};
+    const {engine, c} = await running({permissions});
+    expect(c.getState().boardPermissionRefused).toBe(true);
+    expect(c.getState().board).toBe('off');
+    engine.emit('theirs', {text: 'Hello there', confidence: 0.9, generation: 0});
+    await flush();
+    expect(engine.spoken).toHaveLength(1);
+
+    const ok = await running();
+    expect(ok.c.getState().boardPermissionRefused).toBe(false);
+  });
+
+  it('clears the voice banner when the voice appears', async () => {
+    const engine = new ScriptedEngine(caps());
+    engine.missingResult = [
+      {kind: 'ttsVoice', language: 'vi'},
+      {kind: 'speechModel', language: 'en'},
+    ];
+    const {c} = setup({engine});
+    await c.start();
+    await flush();
+    expect(c.getState().ttsVoiceMissing).toBe(true);
+    engine.missingResult = [];
+    c.onDownload();
+    await flush();
+    expect(c.currentSession.state.type).toBe('running');
+    expect(c.getState().ttsVoiceMissing).toBe(false);
+  });
+
+  it('a retried download fetches only what is still missing', async () => {
+    const engine = new ScriptedEngine(caps());
+    const model: MissingMsg = {kind: 'speechModel', language: 'en'};
+    const translation: MissingMsg = {kind: 'translation', language: 'en', from: 'en', to: 'vi'};
+    engine.missingResult = [model, translation];
+    const {c} = setup({engine});
+    await c.start();
+    await flush();
+    // The model arrives, the translation fails.
+    const download = engine.downloadItem.bind(engine);
+    let calls = 0;
+    engine.downloadItem = async item => {
+      calls++;
+      if (calls === 2) {
+        throw new EngineError('downloadFailed', 'no network');
+      }
+      return download(item);
+    };
+    c.onDownload();
+    await flush();
+    expect(c.currentSession.state).toMatchObject({type: 'needsDownload', error: 'no network'});
+    engine.missingResult = [translation];
+    c.onRetry();
+    await flush();
+    expect(engine.downloaded).toEqual([model, translation]);
+  });
+
+  it('notes board audio for the activity at most once per second', async () => {
+    const activity = new ConversationActivity();
+    const handle = jest.spyOn(activity, 'handle');
+    const {board, advance} = await running({activity});
+    board.emitAudio(packet());
+    board.emitAudio(packet());
+    advance(500);
+    board.emitAudio(packet());
+    advance(600);
+    board.emitAudio(packet());
+    const notes = handle.mock.calls.filter(([e]) => e === 'boardAudio');
+    expect(notes).toHaveLength(2);
   });
 
   it('clears the history and the board subtitle', async () => {
@@ -484,6 +661,7 @@ describe('ConversationController', () => {
     engine.emit('mine', {kind: 'finalText', text: 'chào anh', startMs: 0, endMs: 500});
     await flush();
     c.clearHistory();
+    await flush();
     expect(c.getState().myLines).toEqual([]);
     expect(subtitles(board).at(-1)?.text).toBe('');
   });

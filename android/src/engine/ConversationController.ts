@@ -19,6 +19,7 @@ import {SubtitleTranslator} from '../core/subtitleTranslator';
 import {TextPipeline} from '../core/textPipeline';
 import {TurnAssembler} from '../core/turnAssembler';
 import {t} from '../ui/copy';
+import {failureReason} from '../ui/ReadinessView';
 import {
   GlossaryValidationError,
   emptyUiState,
@@ -107,19 +108,31 @@ export interface ConversationControllerOptions {
   readonly log?: (message: string) => void;
 }
 
-/** Session failure reasons the controller itself gives (the machine gives 'recognizer stopped'). */
+/**
+ * Session failure reasons the controller itself gives. The machine's own ("recognizer stopped")
+ * is shown through `failureReason` of ReadinessView, which owns that mapping.
+ */
 export const FailureReason = {
   microphone: 'microphone permission',
   noRecognizer: 'no recognizer',
-  recognizerStopped: 'recognizer stopped',
 } as const;
+
+/** The screens' state plus what only the app shell shows (App.tsx renders the Bluetooth note). */
+export interface ControllerState extends UiState {
+  /** Bluetooth permission refused: the board stays off, the phone side works (`permission.bluetooth`). */
+  readonly boardPermissionRefused: boolean;
+}
 
 const homeCode = LanguageCatalog.homeCode;
 const boardSampleRate = 16000;
 const maxLines = 50;
 const consentKey = 'onlineAllowed';
+/** The unclear cue is spoken at most this often (Swift `unclearCooldown`). */
+const unclearCueMs = 4000;
+/** Board audio counts for ConversationActivity at most this often (50 packets/s arrive). */
+const boardAudioNoteMs = 1000;
 
-type Listener = (state: UiState) => void;
+type Listener = (state: ControllerState) => void;
 
 export class ConversationController implements UiIntents {
   private readonly engine: VoiceEngine;
@@ -139,7 +152,7 @@ export class ConversationController implements UiIntents {
   private readonly echoHoldMs: number;
   private readonly logLine: (message: string) => void;
 
-  private ui: UiState;
+  private ui: ControllerState;
   private readonly listeners = new Set<Listener>();
   private readonly unsubs: Unsubscribe[] = [];
   private tickHandle: unknown = null;
@@ -158,8 +171,18 @@ export class ConversationController implements UiIntents {
   /** The pair being prepared or running, with its text pipeline. */
   private pair: {readonly pack: LanguagePack; readonly generation: number; pipeline: TextPipeline} | null =
     null;
-  /** The last missing list (a failed download returns to needsDownload without it). */
-  private lastMissing: readonly MissingMsg[] = [];
+  /** What the last check found missing for `code`; dropped after a failed download (re-queried). */
+  private lastMissing: {readonly code: string; readonly items: readonly MissingMsg[]} | null = null;
+  /** The last check reported the Vietnamese voice missing. */
+  private voiceMissing = false;
+  /** `userStart` is sent once, the first time the session runs (opening the app starts listening). */
+  private launched = false;
+  private lastUnclearCueMs = -Infinity;
+  private lastBoardAudioNoteMs = -Infinity;
+  /** Board writes, one after the other (clock, label, subtitles). */
+  private boardChain: Promise<void> = Promise.resolve();
+  /** The newest subtitle not yet written; a newer one replaces it in the queue. */
+  private queuedSubtitle: string | null = null;
   /** The engine runs a session (start resolved, no stop since). */
   private engineRunning = false;
   private runningKind: RecognizerKind | null = null;
@@ -203,12 +226,13 @@ export class ConversationController implements UiIntents {
       session: this.session.state,
       board: this.board.currentState,
       languageNames: this.languageNames(),
+      boardPermissionRefused: false,
     };
   }
 
   // --- the store -------------------------------------------------------------------------
 
-  getState = (): UiState => this.ui;
+  getState = (): ControllerState => this.ui;
 
   subscribe = (listener: Listener): Unsubscribe => {
     this.listeners.add(listener);
@@ -222,7 +246,7 @@ export class ConversationController implements UiIntents {
     return this.session;
   }
 
-  private patch(p: Partial<UiState>): void {
+  private patch(p: Partial<ControllerState>): void {
     if (this.disposed) {
       return;
     }
@@ -265,11 +289,13 @@ export class ConversationController implements UiIntents {
     // A link that became ready before we subscribed gets its clock now (the label follows on start).
     this.onBoardState(this.board.currentState);
 
+    // Asked first; the gate makes the session's request wait for this one (never two at once).
     this.permissions.board().then(
       granted => {
         if (!granted) {
           this.log('Bluetooth permission refused: no board');
         }
+        this.patch({boardPermissionRefused: !granted});
       },
       err => this.log(`Bluetooth permission: ${String(err)}`),
     );
@@ -374,7 +400,7 @@ export class ConversationController implements UiIntents {
       onlineCodes,
       onlineCandidates,
       onlineAllowed: [...this.consent],
-      ttsVoiceMissing: this.ui.ttsVoiceMissing || !this.caps.vietnameseVoice,
+      ttsVoiceMissing: this.voiceMissing || !this.caps.vietnameseVoice,
     });
   }
 
@@ -438,14 +464,12 @@ export class ConversationController implements UiIntents {
 
   private failureText(reason: string): string {
     switch (reason) {
-      case FailureReason.recognizerStopped:
-        return t('failed.recognizerStopped');
       case FailureReason.microphone:
         return t('permission.microphone');
       case FailureReason.noRecognizer:
         return t('failed.noRecognizer');
       default:
-        return reason;
+        return failureReason(reason); // the machine's own reasons (and engine messages as is)
     }
   }
 
@@ -558,19 +582,23 @@ export class ConversationController implements UiIntents {
       this.log(`missing(${code}): ${String(err)}`);
       all = [];
     }
-    const voiceMissing = all.some(m => m.kind === 'ttsVoice');
+    this.voiceMissing = all.some(m => m.kind === 'ttsVoice');
     const missing = all.filter(m => m.kind !== 'ttsVoice');
-    this.patch({ttsVoiceMissing: voiceMissing || !this.caps.vietnameseVoice});
-    if (missing.length > 0) {
-      this.lastMissing = missing;
-    }
+    this.patch({ttsVoiceMissing: this.voiceMissing || !this.caps.vietnameseVoice});
+    this.lastMissing = {code, items: missing};
     return missing;
   }
 
   private async download(code: string, seq: number): Promise<void> {
-    let items = this.lastMissing;
-    if (items.length === 0) {
-      items = await this.missingFor(code);
+    // The list of the check just made for this code; after a failure (or for another code) the
+    // engine is asked again, so a retry fetches only what is still missing.
+    const known = this.lastMissing;
+    const items =
+      known !== null && known.code === code && known.items.length > 0
+        ? known.items
+        : await this.missingFor(code);
+    if (!this.current(seq)) {
+      return;
     }
     this.downloadPlan = {items, index: 0};
     this.patch({downloadProgress: items.length === 0 ? null : 0});
@@ -584,13 +612,14 @@ export class ConversationController implements UiIntents {
       }
     } catch (err) {
       this.downloadPlan = null;
+      this.lastMissing = null;
       if (this.current(seq)) {
         this.dispatch({type: 'downloadFailed', error: errorText(err)});
       }
       return;
     }
     this.downloadPlan = null;
-    this.lastMissing = [];
+    this.lastMissing = null;
     await this.refreshCapabilities();
     if (this.current(seq)) {
       this.dispatch({type: 'downloadDone'});
@@ -676,10 +705,36 @@ export class ConversationController implements UiIntents {
   private async onRunning(code: string): Promise<void> {
     this.deathReported = false;
     this.patch({onlineRecognizer: this.runningKind === 'osOnline'});
-    if (this.activity.isActive) {
+    if (!this.launched) {
+      // Opening the app starts listening, as the legacy app (parity ruling).
+      this.launched = true;
+      this.activityEvent('userStart');
+    } else if (this.activity.isActive) {
+      // After a restart or a switch: the mic again iff a conversation is going on.
       this.setMic(true);
     }
     await this.sendLabel(code);
+  }
+
+  /** Queues one board write after the previous ones (never two at once, never reordered). */
+  private boardWrite(write: () => Promise<void>, what: string): Promise<void> {
+    const job = this.boardChain.then(write).catch(err => this.log(`${what}: ${String(err)}`));
+    this.boardChain = job;
+    return job;
+  }
+
+  /** Subtitles are queued too; one still waiting is replaced by the newer text. */
+  private writeSubtitle(text: string): void {
+    const waiting = this.queuedSubtitle !== null;
+    this.queuedSubtitle = text;
+    if (waiting) {
+      return;
+    }
+    this.boardWrite(() => {
+      const latest = this.queuedSubtitle ?? '';
+      this.queuedSubtitle = null;
+      return this.board.sendText(latest, 'subtitle');
+    }, 'subtitle');
   }
 
   // --- the board ---------------------------------------------------------------------------
@@ -695,11 +750,8 @@ export class ConversationController implements UiIntents {
     if (!pack) {
       return;
     }
-    try {
-      await this.board.sendText(this.labelFor(pack), 'label');
-    } catch (err) {
-      this.log(`label: ${String(err)}`);
-    }
+    const label = this.labelFor(pack);
+    await this.boardWrite(() => this.board.sendText(label, 'label'), 'label');
   }
 
   private onBoardState(s: BoardState): void {
@@ -712,17 +764,20 @@ export class ConversationController implements UiIntents {
 
   /** On every `ready` (first connect and reconnects): the clock, then the label (Review Focus 1). */
   private async sendClockAndLabel(): Promise<void> {
-    await this.board.sendText(timeText(new Date(this.now())), 'time');
+    // Both are queued at once, so nothing (a subtitle) gets between them.
+    const clock = timeText(new Date(this.now()));
+    const clockWritten = this.boardWrite(() => this.board.sendText(clock, 'time'), 'clock');
     const code = this.ui.currentCode;
-    if (code !== null) {
-      await this.sendLabel(code);
-    }
+    const labelWritten = code === null ? Promise.resolve() : this.sendLabel(code);
+    await Promise.all([clockWritten, labelWritten]);
   }
 
+  /** The board's own mic button: only an off → on change is a tap that starts a conversation. */
   private onBoardControl(c: BoardControl): void {
     if (c.type === 'micChanged') {
+      const wasOn = this.ui.boardMicOn;
       this.patch({boardMicOn: c.on});
-      if (c.on) {
+      if (c.on && !wasOn) {
         this.activityEvent('userStart');
       }
     }
@@ -734,14 +789,19 @@ export class ConversationController implements UiIntents {
     if (pcm.length === 0) {
       return;
     }
-    this.activityEvent('boardAudio');
+    const now = this.now();
+    if (now - this.lastBoardAudioNoteMs >= boardAudioNoteMs) {
+      this.lastBoardAudioNoteMs = now;
+      this.activityEvent('boardAudio');
+    }
     const s = this.session.state;
     if (s.type !== 'running' || !this.engineRunning) {
       return;
     }
     const generation = this.session.generation;
     this.engine.feedTheirAudio(pcm, boardSampleRate).catch(err => {
-      // The engine rejects a feed with notReady when their recognizer is gone (§6).
+      // Ruling (P2.1 fix round 1): the Kotlin engine rejects a feed with notReady whenever the X
+      // recognizer is not running; that is how its death reaches us (§6: one restart, then failed).
       if (
         err instanceof EngineError &&
         err.code === 'notReady' &&
@@ -765,21 +825,38 @@ export class ConversationController implements UiIntents {
     }
     const now = this.now();
     if (this.ui.myPartial !== '' || now - this.myLastSpeechMs < this.echoHoldMs) {
-      return; // the board mic heard the wearer
+      // The board mic heard the wearer: dropped, and their pending partial with it (Swift).
+      if (this.ui.theirPartial !== '') {
+        this.patch({theirPartial: ''});
+      }
+      return;
     }
     const text = m.text.trim();
     if (graphemes(text).length <= 1) {
       return;
     }
+    const generation = m.generation;
     const min = this.pair.pack.minConfidence;
     if (m.confidence !== null && min !== null && m.confidence < min) {
-      // Speaking a wrong translation is worse than saying nothing: shown dimmed only.
-      this.addTheirLine({id: String(this.nextSpeechId++), source: text, target: t('line.unclear'), unclear: true, at: now});
+      // Speaking a wrong translation is worse than saying nothing: shown dimmed, and a short cue
+      // at most every 4 s (Swift `handleUnclear`).
+      const id = this.nextSpeechId++;
+      this.addTheirLine({id: String(id), source: text, target: t('line.unclear'), unclear: true, at: now});
+      if (now - this.lastUnclearCueMs > unclearCueMs) {
+        this.lastUnclearCueMs = now;
+        this.enqueueSpeech(generation, async () => {
+          await this.engine.speak(t('cue.unclear'), id);
+        });
+      }
       return;
     }
-    const generation = m.generation;
+    this.enqueueSpeech(generation, () => this.translateAndSpeak(text, generation));
+  }
+
+  /** The one speech queue: strict order, and nothing of an old generation once it runs. */
+  private enqueueSpeech(generation: number, work: () => Promise<void>): void {
     this.theirChain = this.theirChain
-      .then(() => this.translateAndSpeak(text, generation))
+      .then(() => (generation === this.session.generation ? work() : undefined))
       .catch(err => this.log(`their phrase: ${String(err)}`));
   }
 
@@ -886,7 +963,7 @@ export class ConversationController implements UiIntents {
     // The board shows the current turn only; a late result for an earlier turn just fixes its line.
     if (index === lines.length - 1) {
       const shown = this.boardText.encode(translation, this.board.info.fontSets);
-      this.board.sendText(shown, 'subtitle').catch(err => this.log(`subtitle: ${String(err)}`));
+      this.writeSubtitle(shown);
     }
   }
 
@@ -979,7 +1056,7 @@ export class ConversationController implements UiIntents {
     this.turns.reset();
     this.subtitles?.reset();
     this.patch({theirLines: [], myLines: [], theirPartial: '', myPartial: ''});
-    this.board.sendText('', 'subtitle').catch(err => this.log(`clear subtitle: ${String(err)}`));
+    this.writeSubtitle('');
   };
 
   onDownload = (): void => {

@@ -39,10 +39,13 @@ export const sampleState: UiState = {
   languageNames: {vi: t('header.home'), en: 'English'},
 };
 
+/** The controller's state: the screens' plus the shell's Bluetooth note. */
+export type AppState = UiState & {readonly boardPermissionRefused?: boolean};
+
 /** What App needs of the ConversationController (src/engine/ConversationController.ts). */
 export interface AppController extends UiIntents {
-  getState(): UiState;
-  subscribe(listener: (state: UiState) => void): Unsubscribe;
+  getState(): AppState;
+  subscribe(listener: (state: AppState) => void): Unsubscribe;
   start(): Promise<void>;
   dispose(): void;
 }
@@ -73,22 +76,36 @@ function App({initialState, intents, controller}: AppProps) {
   );
 }
 
+interface Graph {
+  readonly controller: AppController;
+  destroy(): void;
+}
+
 /** Builds the real graph; required lazily, so the screens-only mode never binds native modules. */
-function realController(): AppController {
+function realGraph(): Graph {
   const bootstrap = require('./src/app/bootstrap') as typeof import('./src/app/bootstrap');
-  return bootstrap.createAppGraph().controller;
+  return bootstrap.createAppGraph();
 }
 
 /** The real app: the controller's state and intents. */
 function Product({controller: given}: {controller?: AppController}) {
   // Built once, before the first render (the glyph lists are loaded inside).
-  const [controller] = useState<AppController>(() => given ?? realController());
+  const [graph] = useState<Graph>(() =>
+    given ? {controller: given, destroy: () => given.dispose()} : realGraph(),
+  );
+  const controller = graph.controller;
   useEffect(() => {
     controller.start().catch(e => console.error('App: the controller did not start', e));
-    return () => controller.dispose();
-  }, [controller]);
+    return () => graph.destroy();
+  }, [controller, graph]);
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
-  return <AppContent state={state} intents={controller} />;
+  return (
+    <AppContent
+      state={state}
+      intents={controller}
+      notice={state.boardPermissionRefused ? t('permission.bluetooth') : null}
+    />
+  );
 }
 
 function ScreensOnly({
@@ -147,7 +164,16 @@ function ScreensOnly({
   return <AppContent state={state} intents={intents} />;
 }
 
-function AppContent({state, intents}: {state: UiState; intents: UiIntents}) {
+function AppContent({
+  state,
+  intents,
+  notice = null,
+}: {
+  state: UiState;
+  intents: UiIntents;
+  /** A note above the screen (the refused Bluetooth permission). */
+  notice?: string | null;
+}) {
   const insets = useSafeAreaInsets();
   const [sheet, setSheet] = useState(false);
   const [glossary, setGlossary] = useState(false);
@@ -158,6 +184,11 @@ function AppContent({state, intents}: {state: UiState; intents: UiIntents}) {
   }
   return (
     <View style={[styles.container, {paddingTop: insets.top, paddingBottom: insets.bottom}]}>
+      {notice !== null ? (
+        <View style={styles.notice} accessibilityRole="alert">
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      ) : null}
       {glossary ? (
         <GlossaryScreen
           terms={state.glossaryTerms}
@@ -201,6 +232,8 @@ const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: Palette.ground},
   dev: {position: 'absolute', left: 8, paddingVertical: 4, paddingHorizontal: 8, opacity: 0.6},
   devText: {color: Palette.faint, fontSize: 12},
+  notice: {backgroundColor: Palette.surface, paddingVertical: 8, paddingHorizontal: 16},
+  noticeText: {color: Palette.muted, fontSize: 13},
 });
 
 export default App;
