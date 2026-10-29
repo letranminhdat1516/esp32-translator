@@ -31,8 +31,8 @@ final class ConversationController {
     static let defaultPick = "en"
     static let pickKey = "conversation.pick"
     static let onlineAllowedKey = "conversation.onlineAllowed"
-    /// Spoken (quietly, rate-limited) and shown for a phrase under the confidence gate, as in the Swift app.
-    static let unclearCue = "Không nghe rõ"
+    /// Spoken (rate-limited) and shown for a phrase under the confidence gate, as in the Swift app.
+    static var unclearCue: String { Copy.t("cue.unclear") }
 
     let ui: UIState
     private let engine: any VoiceEngine
@@ -51,6 +51,8 @@ final class ConversationController {
     private var epoch = 0
     private var started = false
     private var tasks: [Task<Void, Never>] = []
+    /// One-off steps (checks, downloads, starts, glossary saves); cancelled by `shutdown`
+    private var oneOffs: [UUID: Task<Void, Never>] = [:]
 
     // Languages
     private var caps: Capabilities?
@@ -74,6 +76,9 @@ final class ConversationController {
     private var theirQueue: [TheirsMsg] = []
     private var theirWorker: Task<Void, Never>?
     private var speechChain: Task<Void, Never>?
+    /// Utterances asked for and not yet ended (`ttsEnd`, skipped, failed or stopped): each one ends exactly once,
+    /// so the activity's "speaking" never sticks
+    private var outstandingSpeech = Set<Int>()
     private var nextSpeechId = 1
     private var nextTheirLine = 1
     private var lastUnclearCue = Date.distantPast
@@ -126,7 +131,7 @@ final class ConversationController {
         listen(ev.theirs) { $0.handleTheirs($1) }
         listen(ev.gate) { $0.note($1 ? .gateOpen : .gateClosed) }
         listen(ev.ttsStart) { c, _ in c.note(.ttsStart) }
-        listen(ev.ttsEnd) { c, _ in c.note(.ttsEnd) }
+        listen(ev.ttsEnd) { $0.speechEnded($1) }
         listen(ev.audioSession) { $0.handleAudioSession($1) }
         listen(ev.download) { $0.handleDownload($1) }
         listen(bev.state) { $0.handleBoardState($1) }
@@ -155,11 +160,26 @@ final class ConversationController {
 
     /// Ends every stream subscription and worker (tests; the app's controller lives as long as the app).
     func shutdown() {
+        epoch += 1
         for task in tasks { task.cancel() }
         tasks.removeAll()
-        theirWorker?.cancel()
+        for task in oneOffs.values { task.cancel() }
+        oneOffs.removeAll()
+        for task in [theirWorker, speechChain, micChain, boardChain] { task?.cancel() }
+        theirWorker = nil
+        speechChain = nil
+        micChain = nil
+        boardChain = nil
         theirQueue.removeAll()
-        epoch += 1
+    }
+
+    /// Runs `work` as a one-off Task that `shutdown` cancels.
+    private func oneOff(_ work: @escaping @MainActor () async -> Void) {
+        let id = UUID()
+        oneOffs[id] = Task { [weak self] in
+            await work()
+            self?.oneOffs[id] = nil
+        }
     }
 
     private func listen<Element: Sendable>(_ stream: AsyncStream<Element>,
@@ -186,17 +206,25 @@ final class ConversationController {
         ui.toggleBoardMic = { [weak self] in self?.toggleBoardMic() }
         ui.clear = { [weak self] in self?.clear() }
         ui.openTtsSettings = { [weak self] in
-            guard let engine = self?.engine else { return }
-            Task { try? await engine.openTtsSettings() }
+            guard let self else { return }
+            let engine = self.engine
+            oneOff { try? await engine.openTtsSettings() }
         }
         ui.glossaryAdd = { [weak self] text in try self?.glossaryAdd(text) }
         ui.glossaryUpdate = { [weak self] id, text in try self?.glossaryUpdate(id, text) }
         ui.glossaryDelete = { [weak self] id in try self?.glossaryDelete(id) }
     }
 
+    /// Saved only when the machine took the pick (a pick while loading, checking, downloading, preparing or
+    /// switching is ignored by it and must not be remembered either).
     private func pick(_ code: String) {
-        defaults.set(code, forKey: Self.pickKey)
         apply(.picked(code))
+        switch session.state {
+        case .checking(code), .switching(_, code):
+            defaults.set(code, forKey: Self.pickKey)
+        default:
+            break
+        }
     }
 
     private func setOnlineAllowed(_ code: String, _ on: Bool) {
@@ -254,7 +282,8 @@ final class ConversationController {
             // §2 step 7: the old pair's queued phrases and speech go; late results carry the old generation
             theirQueue.removeAll()
             let engine = self.engine
-            Task { try? await engine.stopSpeaking() }
+            oneOff { try? await engine.stopSpeaking() }
+            endAllSpeech()
             show(to)
             check(to)
         }
@@ -296,30 +325,30 @@ final class ConversationController {
     private func check(_ code: String) {
         let e = epoch, engine = self.engine
         let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: session.generation)
-        Task {
-            var missing: [MissingMsg] = []
+        oneOff { [weak self] in
+            var missing: [MissingMsg]?
             do {
                 missing = try await engine.missing(pair: pair)
-                ui.ttsVoiceMissing = missing.contains { $0.kind == .ttsVoice }
             } catch {
                 // Nothing known to be missing: the start reports what is really wrong
                 Diag.log("controller: missing(\(code)) failed: \(error)")
             }
-            guard epoch == e else { return }
-            apply(.checked(missing.filter { $0.kind != .ttsVoice }))
+            guard let self, epoch == e else { return }
+            if let missing { ui.ttsVoiceMissing = missing.contains { $0.kind == .ttsVoice } }
+            apply(.checked((missing ?? []).filter { $0.kind != .ttsVoice }))
         }
     }
 
     private func downloadMissing() {
         let items = pendingMissing, e = epoch, engine = self.engine
         ui.downloadProgress = nil
-        Task {
+        oneOff { [weak self] in
             do {
                 for item in items { try await engine.downloadItem(item) }
-                guard epoch == e else { return }
+                guard let self, epoch == e else { return }
                 apply(.downloadDone)
             } catch {
-                guard epoch == e else { return }
+                guard let self, epoch == e else { return }
                 apply(.downloadFailed(String(describing: error)))
             }
         }
@@ -347,23 +376,42 @@ final class ConversationController {
             activeCode = code
             makeSubtitles(code)
         }
-        let chain = catalog?.chain(code) ?? []
+        let catalogChain = catalog?.chain(code) ?? []
+        let chain = catalogChain.isEmpty ? [RecognizerKind.osOnDevice] : catalogChain
         ui.online = chain.first == .osOnline
-        let recognizer = (chain.first ?? .osOnDevice).rawValue
         let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: session.generation)
         let hints = hints(for: other), e = epoch, engine = self.engine
-        Task {
+        if restarts > 0 { engineStarted = false }
+        oneOff { [weak self] in
             do {
-                if restarts > 0 {
-                    engineStarted = false
-                    try? await engine.stop()
+                if restarts > 0 { try? await engine.stop() }
+                // The recognizer chain (P3): the next kind when the engine cannot start one
+                var used: RecognizerKind?
+                var lastError: Error?
+                for kind in chain {
+                    do {
+                        try await engine.start(pair: pair, recognizerX: kind.rawValue, hints: hints)
+                        used = kind
+                        break
+                    } catch {
+                        Diag.log("controller: start with \(kind.rawValue) failed: \(error)")
+                        lastError = error
+                        guard self?.epoch == e else { return }
+                    }
                 }
-                try await engine.start(pair: pair, recognizerX: recognizer, hints: hints)
-                guard epoch == e else { return }
+                guard let used else { throw lastError ?? EngineError.notReady }
+                guard let self, epoch == e else { return }
+                ui.online = used == .osOnline
                 engineStarted = true
                 apply(.started)
             } catch {
-                guard epoch == e else { return }
+                guard let self, epoch == e else { return }
+                // A failed start (also after a switch: the engine tore the old pair down) leaves nothing running
+                endAllSpeech()
+                if activity.isActive { _ = activity.handle(.stop, at: now()) }
+                engineStarted = false
+                ui.listening = false
+                ui.myPartial = ""
                 apply(.startFailed(String(describing: error)))
             }
         }
@@ -375,7 +423,9 @@ final class ConversationController {
             // Opening the app starts a conversation (as the Swift app)
             openedOnce = true
             note(.userStart)
-        } else if restarts > 0 && activity.isActive {
+        } else if activity.isActive {
+            // After a restart (the engine was stopped) or a switch the mic is taken again iff the conversation was
+            // going on; the engine treats a repeated micOn(true) as a no-op
             setMic(true)
         }
     }
@@ -405,34 +455,47 @@ final class ConversationController {
         }
         guard engineStarted else { return }
         let hints = hints(for: other), engine = self.engine
-        Task { try? await engine.setHints(hints) }
+        oneOff { try? await engine.setHints(hints) }
     }
 
     private func glossaryAdd(_ text: String) throws {
         let store = try writableGlossary()
-        try Self.precheck(text, terms: glossaryTerms, ignoring: nil)
-        Task {
-            do { try await store.add(text: text) } catch { Diag.log("glossary: add failed: \(error)") }
+        try Self.validated { () throws(GlossaryError) in
+            _ = try GlossaryStore.validate(id: "", text: text, among: glossaryTerms, ignoring: nil)
         }
+        ui.glossaryError = nil
+        saveGlossary { () throws(GlossaryError) in try await store.add(text: text) }
     }
 
     private func glossaryUpdate(_ id: String, _ text: String) throws {
         let store = try writableGlossary()
         guard let term = glossaryTerms.first(where: { $0.id == id }) else { return }
-        try Self.precheck(text, terms: glossaryTerms, ignoring: id)
-        Task {
-            do {
-                try await store.update(id, text: text, variants: term.variants, fixed: term.fixed)
-            } catch {
-                Diag.log("glossary: update failed: \(error)")
-            }
+        try Self.validated { () throws(GlossaryError) in
+            _ = try GlossaryStore.validate(id: id, text: text, variants: term.variants, fixed: term.fixed,
+                                           among: glossaryTerms, ignoring: id)
+        }
+        ui.glossaryError = nil
+        saveGlossary { () throws(GlossaryError) in
+            try await store.update(id, text: text, variants: term.variants, fixed: term.fixed)
         }
     }
 
     private func glossaryDelete(_ id: String) throws {
         let store = try writableGlossary()
-        Task {
-            do { try await store.remove(id) } catch { Diag.log("glossary: delete failed: \(error)") }
+        ui.glossaryError = nil
+        saveGlossary { () throws(GlossaryError) in try await store.remove(id) }
+    }
+
+    /// The store saves asynchronously; a refusal or a failed write after the check is shown to the user
+    /// (`ui.glossaryError`), never only logged.
+    private func saveGlossary(_ work: @escaping @Sendable () async throws(GlossaryError) -> Void) {
+        oneOff { [weak self] in
+            do throws(GlossaryError) {
+                try await work()
+            } catch {
+                Diag.log("glossary: save failed: \(error)")
+                self?.ui.glossaryError = Self.message(for: error)
+            }
         }
     }
 
@@ -443,25 +506,27 @@ final class ConversationController {
         return glossary
     }
 
-    /// The store's checks a typed term can fail (GlossaryStore, same limits), made synchronously so the editor can
-    /// show the message under the field; the store checks again when it saves.
-    static func precheck(_ text: String, terms: [Term], ignoring id: String?) throws {
-        let s = text.dartTrimmed
-        if s.isEmpty { throw GlossaryValidationError(message: GlossaryMessages.empty) }
-        for scalar in s.unicodeScalars {
-            switch scalar.value {
-            case 0x00...0x1F, 0x7F...0x9F, 0x202A...0x202E, 0x2066...0x2069:
-                throw GlossaryValidationError(message: GlossaryMessages.badCharacters)
-            default: break
-            }
+    /// Runs the store's own validation (`GlossaryStore.validate`) and turns a refusal into the message shown under
+    /// the field.
+    private static func validated(_ check: () throws(GlossaryError) -> Void) throws {
+        do {
+            try check()
+        } catch {
+            throw GlossaryValidationError(message: message(for: error))
         }
-        if s.count > GlossaryStore.maxLength { throw GlossaryValidationError(message: GlossaryMessages.tooLong) }
-        if id == nil && terms.count >= GlossaryStore.maxTerms {
-            throw GlossaryValidationError(message: GlossaryMessages.tooMany)
+    }
+
+    /// The Vietnamese message for a store refusal; the failures the user cannot fix give "Không lưu được".
+    static func message(for error: GlossaryError) -> String {
+        switch error {
+        case .emptyText: GlossaryMessages.empty
+        case .tooLong: GlossaryMessages.tooLong
+        case .tooManyVariants: GlossaryMessages.tooManyVariants
+        case .tooManyTerms: GlossaryMessages.tooMany
+        case .forbiddenCharacter: GlossaryMessages.badCharacters
+        case .duplicateTerm: GlossaryMessages.duplicate
+        case .unknownTerm, .writeFailed, .readOnly: Copy.t("glossary.saveFailed")
         }
-        let key = s.nfc.lowercased()
-        let taken = terms.contains { t in t.id != id && ([t.text] + t.variants).contains { $0.nfc.lowercased() == key } }
-        if taken { throw GlossaryValidationError(message: GlossaryMessages.duplicate) }
     }
 
     // MARK: Conversation on / off
@@ -497,10 +562,18 @@ final class ConversationController {
         }
     }
 
+    /// `.interrupted`: the mic is gone and will not come back by itself (an interruption ended without resume, or
+    /// the mic restart failed): the conversation stops until the next tap and the mic is no longer wanted.
+    /// `.resumed`: the engine took the mic back itself; only the route is updated. An interruption's begin sends
+    /// nothing.
     private func handleAudioSession(_ msg: AudioSessionMsg) {
         if let route = msg.route { ui.micRoute = route }
-        // The engine lost the mic (interruption, failed restart): the conversation ends until the next tap
-        if msg.kind == .interrupted { note(.stop) }
+        guard msg.kind == .interrupted, engineStarted else { return }
+        if activity.handle(.stop, at: now()) == .stop {
+            ui.listening = false
+            ui.myPartial = ""
+        }
+        setMic(false)
     }
 
     // MARK: Them → You
@@ -516,10 +589,14 @@ final class ConversationController {
         let e = epoch
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
-        } catch {
+        } catch EngineError.notReady {
+            // The board recognizer is gone (the only error that means death); the machine allows one restart per
+            // running session, then `failed`
             guard epoch == e, case .running = session.state else { return }
-            Diag.log("controller: their recognizer failed: \(error)")
+            Diag.log("controller: their recognizer stopped")
             apply(.recognizerDied)
+        } catch {
+            Diag.log("controller: feedTheirAudio failed: \(error)")
         }
     }
 
@@ -589,16 +666,33 @@ final class ConversationController {
         note(.ttsStart)
         let id = nextSpeechId
         nextSpeechId += 1
+        outstandingSpeech.insert(id)
         let generation = session.generation, previous = speechChain, engine = self.engine
         speechChain = Task { [weak self] in
             await previous?.value
-            guard let self, generation == session.generation else { return }
+            guard let self else { return }
+            guard generation == session.generation, !Task.isCancelled else {
+                speechEnded(id)
+                return
+            }
             do {
                 try await engine.speak(text, id: id)
             } catch {
                 Diag.log("speak \(id) failed: \(error)")
+                speechEnded(id)
             }
         }
+    }
+
+    /// Utterance `id` ended (spoken, skipped, failed or stopped); noted once.
+    private func speechEnded(_ id: Int) {
+        guard outstandingSpeech.remove(id) != nil else { return }
+        note(.ttsEnd)
+    }
+
+    /// After `stopSpeaking`: nothing that was asked for is still being spoken.
+    private func endAllSpeech() {
+        for id in outstandingSpeech.sorted() { speechEnded(id) }
     }
 
     private func addTheirLine(source: String, target: String, unclear: Bool) {
@@ -670,12 +764,10 @@ final class ConversationController {
 
     // MARK: Board
 
+    /// The link itself resends the clock and the remembered label on every ready (ESPLink, Review Focus 1); the
+    /// controller sends the label when the language starts or changes.
     private func handleBoardState(_ state: BoardState) {
         ui.board = state
-        guard state == .ready else { return }
-        // Review Focus 1: the clock and the label again on every ready
-        sendBoard(BoardProtocol.timeText(at: now()), .time)
-        sendLabel()
     }
 
     private func handleBoardControl(_ control: BoardControl) {

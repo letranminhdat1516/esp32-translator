@@ -71,5 +71,6 @@
   "glossary.error.badCharacters": "Có ký tự không hợp lệ",
   "glossary.error.duplicate": "Từ này đã có trong từ điển",
   "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác",
-  "menu.relay": "Claude relay"
+  "menu.relay": "Claude relay",
+  "cue.unclear": "Không nghe rõ"
 }

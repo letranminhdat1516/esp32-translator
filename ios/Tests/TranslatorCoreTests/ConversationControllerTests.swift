@@ -51,25 +51,45 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var _translate: Translate = { text, _, to in "[\(to)]\(text)" }
     private var _calls: [(text: String, from: String, to: String)] = []
-    private var _feedFails = false
+    private var _feedError: Error?
+    private var _failingKinds: Set<String> = []
+    private var _startAttempts: [String] = []
+    private var _missingLatch: Latch?
+    private var _speakFails = false
 
     init(_ fake: FakeVoiceEngine) { self.fake = fake }
 
     func script(_ translate: @escaping Translate) { lock.withLock { _translate = translate } }
     var translateCalls: [(text: String, from: String, to: String)] { lock.withLock { _calls } }
-    /// From now on `feedTheirAudio` throws (the board recognizer is dead).
-    func killTheirRecognizer(_ dead: Bool = true) { lock.withLock { _feedFails = dead } }
+    /// From now on `feedTheirAudio` throws `error` (`notReady`: the board recognizer is dead).
+    func killTheirRecognizer(with error: Error = EngineError.notReady) { lock.withLock { _feedError = error } }
+    /// `start` throws `notReady` for these recognizer kinds.
+    func failStart(for kinds: Set<RecognizerKind>) { lock.withLock { _failingKinds = Set(kinds.map(\.rawValue)) } }
+    /// Every `recognizerX` `start` was called with, failed or not.
+    var startAttempts: [String] { lock.withLock { _startAttempts } }
+    /// `missing` waits for this latch.
+    func holdMissing(_ latch: Latch) { lock.withLock { _missingLatch = latch } }
+    /// `speak` throws from now on.
+    func failSpeak() { lock.withLock { _speakFails = true } }
 
     func capabilities(home: String) async throws -> Capabilities { try await fake.capabilities(home: home) }
-    func missing(pair: PairMsg) async throws -> [MissingMsg] { try await fake.missing(pair: pair) }
+    func missing(pair: PairMsg) async throws -> [MissingMsg] {
+        if let latch = lock.withLock({ _missingLatch }) { await latch.wait() }
+        return try await fake.missing(pair: pair)
+    }
     func downloadItem(_ item: MissingMsg) async throws { try await fake.downloadItem(item) }
     func start(pair: PairMsg, recognizerX: String, hints: [String]) async throws {
+        let fails = lock.withLock { () -> Bool in
+            _startAttempts.append(recognizerX)
+            return _failingKinds.contains(recognizerX)
+        }
+        if fails { throw EngineError.notReady }
         try await fake.start(pair: pair, recognizerX: recognizerX, hints: hints)
     }
     func stop() async throws { try await fake.stop() }
     func micOn(_ on: Bool) async throws { try await fake.micOn(on) }
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
-        if lock.withLock({ _feedFails }) { throw EngineError.notReady }
+        if let error = lock.withLock({ _feedError }) { throw error }
         try await fake.feedTheirAudio(pcm, sampleRate: sampleRate)
     }
     func translate(_ text: String, from: String, to: String) async throws -> String {
@@ -79,7 +99,10 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
         }
         return try await t(text, from, to)
     }
-    func speak(_ text: String, id: Int) async throws { try await fake.speak(text, id: id) }
+    func speak(_ text: String, id: Int) async throws {
+        if lock.withLock({ _speakFails }) { throw EngineError.notReady }
+        try await fake.speak(text, id: id)
+    }
     func stopSpeaking() async throws { try await fake.stopSpeaking() }
     func setHints(_ hints: [String]) async throws { try await fake.setHints(hints) }
     func openTtsSettings() async throws { try await fake.openTtsSettings() }
@@ -128,7 +151,8 @@ final class Rig {
                                       translatable: ["en", "ja", "vi"], vietnameseVoice: true)
 
     init(caps: Capabilities = Rig.allCaps, missing: [MissingMsg] = [], defaults: UserDefaults? = nil,
-         glossaryDirectory: URL? = nil) async throws {
+         glossaryDirectory: URL? = nil,
+         tuning: ConversationController.Tuning = ConversationController.Tuning()) async throws {
         fake = FakeVoiceEngine(capabilities: caps)
         await fake.setMissing(missing)
         engine = ScriptedEngine(fake)
@@ -138,7 +162,7 @@ final class Rig {
         let clock = self.clock
         controller = ConversationController(engine: engine, board: board, packs: packs, glossary: glossary,
                                             defaults: self.defaults, boardText: BoardText(glyphs: BoardGlyphSets()),
-                                            ui: ui, now: { clock.now })
+                                            ui: ui, now: { clock.now }, tuning: tuning)
     }
 
     static func freshDefaults() -> UserDefaults {
@@ -291,22 +315,25 @@ struct ConversationControllerTests {
         rig.controller.shutdown()
     }
 
-    @Test func labelIsSentOnStartOnReadyAndOnSwitch() async throws {
+    /// The link resends the clock and the remembered label on every ready itself (ESPLink); the controller sends the
+    /// label when a language starts and on every switch.
+    @Test func labelIsSentOnStartAndOnSwitch() async throws {
         let rig = try await Rig()
         #expect(await rig.startRunning())
         #expect(await eventually { rig.sent(.label) == ["English"] })
         rig.board.emitState(.ready)
-        #expect(await eventually { rig.sent(.label) == ["English", "English"] })
-        #expect(rig.sent(.time).count == 1)
-        #expect(rig.ui.board == .ready)
+        #expect(await eventually { rig.ui.board == .ready })
+        await settle()
+        #expect(rig.sent(.label) == ["English"])
+        #expect(rig.sent(.time).isEmpty)
         // The board has no CJK font: the Latin label goes out
         rig.ui.pickLanguage("ja")
         #expect(await eventually { rig.sent(.label).last == "JA" })
         rig.board.info = BoardInfo(protocolVersion: 1, fontSets: [.latinVI, .latinExtA, .cjk])
-        rig.board.emitState(.connecting)
-        rig.board.emitState(.ready)
+        rig.ui.pickLanguage("en")
+        #expect(await eventually { rig.sent(.label).last == "English" })
+        rig.ui.pickLanguage("ja")
         #expect(await eventually { rig.sent(.label).last == "日本語" })
-        #expect(rig.sent(.time).count == 2)
         rig.controller.shutdown()
     }
 
@@ -464,6 +491,189 @@ struct ConversationControllerTests {
         rig.fake.emitAudioSession(AudioSessionMsg(kind: .routeChanged, route: .phoneMic))
         #expect(await eventually { rig.ui.micRoute == .phoneMic })
         #expect(rig.ui.chips.contains(.phoneMic))
+        rig.controller.shutdown()
+    }
+
+    // MARK: Fix round 1
+
+    /// `.interrupted`: the mic is gone for good; the conversation stops and the mic is no longer wanted.
+    /// `.resumed`: the engine took the mic back itself; nothing changes but the route.
+    @Test func interruptedStopsTheConversationResumedChangesNothing() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        #expect(await eventually { await rig.fake.micStates == [true] })
+        rig.fake.emitAudioSession(AudioSessionMsg(kind: .resumed, route: .headset))
+        await settle()
+        #expect(rig.ui.listening)
+        #expect(await rig.fake.micStates == [true])
+
+        rig.fake.emitAudioSession(AudioSessionMsg(kind: .interrupted))
+        #expect(await eventually { !rig.ui.listening })
+        #expect(await eventually { await rig.fake.micStates == [true, false] })
+        rig.fake.emitAudioSession(AudioSessionMsg(kind: .resumed, route: .phoneMic))
+        #expect(await eventually { rig.ui.micRoute == .phoneMic })
+        await settle()
+        #expect(!rig.ui.listening)
+        #expect(await rig.fake.micStates == [true, false])
+        // The next tap starts again
+        rig.ui.startStop()
+        #expect(await eventually { await rig.fake.micStates == [true, false, true] })
+        rig.controller.shutdown()
+    }
+
+    /// A switch mid-speech: the stopped utterance ends, so the conversation can go idle.
+    @Test func speakingDoesNotStickAfterASwitch() async throws {
+        var tuning = ConversationController.Tuning()
+        tuning.tickInterval = 0.01
+        let rig = try await Rig(tuning: tuning)
+        #expect(await rig.startRunning())
+        rig.theirs("Hello")  // spoken, but the engine never reports its end (stopped by the switch)
+        #expect(await eventually { await rig.spoken() == ["[vi]Hello"] })
+        rig.ui.pickLanguage("ja")
+        #expect(await eventually { rig.ui.session == .running("ja") })
+        #expect(rig.ui.listening)
+        rig.clock.advance(700)
+        #expect(await eventually { !rig.ui.listening })
+        rig.controller.shutdown()
+    }
+
+    @Test func speakingDoesNotStickWhenSpeakFails() async throws {
+        var tuning = ConversationController.Tuning()
+        tuning.tickInterval = 0.01
+        let rig = try await Rig(tuning: tuning)
+        rig.engine.failSpeak()
+        #expect(await rig.startRunning())
+        rig.theirs("Hello")
+        #expect(await eventually { rig.ui.lines.contains { $0.source == "Hello" } })
+        rig.clock.advance(700)
+        #expect(await eventually { !rig.ui.listening })
+        rig.controller.shutdown()
+    }
+
+    @Test func speakingSticksUntilTheEngineEndsIt() async throws {
+        var tuning = ConversationController.Tuning()
+        tuning.tickInterval = 0.01
+        let rig = try await Rig(tuning: tuning)
+        #expect(await rig.startRunning())
+        rig.theirs("Hello")
+        #expect(await eventually { await rig.spoken() == ["[vi]Hello"] })
+        rig.clock.advance(700)
+        await settle()
+        #expect(rig.ui.listening)  // still speaking
+        let id = try #require(await rig.fake.spoken.first?.id)
+        rig.fake.emitTtsEnd(id)
+        await settle()  // the end is noted at the current time; the idle timeout counts from there
+        rig.clock.advance(700)
+        #expect(await eventually { !rig.ui.listening })
+        rig.controller.shutdown()
+    }
+
+    @Test func aPickTheMachineIgnoresIsNotSaved() async throws {
+        let rig = try await Rig()
+        let latch = Latch()
+        rig.engine.holdMissing(latch)
+        await rig.controller.start()
+        #expect(await eventually { rig.ui.session == .checking("en") })
+        rig.ui.pickLanguage("ja")  // ignored while checking
+        #expect(rig.defaults.string(forKey: ConversationController.pickKey) == nil)
+        latch.open()
+        #expect(await eventually { rig.ui.session == .running("en") })
+        #expect(rig.defaults.string(forKey: ConversationController.pickKey) == nil)
+        rig.ui.pickLanguage("ja")
+        #expect(rig.defaults.string(forKey: ConversationController.pickKey) == "ja")
+        rig.controller.shutdown()
+    }
+
+    /// The editor's messages come from the store's own validator (GlossaryStore.validate).
+    @Test func glossaryValidationIsTheStores() throws {
+        let terms = [Term(id: "a", text: "Bến Thành", variants: ["Ben Thanh"])]
+        func message(_ text: String, ignoring: String? = nil) -> String? {
+            do {
+                _ = try GlossaryStore.validate(id: "x", text: text, among: terms, ignoring: ignoring)
+                return nil
+            } catch {
+                return ConversationController.message(for: error)
+            }
+        }
+        #expect(message(" ") == GlossaryMessages.empty)
+        #expect(message(String(repeating: "a", count: 65)) == GlossaryMessages.tooLong)
+        #expect(message("a\u{202E}b") == GlossaryMessages.badCharacters)
+        #expect(message("ben thanh") == GlossaryMessages.duplicate)
+        #expect(message("Bến Thành", ignoring: "a") == nil)
+        let full = (0..<GlossaryStore.maxTerms).map { Term(id: "\($0)", text: "t\($0)") }
+        #expect(throws: GlossaryError.tooManyTerms(limit: GlossaryStore.maxTerms)) {
+            try GlossaryStore.validate(id: "x", text: "new", among: full, ignoring: nil)
+        }
+        #expect(ConversationController.message(for: .writeFailed("disk")) == Copy.t("glossary.saveFailed"))
+    }
+
+    @Test func aGlossarySaveFailureIsShown() async throws {
+        // A plain file where the glossary directory should be: the store cannot create it, so the write fails
+        let blocker = FileManager.default.temporaryDirectory.appendingPathComponent("glossary-file-\(UUID().uuidString)")
+        try Data("x".utf8).write(to: blocker)
+        defer { try? FileManager.default.removeItem(at: blocker) }
+        let rig = try await Rig(glossaryDirectory: blocker)
+        #expect(await rig.startRunning())
+        try rig.ui.glossaryAdd("Bến Thành")
+        #expect(await eventually { rig.ui.glossaryError == Copy.t("glossary.saveFailed") })
+        #expect(rig.ui.glossaryTerms.isEmpty)
+        rig.controller.shutdown()
+    }
+
+    @Test func theUnclearCueIsSharedCopy() {
+        #expect(ConversationController.unclearCue == Copy.t("cue.unclear"))
+        #expect(ConversationController.unclearCue != "cue.unclear")
+    }
+
+    // MARK: Parity rulings (addendum)
+
+    /// (a) The recognizer chain: the next kind from the catalog when `start` fails with one.
+    @Test func startFallsBackThroughTheRecognizerChain() async throws {
+        let caps = Capabilities(recognizers: ["en": [.osOnDevice, .whisper], "ja": [.osOnDevice], "vi": [.osOnDevice]],
+                                translatable: ["en", "ja", "vi"], vietnameseVoice: true)
+        let rig = try await Rig(caps: caps)
+        rig.engine.failStart(for: [.osOnDevice])
+        #expect(await rig.startRunning())
+        #expect(rig.engine.startAttempts == [RecognizerKind.osOnDevice.rawValue, RecognizerKind.whisper.rawValue])
+        #expect(await rig.fake.starts.last?.recognizerX == RecognizerKind.whisper.rawValue)
+        rig.controller.shutdown()
+    }
+
+    @Test func startFailsWhenEveryRecognizerFails() async throws {
+        let rig = try await Rig()
+        rig.engine.failStart(for: [.osOnDevice])
+        await rig.controller.start()
+        #expect(await eventually {
+            if case .failed("en", _) = rig.ui.session ?? .loading { return true }
+            return false
+        })
+        rig.controller.shutdown()
+    }
+
+    /// (b) Only `notReady` from feedTheirAudio means the recognizer died.
+    @Test func otherFeedErrorsDoNotRestart() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        rig.engine.killTheirRecognizer(with: EngineError.translateFailed)
+        rig.boardAudio(seq: 1)
+        await settle()
+        #expect(rig.ui.session == .running("en"))
+        #expect(await rig.fake.starts.count == 1)
+        rig.controller.shutdown()
+    }
+
+    /// (c) After a restart the mic is taken again only if the conversation was going on.
+    @Test func aRestartWhileIdleDoesNotTakeTheMic() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        rig.ui.startStop()
+        #expect(await eventually { await rig.fake.micStates == [true, false] })
+        rig.engine.killTheirRecognizer()
+        rig.boardAudio(seq: 1)
+        #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
+        await settle()
+        #expect(await rig.fake.micStates == [true, false])
+        #expect(!rig.ui.listening)
         rig.controller.shutdown()
     }
 

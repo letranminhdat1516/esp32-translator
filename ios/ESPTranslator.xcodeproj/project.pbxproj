@@ -48,7 +48,6 @@
 		B0D403A27FCDE3DBDB913258 /* TextPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDA6DB65733535938AD2B0E /* TextPipeline.swift */; };
 		B822E2794A5E5177939B83EF /* VoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22F135961F8511A66D39EAD6 /* VoiceEngine.swift */; };
 		BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */; };
-		C1509A30A3169F48BD73D78F /* ESPAudioSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = B07DFC7C51D4589C7EF10B49 /* ESPAudioSource.swift */; };
 		C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */; };
 		D924465D8B48A7554B8A99A5 /* Translit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74F774CC1C2A43CEB87415 /* Translit.swift */; };
 		DA424CA0F7C4791F54AEEBCD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD72E60F341261CD5B3377A9 /* Assets.xcassets */; };
@@ -111,7 +110,6 @@
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A6CACC952B345A7F7DDD1115 /* UISamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UISamples.swift; sourceTree = "<group>"; };
 		A795C7252F826D75749124A8 /* RelayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayView.swift; sourceTree = "<group>"; };
-		B07DFC7C51D4589C7EF10B49 /* ESPAudioSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPAudioSource.swift; sourceTree = "<group>"; };
 		B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRelayService.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
 		C97CE2685BA5739EE0CE32F3 /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
@@ -287,7 +285,6 @@
 			isa = PBXGroup;
 			children = (
 				88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */,
-				B07DFC7C51D4589C7EF10B49 /* ESPAudioSource.swift */,
 				6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */,
 			);
 			path = Audio;
@@ -391,7 +388,6 @@
 				957C6FF8C8080391541CDBDC /* Copy.swift in Sources */,
 				0C8E3BEE50752C067B701F6B /* Diagnostics.swift in Sources */,
 				DA6E8748FA7DD091183AAE53 /* Downloads.swift in Sources */,
-				C1509A30A3169F48BD73D78F /* ESPAudioSource.swift in Sources */,
 				F540FDA55B26986EABBABCF6 /* ESPLink.swift in Sources */,
 				DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */,
 				025FDF585376A660D76D5733 /* EngineMapping.swift in Sources */,

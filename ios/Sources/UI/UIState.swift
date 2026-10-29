@@ -189,6 +189,9 @@ final class UIState {
     // MARK: Glossary
 
     var glossaryTerms: [Term] = []
+    /// A change the glossary store refused or could not save after the closure returned ("Không lưu được"); cleared
+    /// by the next change.
+    var glossaryError: String?
 
     // MARK: Intents (the controller binds them; the defaults do nothing)
 

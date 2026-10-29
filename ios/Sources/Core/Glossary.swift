@@ -85,8 +85,8 @@ actor GlossaryStore {
     @discardableResult
     func add(text: String, variants: [String] = [], fixed: [String: String] = [:]) throws(GlossaryError) -> Term {
         if isReadOnly { throw .readOnly }
-        if terms.count >= Self.maxTerms { throw .tooManyTerms(limit: Self.maxTerms) }
-        let term = try validated(id: newId(), text: text, variants: variants, fixed: fixed, ignoring: nil)
+        let term = try Self.validate(id: newId(), text: text, variants: variants, fixed: fixed, among: terms,
+                                     ignoring: nil)
         try commit(terms + [term])
         return term
     }
@@ -97,7 +97,7 @@ actor GlossaryStore {
                 fixed: [String: String] = [:]) throws(GlossaryError) -> Term {
         if isReadOnly { throw .readOnly }
         guard let index = terms.firstIndex(where: { $0.id == id }) else { throw .unknownTerm(id: id) }
-        let term = try validated(id: id, text: text, variants: variants, fixed: fixed, ignoring: id)
+        let term = try Self.validate(id: id, text: text, variants: variants, fixed: fixed, among: terms, ignoring: id)
         var next = terms
         next[index] = term
         try commit(next)
@@ -113,26 +113,30 @@ actor GlossaryStore {
 
     // MARK: Internals
 
-    private func validated(id: String, text: String, variants: [String], fixed: [String: String],
-                           ignoring: String?) throws(GlossaryError) -> Term {
-        let cleanText = try Self.check("text", text)
-        if variants.count > Self.maxVariants { throw .tooManyVariants(limit: Self.maxVariants) }
+    /// The checks of `add` (`ignoring` nil: the term count limit applies) and `update` (`ignoring` the id being
+    /// replaced) against `terms`, without saving: the cleaned term, or the first rule it breaks. Pure, so the UI can
+    /// run it synchronously before handing the change to the store.
+    static func validate(id: String, text: String, variants: [String] = [], fixed: [String: String] = [:],
+                         among terms: [Term], ignoring: String?) throws(GlossaryError) -> Term {
+        if ignoring == nil && terms.count >= maxTerms { throw .tooManyTerms(limit: maxTerms) }
+        let cleanText = try check("text", text)
+        if variants.count > maxVariants { throw .tooManyVariants(limit: maxVariants) }
         var cleanVariants: [String] = []
         for (i, v) in variants.enumerated() {
-            cleanVariants.append(try Self.check("variants[\(i)]", v))
+            cleanVariants.append(try check("variants[\(i)]", v))
         }
         var cleanFixed: [String: String] = [:]
         for (rawCode, value) in fixed.sorted(by: { $0.key < $1.key }) {
             let code = rawCode.dartTrimmed
             if code.isEmpty { throw .emptyText(field: "fixed") }
-            cleanFixed[code] = try Self.check("fixed.\(code)", value)
+            cleanFixed[code] = try check("fixed.\(code)", value)
         }
 
         var taken = Set<String>()
         for t in terms where t.id != ignoring {
-            for s in [t.text] + t.variants { taken.insert(Self.key(s)) }
+            for s in [t.text] + t.variants { taken.insert(key(s)) }
         }
-        for (i, s) in ([cleanText] + cleanVariants).enumerated() where !taken.insert(Self.key(s)).inserted {
+        for (i, s) in ([cleanText] + cleanVariants).enumerated() where !taken.insert(key(s)).inserted {
             throw .duplicateTerm(field: i == 0 ? "text" : "variants[\(i - 1)]", value: s)
         }
         return Term(id: id, text: cleanText, variants: cleanVariants, fixed: cleanFixed, origin: .user)
