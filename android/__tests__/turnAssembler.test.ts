@@ -3,7 +3,8 @@
 import fs from 'fs';
 import path from 'path';
 
-import {Rule, parseLanguagePack} from '../src/core/model';
+import {parseLanguagePack} from '../src/core/model';
+import {RuleEngine} from '../src/core/ruleEngine';
 import {TranscriptEvent, TurnAssembler} from '../src/core/turnAssembler';
 import {JsonObject, casesOf, loadFixture, readPackJson, sharedDir} from './fixtures';
 
@@ -11,39 +12,10 @@ const fixture = loadFixture('turn_assembler');
 const defaults = fixture.defaults as JsonObject;
 const t0 = Date.UTC(2026, 0, 1);
 
-/**
- * A pack's `fixRecognition` (shared/fixtures/README.md, rules.json section), test-only:
- * the TS RuleEngine is track T1b (android/src/core/ruleEngine.ts, not in this worktree).
- * When both tracks are merged this can become `RuleEngine.forPack(pack).fixRecognition`.
- */
+/** A pack's `fixRecognition` (shared/fixtures/README.md, turn_assembler.json `fixLoanwords`). */
 function fixRecognitionOf(code: string): (text: string) => string {
-  const rules = parseLanguagePack(readPackJson(code)).recognition;
-  if (rules.length === 0) {
-    return text => text;
-  }
-  const compiled = rules.map((rule: Rule) => {
-    const start = rule.atClauseStart ? '(^|[,.!?])\\s*' : '(?<![\\p{L}\\p{N}])';
-    return {
-      regex: new RegExp(`${start}(?:${rule.pattern})(?![\\p{L}\\p{N}])`, 'giu'),
-      template: rule.template,
-      context: rule.context == null ? null : new RegExp(rule.context, 'iu'),
-    };
-  });
-  return text => {
-    let out = text.normalize('NFC');
-    for (const r of compiled) {
-      if (r.context && !r.context.test(out)) {
-        continue;
-      }
-      out = out.replace(r.regex, (...args: unknown[]) => {
-        const groups = args.slice(1, args.findIndex(a => typeof a === 'number')) as Array<
-          string | undefined
-        >;
-        return r.template.replace(/\$(\d)/g, (_, n: string) => groups[Number(n) - 1] ?? '');
-      });
-    }
-    return out;
-  };
+  const engine = RuleEngine.forPack(parseLanguagePack(readPackJson(code)));
+  return text => engine.fixRecognition(text);
 }
 
 /**
