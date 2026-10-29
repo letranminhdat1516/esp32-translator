@@ -59,7 +59,11 @@ final class BoardText: Sendable {
 
     /// True when the board can draw `codePoint` with `sets`.
     func isDrawable(_ codePoint: Int, _ sets: FontSets) -> Bool {
-        let r = ranges(sets)
+        Self.contains(ranges(sets), codePoint)
+    }
+
+    /// Binary search of sorted, merged `ranges`.
+    private static func contains(_ r: [ClosedRange<Int>], _ codePoint: Int) -> Bool {
         var lo = 0, hi = r.count - 1
         while lo <= hi {
             let mid = (lo + hi) >> 1
@@ -74,7 +78,13 @@ final class BoardText: Sendable {
         return false
     }
 
-    private func isDrawable(_ s: Unicode.Scalar, _ sets: FontSets) -> Bool { isDrawable(Int(s.value), sets) }
+    /// The private helpers take the merged ranges of one `encode` call (`Drawable`), not the font sets, so the
+    /// cache is read once per call instead of once per code point.
+    private typealias Drawable = [ClosedRange<Int>]
+
+    private func isDrawable(_ s: Unicode.Scalar, _ drawable: Drawable) -> Bool {
+        Self.contains(drawable, Int(s.value))
+    }
 
     /// Word separators: JavaScript/Dart `\s`, C0 and C1 controls.
     private static func isSeparator(_ s: Unicode.Scalar) -> Bool {
@@ -84,11 +94,12 @@ final class BoardText: Sendable {
     /// `text` as the board can show it.
     func encode(_ text: String, _ sets: FontSets) -> String {
         let source = text.nfc
+        let drawable = ranges(sets)
         var words: [String] = []
         var word = String.UnicodeScalarView()
         func flush() {
             if !word.isEmpty {
-                let encoded = self.word(Array(word), sets)
+                let encoded = self.word(Array(word), drawable)
                 if !encoded.isEmpty { words.append(encoded) }
                 word = String.UnicodeScalarView()
             }
@@ -107,7 +118,7 @@ final class BoardText: Sendable {
         return source.dartTrimmed.isEmpty ? "" : Self.dot
     }
 
-    private func word(_ input: [Unicode.Scalar], _ sets: FontSets) -> String {
+    private func word(_ input: [Unicode.Scalar], _ sets: Drawable) -> String {
         let scalars = compatibilityFolded(input, sets)
 
         // A word of capitals keeps its transliteration in capitals ("ЖУК" → "ZHUK", not "ZhUK").
@@ -154,7 +165,7 @@ final class BoardText: Sendable {
 
     /// Replaces characters the board cannot draw and no table covers by their compatibility form (fullwidth letters,
     /// ligatures, circled digits, halfwidth katakana), when that gives something different.
-    private func compatibilityFolded(_ scalars: [Unicode.Scalar], _ sets: FontSets) -> [Unicode.Scalar] {
+    private func compatibilityFolded(_ scalars: [Unicode.Scalar], _ sets: Drawable) -> [Unicode.Scalar] {
         var out: [Unicode.Scalar] = []
         for s in scalars {
             let handled = isDrawable(s, sets) || Translit.hasLetterTable(s) || Translit.isKana(s)
@@ -170,7 +181,7 @@ final class BoardText: Sendable {
     }
 
     /// A Latin letter with its marks removed, when the result can be drawn (`ž` → `z`, `ǎ` → `a`); nil otherwise.
-    private func foldMarks(_ s: Unicode.Scalar, _ sets: FontSets) -> String? {
+    private func foldMarks(_ s: Unicode.Scalar, _ sets: Drawable) -> String? {
         let base = String(s).decomposedStringWithCanonicalMapping.unicodeScalars.filter { !$0.isMarkCategory }
         if base.isEmpty || (base.count == 1 && base.first == s) { return nil }
         guard base.allSatisfy({ isDrawable($0, sets) }) else { return nil }

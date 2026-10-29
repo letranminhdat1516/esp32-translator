@@ -22,6 +22,7 @@ enum VietnameseFixup {
         do {
             return try RuleEngine(pack: SharedResources.languagePack(LanguageCatalog.homeCode))
         } catch {
+            SharedResources.reportMissing("vi language pack (no Vietnamese fix-ups)", error)
             assertionFailure("vi language pack: \(error)")
             return try! RuleEngine(recognition: [], beforeTranslation: [])
         }

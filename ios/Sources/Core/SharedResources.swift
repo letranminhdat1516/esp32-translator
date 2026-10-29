@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The data shared with the Android app (`shared/languages/*.json`, `shared/board_glyphs/*.txt`), loaded, never
 /// copied. The app bundle holds them as folder references (`languages/`, `board_glyphs/`, see ios/project.yml); under
@@ -30,6 +31,13 @@ enum SharedResources {
         #endif
         return nil
     }
+
+    /// Reports a shared resource the app could not load (shows in Console in Release, where asserts are off).
+    static func reportMissing(_ what: String, _ error: Error) {
+        log.warning("\(what, privacy: .public) unavailable, falling back: \(String(describing: error), privacy: .public)")
+    }
+
+    private static let log = Logger(subsystem: "dev.cicca.esptranslator", category: "SharedResources")
 
     /// The bundled language pack `code` (e.g. "vi").
     static func languagePack(_ code: String) throws -> LanguagePack {

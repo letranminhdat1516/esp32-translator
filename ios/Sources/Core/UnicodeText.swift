@@ -36,7 +36,8 @@ extension Unicode.Scalar {
         }
     }
 
-    /// Whitespace as Dart's `String.trim` (and JavaScript's `\s` / `trim`) define it.
+    /// Whitespace as Dart's `String.trim` defines it. JavaScript's `\s` / `trim` is the same set minus U+0085 (NEL,
+    /// Dart-only); where this splits words (BoardText) NEL is a C1 control and a separator anyway.
     var isDartWhitespace: Bool {
         switch value {
         case 0x09...0x0D, 0x20, 0x85, 0xA0, 0x1680, 0x2000...0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF:

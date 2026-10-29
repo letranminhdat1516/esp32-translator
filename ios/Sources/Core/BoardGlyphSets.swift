@@ -38,6 +38,7 @@ struct BoardGlyphSets: Hashable, Sendable {
             }
             return try parse(cjk: text("cjk"), hangul: text("hangul"), thai: text("thai"))
         } catch {
+            SharedResources.reportMissing("board glyph lists (non-Latin text shows as ·)", error)
             assertionFailure("board glyph lists: \(error)")
             return BoardGlyphSets()
         }
