@@ -1,0 +1,86 @@
+# Term corpus zh-Hans <-> vi (Chinese (Simplified)), P2.5 / R10. Format: shared/fixtures/terms/README.md
+# direction	source sentence	term	expected
+zh-Hans>vi	我叫了一辆 Grab 去机场。	Grab	Grab
+zh-Hans>vi	我们十二点在滨城市场见面好吗？	滨城	Bến Thành
+zh-Hans>vi	我的新 iPhone 15 老是没信号。	iPhone 15	iPhone 15
+zh-Hans>vi	下个周末我们飞去富国岛。	富国岛	Phú Quốc
+zh-Hans>vi	我昨晚在 Shopee 上订了鞋子。	Shopee	Shopee
+zh-Hans>vi	VinFast 展厅星期天开门吗？	VinFast	VinFast
+zh-Hans>vi	我的同事莎拉·约翰逊晚点会来。	莎拉·约翰逊	Sarah Johnson
+zh-Hans>vi	酒店在还剑湖附近。	还剑湖	hồ Hoàn Kiếm
+zh-Hans>vi	请用 Zalo 把文件发给我。	Zalo	Zalo
+zh-Hans>vi	去下龙湾要多长时间？	下龙湾	vịnh Hạ Long
+zh-Hans>vi	我没带现金，所以用 MoMo 付的。	MoMo	MoMo
+zh-Hans>vi	我们的 Vietnam Airlines 航班延误了两个小时。	Vietnam Airlines	Vietnam Airlines
+zh-Hans>vi	迈克尔说这里的 Samsung Galaxy S24 更便宜。	Samsung Galaxy S24	Samsung Galaxy S24
+zh-Hans>vi	我们在会安的 Airbnb 住了三晚。	会安	Hội An
+zh-Hans>vi	你知道最近的 Circle K 在哪里吗？	Circle K	Circle K
+zh-Hans>vi	艾玛想尝尝 Highlands Coffee 的咖啡。	Highlands Coffee	Highlands Coffee
+zh-Hans>vi	从河内到顺化的火车八点出发。	顺化	Huế
+zh-Hans>vi	我把 MacBook Pro 落在出租车上了。	MacBook Pro	MacBook Pro
+zh-Hans>vi	大卫在歌剧院门口等我们。	大卫	David
+zh-Hans>vi	明天早上我们坐渡轮去吉婆岛吧。	吉婆岛	đảo Cát Bà
+zh-Hans>vi	我姐姐在岘港的 Viettel 工作。	Viettel	Viettel
+zh-Hans>vi	这里可以用 Visa 卡付款吗？	Visa	Visa
+zh-Hans>vi	我们在 Bitexco 大厦看了日落。	Bitexco	Bitexco
+zh-Hans>vi	酒店附近有 Lotte Mart 吗？	Lotte Mart	Lotte Mart
+zh-Hans>vi	田中先生今晚乘 VN 301 航班到达。	VN 301	VN 301
+zh-Hans>vi	我想租一天 Honda Wave 摩托车。	Honda Wave	Honda Wave
+zh-Hans>vi	我吃过最好吃的河粉在李常杰街。	李常杰	Lý Thường Kiệt
+zh-Hans>vi	我女儿很喜欢宝可梦动画片。	宝可梦	Pokémon
+zh-Hans>vi	我们的导游明英说英语说得很好。	明英	Minh Anh
+zh-Hans>vi	请用 Anker 充电宝给我的手机充电。	Anker	Anker
+zh-Hans>vi	我们需要两张去沙坝的夜间巴士票。	沙坝	Sa Pa
+zh-Hans>vi	我在停车场看到了新的 Toyota Vios。	Toyota Vios	Toyota Vios
+zh-Hans>vi	阮惠步行街附近有好餐厅推荐吗？	阮惠	Nguyễn Huệ
+zh-Hans>vi	克里斯在公交车上丢了他的 AirPods Pro。	AirPods Pro	AirPods Pro
+zh-Hans>vi	Wi-Fi 密码在菜单背面。	Wi-Fi	Wi-Fi
+zh-Hans>vi	我们三点在 Sheraton 办理入住。	Sheraton	Sheraton
+zh-Hans>vi	我儿子每天晚上都玩 Minecraft。	Minecraft	Minecraft
+zh-Hans>vi	湄公河三角洲之旅七点开始。	湄公河	sông Mê Kông
+zh-Hans>vi	安娜在机场买了一个 Kindle。	Kindle	Kindle
+zh-Hans>vi	这台电视能看 Netflix 吗？	Netflix	Netflix
+zh-Hans>vi	我们的办公室在 Landmark 81 的十二楼。	Landmark 81	Landmark 81
+zh-Hans>vi	我要给 Vinaphone 的 SIM 卡充值。	Vinaphone	Vinaphone
+vi>zh-Hans	Tôi đã đặt Grab ra sân bay rồi.	Grab	Grab
+vi>zh-Hans	Mình gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé.	Bến Thành	滨城
+vi>zh-Hans	Chiếc iPhone 15 của tôi cứ bị mất sóng.	iPhone 15	iPhone 15
+vi>zh-Hans	Cuối tuần sau chúng tôi bay ra Phú Quốc.	Phú Quốc	富国岛
+vi>zh-Hans	Tối qua em mua đôi giày trên Shopee.	Shopee	Shopee
+vi>zh-Hans	Showroom VinFast có mở cửa chủ nhật không?	VinFast	VinFast
+vi>zh-Hans	Anh Nguyễn Văn Nam sẽ đến đón chị ở khách sạn.	Nguyễn Văn Nam	Nguyễn Văn Nam
+vi>zh-Hans	Khách sạn ở gần hồ Hoàn Kiếm.	Hoàn Kiếm	还剑
+vi>zh-Hans	Anh gửi file qua Zalo giúp em nhé.	Zalo	Zalo
+vi>zh-Hans	Đi vịnh Hạ Long mất bao lâu?	Hạ Long	下龙
+vi>zh-Hans	Tôi trả bằng MoMo vì không có tiền mặt.	MoMo	MoMo
+vi>zh-Hans	Chuyến bay Vietnam Airlines bị trễ hai tiếng.	Vietnam Airlines	Vietnam Airlines
+vi>zh-Hans	Chị Lan nói ở đây Samsung Galaxy S24 rẻ hơn.	Samsung Galaxy S24	Samsung Galaxy S24
+vi>zh-Hans	Chúng tôi ở Hội An ba đêm.	Hội An	会安
+vi>zh-Hans	Cửa hàng Circle K gần nhất ở đâu vậy?	Circle K	Circle K
+vi>zh-Hans	Chị Hương muốn uống cà phê ở Highlands Coffee.	Highlands Coffee	Highlands Coffee
+vi>zh-Hans	Tàu từ Hà Nội vào Huế chạy lúc tám giờ.	Hà Nội	河内
+vi>zh-Hans	Tôi để quên MacBook Pro trên taxi.	MacBook Pro	MacBook Pro
+vi>zh-Hans	Anh Tuấn đang đợi chúng ta trước Nhà hát Lớn.	Tuấn	Tuấn
+vi>zh-Hans	Sáng mai mình đi phà ra đảo Cát Bà nhé.	Cát Bà	吉婆
+vi>zh-Hans	Em gái tôi làm cho Viettel ở Đà Nẵng.	Viettel	Viettel
+vi>zh-Hans	Ở đây có trả bằng thẻ Visa được không?	Visa	Visa
+vi>zh-Hans	Chúng tôi ngắm hoàng hôn từ tòa Bitexco.	Bitexco	Bitexco
+vi>zh-Hans	Gần khách sạn có Lotte Mart không?	Lotte Mart	Lotte Mart
+vi>zh-Hans	Ông Tanaka đến trên chuyến bay VN 301 tối nay.	VN 301	VN 301
+vi>zh-Hans	Tôi muốn thuê một chiếc Honda Wave trong ngày.	Honda Wave	Honda Wave
+vi>zh-Hans	Thành phố Hồ Chí Minh nóng hơn Hà Nội nhiều.	Thành phố Hồ Chí Minh	胡志明市
+vi>zh-Hans	Con gái tôi rất thích phim hoạt hình Pokémon.	Pokémon	宝可梦
+vi>zh-Hans	Hướng dẫn viên của chúng tôi, chị Minh Anh, nói tiếng Anh rất giỏi.	Minh Anh	Minh Anh
+vi>zh-Hans	Anh sạc điện thoại bằng pin dự phòng Anker giúp tôi.	Anker	Anker
+vi>zh-Hans	Chúng tôi cần hai vé xe giường nằm đi Sa Pa.	Sa Pa	沙坝
+vi>zh-Hans	Tôi thấy chiếc Toyota Vios mới ở bãi đỗ xe.	Toyota Vios	Toyota Vios
+vi>zh-Hans	Có nhà hàng nào gần phố đi bộ Nguyễn Huệ không?	Nguyễn Huệ	阮惠
+vi>zh-Hans	Anh Quang làm mất AirPods Pro trên xe buýt.	AirPods Pro	AirPods Pro
+vi>zh-Hans	Mật khẩu Wi-Fi ở mặt sau thực đơn.	Wi-Fi	Wi-Fi
+vi>zh-Hans	Ba giờ chúng tôi nhận phòng ở Sheraton.	Sheraton	Sheraton
+vi>zh-Hans	Con trai tôi tối nào cũng chơi Minecraft.	Minecraft	Minecraft
+vi>zh-Hans	Tour đi Đà Nẵng bắt đầu lúc bảy giờ.	Đà Nẵng	岘港
+vi>zh-Hans	Chị Mai mua một chiếc Kindle ở sân bay.	Kindle	Kindle
+vi>zh-Hans	Tivi này có xem được Netflix không?	Netflix	Netflix
+vi>zh-Hans	Văn phòng chúng tôi ở tầng 12 tòa Landmark 81.	Landmark 81	Landmark 81
+vi>zh-Hans	Tôi cần nạp tiền cho sim Vinaphone.	Vinaphone	Vinaphone

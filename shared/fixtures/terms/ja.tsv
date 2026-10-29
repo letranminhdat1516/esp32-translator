@@ -1,0 +1,86 @@
+# Term corpus ja <-> vi (Japanese), P2.5 / R10. Format: shared/fixtures/terms/README.md
+# direction	source sentence	term	expected
+ja>vi	空港まで Grab を予約しました。	Grab	Grab
+ja>vi	12時にベンタイン市場で会いましょうか。	ベンタイン	Bến Thành
+ja>vi	新しい iPhone 15 がすぐ圏外になります。	iPhone 15	iPhone 15
+ja>vi	来週末フーコックに行きます。	フーコック	Phú Quốc
+ja>vi	昨夜 Shopee で靴を注文しました。	Shopee	Shopee
+ja>vi	VinFast のショールームは日曜日も開いていますか。	VinFast	VinFast
+ja>vi	同僚のサラ・ジョンソンが後で合流します。	サラ・ジョンソン	Sarah Johnson
+ja>vi	ホテルはホアンキエム湖の近くです。	ホアンキエム	Hoàn Kiếm
+ja>vi	ファイルを Zalo で送ってください。	Zalo	Zalo
+ja>vi	ハロン湾までどのくらいかかりますか。	ハロン	Hạ Long
+ja>vi	現金がなかったので MoMo で払いました。	MoMo	MoMo
+ja>vi	Vietnam Airlines の便が2時間遅れました。	Vietnam Airlines	Vietnam Airlines
+ja>vi	ここでは Samsung Galaxy S24 のほうが安いそうです。	Samsung Galaxy S24	Samsung Galaxy S24
+ja>vi	ホイアンの Airbnb に三泊しました。	ホイアン	Hội An
+ja>vi	一番近い Circle K はどこですか。	Circle K	Circle K
+ja>vi	エマは Highlands Coffee のコーヒーを飲んでみたいそうです。	Highlands Coffee	Highlands Coffee
+ja>vi	ハノイ発フエ行きの電車は8時に出ます。	フエ	Huế
+ja>vi	タクシーに MacBook Pro を忘れました。	MacBook Pro	MacBook Pro
+ja>vi	デビッドがオペラハウスの前で待っています。	デビッド	David
+ja>vi	明日の朝、フェリーでカットバ島に行きましょう。	カットバ	Cát Bà
+ja>vi	姉はダナンの Viettel で働いています。	Viettel	Viettel
+ja>vi	ここで Visa カードは使えますか。	Visa	Visa
+ja>vi	Bitexco タワーから夕日を見ました。	Bitexco	Bitexco
+ja>vi	ホテルの近くに Lotte Mart はありますか。	Lotte Mart	Lotte Mart
+ja>vi	田中さんは今夜 VN 301 便で到着します。	VN 301	VN 301
+ja>vi	一日 Honda Wave を借りたいです。	Honda Wave	Honda Wave
+ja>vi	一番おいしいフォーはリートゥオンキエット通りで食べました。	リートゥオンキエット	Lý Thường Kiệt
+ja>vi	娘はポケモンのアニメが大好きです。	ポケモン	Pokémon
+ja>vi	ガイドのミンアインさんは英語がとても上手です。	ミンアイン	Minh Anh
+ja>vi	Anker のモバイルバッテリーで携帯を充電してください。	Anker	Anker
+ja>vi	サパ行きの夜行バスのチケットが2枚必要です。	サパ	Sa Pa
+ja>vi	駐車場で新しい Toyota Vios を見ました。	Toyota Vios	Toyota Vios
+ja>vi	グエンフエ通りの近くでおすすめのレストランはありますか。	グエンフエ	Nguyễn Huệ
+ja>vi	クリスはバスで AirPods Pro をなくしました。	AirPods Pro	AirPods Pro
+ja>vi	Wi-Fi のパスワードはメニューの裏にあります。	Wi-Fi	Wi-Fi
+ja>vi	3時に Sheraton でチェックインします。	Sheraton	Sheraton
+ja>vi	息子は毎晩 Minecraft で遊んでいます。	Minecraft	Minecraft
+ja>vi	メコンデルタのツアーは7時に始まります。	メコン	Mê Kông
+ja>vi	アンナは空港で Kindle を買いました。	Kindle	Kindle
+ja>vi	このテレビで Netflix は見られますか。	Netflix	Netflix
+ja>vi	私たちのオフィスは Landmark 81 の12階にあります。	Landmark 81	Landmark 81
+ja>vi	Vinaphone の SIM カードにチャージしたいです。	Vinaphone	Vinaphone
+vi>ja	Tôi đã đặt Grab ra sân bay rồi.	Grab	Grab
+vi>ja	Mình gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé.	Bến Thành	ベンタイン
+vi>ja	Chiếc iPhone 15 của tôi cứ bị mất sóng.	iPhone 15	iPhone 15
+vi>ja	Cuối tuần sau chúng tôi bay ra Phú Quốc.	Phú Quốc	フーコック
+vi>ja	Tối qua em mua đôi giày trên Shopee.	Shopee	Shopee
+vi>ja	Showroom VinFast có mở cửa chủ nhật không?	VinFast	VinFast
+vi>ja	Anh Nguyễn Văn Nam sẽ đến đón chị ở khách sạn.	Nguyễn Văn Nam	Nguyễn Văn Nam
+vi>ja	Khách sạn ở gần hồ Hoàn Kiếm.	Hoàn Kiếm	ホアンキエム
+vi>ja	Anh gửi file qua Zalo giúp em nhé.	Zalo	Zalo
+vi>ja	Đi vịnh Hạ Long mất bao lâu?	Hạ Long	ハロン
+vi>ja	Tôi trả bằng MoMo vì không có tiền mặt.	MoMo	MoMo
+vi>ja	Chuyến bay Vietnam Airlines bị trễ hai tiếng.	Vietnam Airlines	Vietnam Airlines
+vi>ja	Chị Lan nói ở đây Samsung Galaxy S24 rẻ hơn.	Samsung Galaxy S24	Samsung Galaxy S24
+vi>ja	Chúng tôi ở Hội An ba đêm.	Hội An	ホイアン
+vi>ja	Cửa hàng Circle K gần nhất ở đâu vậy?	Circle K	Circle K
+vi>ja	Chị Hương muốn uống cà phê ở Highlands Coffee.	Highlands Coffee	Highlands Coffee
+vi>ja	Tàu từ Hà Nội vào Huế chạy lúc tám giờ.	Hà Nội	ハノイ
+vi>ja	Tôi để quên MacBook Pro trên taxi.	MacBook Pro	MacBook Pro
+vi>ja	Anh Tuấn đang đợi chúng ta trước Nhà hát Lớn.	Tuấn	Tuấn
+vi>ja	Sáng mai mình đi phà ra đảo Cát Bà nhé.	Cát Bà	カットバ
+vi>ja	Em gái tôi làm cho Viettel ở Đà Nẵng.	Viettel	Viettel
+vi>ja	Ở đây có trả bằng thẻ Visa được không?	Visa	Visa
+vi>ja	Chúng tôi ngắm hoàng hôn từ tòa Bitexco.	Bitexco	Bitexco
+vi>ja	Gần khách sạn có Lotte Mart không?	Lotte Mart	Lotte Mart
+vi>ja	Ông Tanaka đến trên chuyến bay VN 301 tối nay.	VN 301	VN 301
+vi>ja	Tôi muốn thuê một chiếc Honda Wave trong ngày.	Honda Wave	Honda Wave
+vi>ja	Thành phố Hồ Chí Minh nóng hơn Hà Nội nhiều.	Thành phố Hồ Chí Minh	ホーチミン市
+vi>ja	Con gái tôi rất thích phim hoạt hình Pokémon.	Pokémon	ポケモン
+vi>ja	Hướng dẫn viên của chúng tôi, chị Minh Anh, nói tiếng Anh rất giỏi.	Minh Anh	Minh Anh
+vi>ja	Anh sạc điện thoại bằng pin dự phòng Anker giúp tôi.	Anker	Anker
+vi>ja	Chúng tôi cần hai vé xe giường nằm đi Sa Pa.	Sa Pa	サパ
+vi>ja	Tôi thấy chiếc Toyota Vios mới ở bãi đỗ xe.	Toyota Vios	Toyota Vios
+vi>ja	Có nhà hàng nào gần phố đi bộ Nguyễn Huệ không?	Nguyễn Huệ	グエンフエ
+vi>ja	Anh Quang làm mất AirPods Pro trên xe buýt.	AirPods Pro	AirPods Pro
+vi>ja	Mật khẩu Wi-Fi ở mặt sau thực đơn.	Wi-Fi	Wi-Fi
+vi>ja	Ba giờ chúng tôi nhận phòng ở Sheraton.	Sheraton	Sheraton
+vi>ja	Con trai tôi tối nào cũng chơi Minecraft.	Minecraft	Minecraft
+vi>ja	Tour đi Đà Nẵng bắt đầu lúc bảy giờ.	Đà Nẵng	ダナン
+vi>ja	Chị Mai mua một chiếc Kindle ở sân bay.	Kindle	Kindle
+vi>ja	Tivi này có xem được Netflix không?	Netflix	Netflix
+vi>ja	Văn phòng chúng tôi ở tầng 12 tòa Landmark 81.	Landmark 81	Landmark 81
+vi>ja	Tôi cần nạp tiền cho sim Vinaphone.	Vinaphone	Vinaphone

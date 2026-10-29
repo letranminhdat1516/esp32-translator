@@ -101,19 +101,7 @@ The Vietnamese dictation model ignores contextual strings and custom language mo
 - **Fix-ups** (`ios/Sources/Translate/VietnameseFixup.swift`). Recurring loanword mishearings are corrected in the recognized text ("giữa lo" → Zalo, "hoa phay" → Wi-Fi, "C nga co" → Singapore, …). Before translation only, vocatives are dropped and a few service phrases and idioms are spelled out ("Em ơi, tính tiền!" → "Cho tôi thanh toán!" → "Let me pay!" instead of "Baby, charge!"). The "You say" panel shows what was recognized.
 - **Turns** (`ios/Sources/App/TurnAssembler.swift`). A new subtitle screen starts only after a finalized phrase and a 2 s pause, never in the middle of a phrase that is still being recognized.
 
-Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one TTS voice, Mac with the iOS 26 frameworks, real-time feeding through the app's own code with `ios/Tools/vi-harness`). Real speech will score worse; the differences are what matter:
-
-| Audio | Old energy gate | Own-voice gate | Cut at the true speech span |
-|---|---:|---:|---:|
-| Quiet room | 3.1 % | 3.1 % | |
-| Telephone band (like the AirPods mic) | 1.2 % | 1.6 % | |
-| Café babble 10 dB below your voice | 12.5 % | 1.9 % | 1.6 % |
-| Telephone band + babble 10 dB | 9.4 % | 2.8 % | 3.1 % |
-| Babble 3 dB below your voice | 23.8 % | 11.2 % | 6.6 % |
-| Someone 12 dB quieter talking right before and after you | 117.8 % | 10.9 % | 6.9 % |
-| 5 s of café babble (10 dB) before you start | 80.6 % | 7.8 % | 2.2 % |
-
-(Run to run, the same audio varies by about ±0.6 points; one syllable is 0.3.)
+The word error rates of this gate on synthetic audio are in the table under [Measurements (R15)](#measurements-r15).
 
 A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds before you speak, still gets through: level cannot tell them apart. Until you have spoken for about a second in a session, the gate does not know your level yet. Whispering does not open the gate, by design: a whisper is unvoiced and far below your normal level, like a bystander. `swift test` in `ios/` runs the unit tests (gate, turns, fix-ups, subtitle translator) on the Mac.
 
@@ -126,7 +114,10 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 | `sim/` | Desktop simulator of the board screen: the real `ui.c`, `lock_ui.c` and `modes.c` on LVGL + SDL2, with keys that fake the iPhone, the mic and a voice |
 | `tools/` | `gen_logo.py`: draws the Live Translator mark into the lock-face logo (`firmware/main/logo_img.c`) and the iOS app icon |
 | `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing, Tailscale relay listener) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
-| `ios/` | SwiftUI app. The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) |
+| `shared/` | The single source of language-specific data and of the logic contract, used by both phone apps: `languages/*.json` (language packs, see `shared/languages/README.md`), `board_glyphs/*.txt` (code points of the board's CJK / Hangul / Thai fonts), `copy/vi.json` (UI copy), `fixtures/` (test vectors both cores must pass, `shared/fixtures/README.md`; `fixtures/terms/` is the term-accuracy corpus) |
+| `ios/` | The iPhone app (Swift, SwiftUI). The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen). `Sources/Core` is the pure logic (`swift test`); `Tools/term-harness` and `Tools/vi-harness` are the measurement harnesses |
+| `android/` | The Android app (React Native 0.88, Hermes, New Architecture, TypeScript; Kotlin engine in `android/android/`). `src/core` is the same pure logic as `ios/Sources/Core`, in TypeScript; `tool/` has the device scripts, `scripts/` the Node ones. Details in `android/README.md` |
+| `app/` | The Flutter app: frozen reference implementation, read-only, **deleted in P2.9**. Do not build on it |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
 ## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
@@ -198,14 +189,156 @@ and opens it: an iPhone-sized screen plus a panel that switches the phase, the b
 listening, and adds sample lines. Bluetooth, speech and translation are not in it. (The gear menu looks like a
 Mac pull-down there; on the iPhone it is the round button.)
 
-### iOS app
+### iPhone app (Swift)
 
-Requires Xcode 26 and an iPhone on iOS 26.
+Requires Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) and an iPhone on iOS 26. No Simulator is used.
 
-1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`.
+1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`. `project.yml` bundles `shared/languages`, `shared/board_glyphs` and `shared/copy` as resources, so the app reads the same data as the Android one.
 2. Under Signing & Capabilities, set your own **Team** and a unique **Bundle Identifier**.
 3. Connect the iPhone, enable Developer Mode, then Run.
-4. On first launch, download the English ↔ Vietnamese translation models and allow microphone access. After that it works offline.
+4. On first launch, download the translation and recognition models and allow microphone access. After that it works offline.
+
+Tests and builds (no iPhone, no Simulator):
+
+```sh
+cd ios && swift test        # Core logic, gate, turns, fix-ups, subtitle translator, shared fixtures
+cd ios && xcodegen generate && xcodebuild -scheme ESPTranslator -configuration Release \
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build    # Release build check
+```
+
+For an installable Release build, drop `CODE_SIGNING_ALLOWED=NO` and set your Team, or use Product > Archive in Xcode.
+
+### Android app (React Native)
+
+Package `vn.cicca.livetranslator`, Android 10+ (minSdk 29). The full reference is `android/README.md`. Needs JDK 17, the Android SDK (platform-tools, build-tools 35.0.0, NDK 28.2.13676358, CMake) and Node >= 22.11 (no yarn, no watchman).
+
+```sh
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+echo "sdk.dir=$ANDROID_HOME" > android/android/local.properties   # git-ignored
+
+cd android
+npm ci                      # exactly what package-lock.json says
+npm test                    # Jest: the TypeScript core against shared/fixtures (runs `sync-shared --check` first)
+npx tsc --noEmit            # type check
+```
+
+Run it on the Samsung Galaxy Note 9 (SM-N960F, Android 10, serial `271c1de1761c7ece`) with USB debugging on and the phone listed by `adb devices`. Never use an emulator.
+
+```sh
+cd android
+npx react-native start &                                        # Metro: note its PID and stop it when done
+npx react-native run-android --deviceId 271c1de1761c7ece
+adb -s 271c1de1761c7ece exec-out screencap -p > shot.png
+```
+
+- **Engine tests on the phone** (Whisper, ML Kit, TTS, VoiceGate): `android/tool/device_test.sh [Class[#method]]`, with `SERIAL=...` when several devices are connected and `WHISPER_MODEL=/path/ggml-base-q5_1.bin` to push the model. Unlike Gradle's `connectedAndroidTest` it does not uninstall the app, so the pushed model and clips survive.
+- **EngineProbe** (`android/src/dev/EngineProbe.tsx`): a dev screen showing the Kotlin engine's capabilities, downloads and live events. It is reachable only in development builds (`__DEV__`) through the small "dev" button of `App.tsx`, and is not in a release bundle.
+- **Whisper model**: `ggml-base-q5_1.bin` (59,707,625 bytes, SHA-256 `422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898`), downloaded on first use and checked before loading.
+- **Release build**: `cd android/android && ./gradlew assembleRelease` gives `app/build/outputs/apk/release/app-release.apk` (`./gradlew bundleRelease` for an AAB). It is signed with the debug keystore for now; replace `signingConfigs` before publishing.
+
+### Shared data: languages, UI copy, fixtures
+
+Both apps read `shared/` and must agree on it. The Android app copies it into `android/src/shared-generated/` (Metro cannot read outside its root); the generated files are committed.
+
+**Add a language pack**
+
+1. Copy the closest `shared/languages/<code>.json`. The schema is in `shared/fixtures/README.md` (sections `model.json` and `rules.json`); notes on the shipped packs are in `shared/languages/README.md`. Use a catalog code (`zh-Hans`, not `zh`). No locale literal belongs anywhere else in the code except the native engines' mapping tables.
+2. Add its term corpus `shared/fixtures/terms/<code>.tsv` (format and scoring rule: `shared/fixtures/terms/README.md`).
+3. Extend the fixtures that list packs: `shared/fixtures/model.json` (`shippedPacks`) and `shared/fixtures/language_catalog.json`, plus cases in `rules.json` if the pack has rules.
+4. `cd android && npm run sync-shared` (regenerates `src/shared-generated/`; `npm test` fails while it is stale).
+5. Run the three suites: `cd ios && swift test`; `cd android && npm test`; `cd ios/Tools/term-harness && swift test`.
+6. Run the term harness for the new language on each platform (next section). `--write-packs` stores the best placeholder shape in the pack as `applePlaceholder` / `androidPlaceholder`.
+
+**Edit UI copy**: all user-visible text is Vietnamese and lives in `shared/copy/vi.json`, read by both apps (bundled through `ios/project.yml`, checked by `android/__tests__/ui/copy.test.ts`). Edit it, run `cd android && npm run sync-shared` if the Android copy test reports a difference, then run both suites.
+
+### Term harness and Vietnamese WER harness
+
+Term accuracy (R10: names, brands and glossary entries survive translation in at least 95 % of outputs) is measured per language, platform and placeholder shape. The corpus, the scoring rule and the case files are described in `shared/fixtures/terms/README.md`.
+
+```sh
+# Apple Translation, on the Mac (install the language pairs in System Settings > General > Language & Region > Translation Languages)
+cd ios/Tools/term-harness
+swift test
+swift run term-harness --fake                         # smoke test, no translator
+swift run term-harness [--lang en,ja] [--out results.md] [--write-packs]
+
+# ML Kit, on the Note 9 (the TypeScript core masks and scores on the Mac, the phone only translates)
+cd android
+node scripts/term-harness.mjs --translator fake       # smoke test, no phone
+SERIAL=271c1de1761c7ece tool/term_harness.sh [--lang en,ja] [--write-packs]
+```
+
+The Android run writes its table to `android/android/app/build/term-harness/results.md`. Missing ML Kit models are downloaded (network needed once).
+
+Vietnamese recognition WER (own-voice gate and Apple `DictationTranscriber`), on the Mac with the iOS 26 frameworks:
+
+```sh
+cd ios/Tools/vi-harness && ./build.sh                  # builds vi-harness and vi-translate from the app's own sources
+RT=1 ./vi-harness <new|legacy|none|oracle> out.tsv events.jsonl files...
+```
+
+The options (`GATE_*` environment variables, the `.region` files of the oracle gate) are described at the top of `ios/Tools/vi-harness/main.swift`. Whisper WER on Android is measured on the Note 9 with `android/tool/device_test.sh WhisperTest`.
+
+## Measurements (R15)
+
+R15: repeatable measurement per language and per engine. Vietnamese on Apple must stay within +/-0.6 points of the first table. Everything here uses synthetic audio (TTS voices) and a synthetic corpus: real speech will score worse, and the before/after differences are what count.
+
+### Vietnamese recognition, Apple
+
+Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one TTS voice, Mac with the iOS 26 frameworks, real-time feeding through the app's own code with `ios/Tools/vi-harness`). Real speech will score worse; the differences are what matter:
+
+| Audio | Old energy gate | Own-voice gate | Cut at the true speech span |
+|---|---:|---:|---:|
+| Quiet room | 3.1 % | 3.1 % | |
+| Telephone band (like the AirPods mic) | 1.2 % | 1.6 % | |
+| Café babble 10 dB below your voice | 12.5 % | 1.9 % | 1.6 % |
+| Telephone band + babble 10 dB | 9.4 % | 2.8 % | 3.1 % |
+| Babble 3 dB below your voice | 23.8 % | 11.2 % | 6.6 % |
+| Someone 12 dB quieter talking right before and after you | 117.8 % | 10.9 % | 6.9 % |
+| 5 s of café babble (10 dB) before you start | 80.6 % | 7.8 % | 2.2 % |
+
+(Run to run, the same audio varies by about ±0.6 points; one syllable is 0.3.)
+
+### Term accuracy per language, platform and placeholder shape (R10)
+
+*To be filled by the device pass (P2.3/P2.4).* Each cell is "accuracy % - lost placeholders" over both directions (84 lines per language), as printed by the harness; the best shape per language is the one `--write-packs` stores. R10 target: at least 95 %.
+
+| Language | Platform | `Zorvik{n}` | `[[{n}]]` | `TERM{n}` | `⟦{n}⟧` | `__{n}__` | Best shape |
+|---|---|---:|---:|---:|---:|---:|---|
+| en | Apple | | | | | | |
+| en | Android (ML Kit) | | | | | | |
+| fr | Apple | | | | | | |
+| fr | Android (ML Kit) | | | | | | |
+| de | Apple | | | | | | |
+| de | Android (ML Kit) | | | | | | |
+| es | Apple | | | | | | |
+| es | Android (ML Kit) | | | | | | |
+| ja | Apple | | | | | | |
+| ja | Android (ML Kit) | | | | | | |
+| ko | Apple | | | | | | |
+| ko | Android (ML Kit) | | | | | | |
+| zh-Hans | Apple | | | | | | |
+| zh-Hans | Android (ML Kit) | | | | | | |
+| th | Apple | | | | | | |
+| th | Android (ML Kit) | | | | | | |
+
+### Recognizer WER per language and engine
+
+*To be filled by the device pass (P2.3/P2.4).* Word error rate (character error rate for ja, zh-Hans and th) on the synthetic sentence set.
+
+| Language | Apple on device | Android Whisper `base-q5_1` |
+|---|---:|---:|
+| vi | see the Vietnamese table above | |
+| en | | |
+| fr | | |
+| de | | |
+| es | | |
+| ja | | |
+| ko | | |
+| zh-Hans | | |
+| th | | |
 
 ## Claude companion mode
 
@@ -426,7 +559,7 @@ still pending).
 | `echoHold` | `ios/Sources/App/ConversationEngine.swift` | 1 s | How long board-mic results are ignored after you stop speaking. Raise it if the board still picks up your voice |
 | `turnGap` | same | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
 | `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
-| `rate` | `ios/Sources/Speech/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
+| `rate` | `ios/Sources/Engine/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
 | `idleTimeout` | `ios/Sources/App/ConversationActivity.swift` | 10 min | Silence after which the app releases the AirPods mic and other apps' audio returns to full volume |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 | `VAD_HANGOVER_FRAMES` | same | 40 (800 ms) | Lower = faster phrase end, but long pauses split sentences |

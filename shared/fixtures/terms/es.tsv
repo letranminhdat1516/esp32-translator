@@ -1,0 +1,86 @@
+# Term corpus es <-> vi (Spanish), P2.5 / R10. Format: shared/fixtures/terms/README.md
+# direction	source sentence	term	expected
+es>vi	Reservé un Grab al aeropuerto.	Grab	Grab
+es>vi	¿Nos vemos en el mercado Ben Thanh a mediodía?	Ben Thanh	Bến Thành
+es>vi	Mi nuevo iPhone 15 pierde la señal todo el tiempo.	iPhone 15	iPhone 15
+es>vi	El próximo fin de semana volamos a Phu Quoc.	Phu Quoc	Phú Quốc
+es>vi	Anoche pedí los zapatos en Shopee.	Shopee	Shopee
+es>vi	¿La sala de exposición de VinFast abre los domingos?	VinFast	VinFast
+es>vi	Mi compañera Sarah Johnson se unirá más tarde.	Sarah Johnson	Sarah Johnson
+es>vi	El hotel está cerca del lago Hoan Kiem.	Hoan Kiem	Hoàn Kiếm
+es>vi	Mándame el archivo por Zalo, por favor.	Zalo	Zalo
+es>vi	¿Cuánto se tarda en llegar a la bahía de Ha Long?	Ha Long	Hạ Long
+es>vi	Pagué con MoMo porque no tenía efectivo.	MoMo	MoMo
+es>vi	Nuestro vuelo de Vietnam Airlines se retrasó dos horas.	Vietnam Airlines	Vietnam Airlines
+es>vi	Miguel dice que el Samsung Galaxy S24 es más barato aquí.	Samsung Galaxy S24	Samsung Galaxy S24
+es>vi	Nos quedamos tres noches en un Airbnb en Hoi An.	Hoi An	Hội An
+es>vi	¿Sabes dónde está el Circle K más cercano?	Circle K	Circle K
+es>vi	Emma quiere probar el café de Highlands Coffee.	Highlands Coffee	Highlands Coffee
+es>vi	El tren de Hanói a Hue sale a las ocho.	Hue	Huế
+es>vi	Me dejé el MacBook Pro en el taxi.	MacBook Pro	MacBook Pro
+es>vi	David nos espera delante de la Ópera.	David	David
+es>vi	Mañana por la mañana tomemos el ferry a la isla de Cat Ba.	Cat Ba	Cát Bà
+es>vi	Mi hermana trabaja en Viettel en Da Nang.	Viettel	Viettel
+es>vi	¿Puedo pagar con tarjeta Visa aquí?	Visa	Visa
+es>vi	Vimos la puesta de sol desde la torre Bitexco.	Bitexco	Bitexco
+es>vi	¿Hay algún Lotte Mart cerca del hotel?	Lotte Mart	Lotte Mart
+es>vi	El señor Tanaka llega esta noche en el vuelo VN 301.	VN 301	VN 301
+es>vi	Quiero alquilar una Honda Wave para todo el día.	Honda Wave	Honda Wave
+es>vi	El mejor pho que probé fue en la calle Ly Thuong Kiet.	Ly Thuong Kiet	Lý Thường Kiệt
+es>vi	A mi hija le encantan los dibujos de Pokémon.	Pokémon	Pokémon
+es>vi	Nuestra guía, Minh Anh, habla muy bien inglés.	Minh Anh	Minh Anh
+es>vi	Carga mi teléfono con la batería externa Anker, por favor.	Anker	Anker
+es>vi	Necesitamos dos billetes para el autobús nocturno a Sa Pa.	Sa Pa	Sa Pa
+es>vi	Vi el nuevo Toyota Vios en el aparcamiento.	Toyota Vios	Toyota Vios
+es>vi	¿Me recomiendas un restaurante cerca de la calle peatonal Nguyen Hue?	Nguyen Hue	Nguyễn Huệ
+es>vi	Carlos perdió sus AirPods Pro en el autobús.	AirPods Pro	AirPods Pro
+es>vi	La contraseña del Wi-Fi está detrás del menú.	Wi-Fi	Wi-Fi
+es>vi	Haremos el check-in en el Sheraton a las tres.	Sheraton	Sheraton
+es>vi	Mi hijo juega a Minecraft todas las noches.	Minecraft	Minecraft
+es>vi	La excursión al delta del Mekong empieza a las siete.	Mekong	Mê Kông
+es>vi	Ana compró un Kindle en el aeropuerto.	Kindle	Kindle
+es>vi	¿Se puede ver Netflix en esta tele?	Netflix	Netflix
+es>vi	Nuestra oficina está en el piso doce del Landmark 81.	Landmark 81	Landmark 81
+es>vi	Tengo que recargar mi tarjeta SIM de Vinaphone.	Vinaphone	Vinaphone
+vi>es	Tôi đã đặt Grab ra sân bay rồi.	Grab	Grab
+vi>es	Mình gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé.	Bến Thành	Bến Thành
+vi>es	Chiếc iPhone 15 của tôi cứ bị mất sóng.	iPhone 15	iPhone 15
+vi>es	Cuối tuần sau chúng tôi bay ra Phú Quốc.	Phú Quốc	Phú Quốc
+vi>es	Tối qua em mua đôi giày trên Shopee.	Shopee	Shopee
+vi>es	Showroom VinFast có mở cửa chủ nhật không?	VinFast	VinFast
+vi>es	Anh Nguyễn Văn Nam sẽ đến đón chị ở khách sạn.	Nguyễn Văn Nam	Nguyễn Văn Nam
+vi>es	Khách sạn ở gần hồ Hoàn Kiếm.	Hoàn Kiếm	Hoàn Kiếm
+vi>es	Anh gửi file qua Zalo giúp em nhé.	Zalo	Zalo
+vi>es	Đi vịnh Hạ Long mất bao lâu?	Hạ Long	Hạ Long
+vi>es	Tôi trả bằng MoMo vì không có tiền mặt.	MoMo	MoMo
+vi>es	Chuyến bay Vietnam Airlines bị trễ hai tiếng.	Vietnam Airlines	Vietnam Airlines
+vi>es	Chị Lan nói ở đây Samsung Galaxy S24 rẻ hơn.	Samsung Galaxy S24	Samsung Galaxy S24
+vi>es	Chúng tôi ở Hội An ba đêm.	Hội An	Hội An
+vi>es	Cửa hàng Circle K gần nhất ở đâu vậy?	Circle K	Circle K
+vi>es	Chị Hương muốn uống cà phê ở Highlands Coffee.	Highlands Coffee	Highlands Coffee
+vi>es	Tàu từ Hà Nội vào Huế chạy lúc tám giờ.	Hà Nội	Hanói
+vi>es	Tôi để quên MacBook Pro trên taxi.	MacBook Pro	MacBook Pro
+vi>es	Anh Tuấn đang đợi chúng ta trước Nhà hát Lớn.	Tuấn	Tuấn
+vi>es	Sáng mai mình đi phà ra đảo Cát Bà nhé.	Cát Bà	Cát Bà
+vi>es	Em gái tôi làm cho Viettel ở Đà Nẵng.	Viettel	Viettel
+vi>es	Ở đây có trả bằng thẻ Visa được không?	Visa	Visa
+vi>es	Chúng tôi ngắm hoàng hôn từ tòa Bitexco.	Bitexco	Bitexco
+vi>es	Gần khách sạn có Lotte Mart không?	Lotte Mart	Lotte Mart
+vi>es	Ông Tanaka đến trên chuyến bay VN 301 tối nay.	VN 301	VN 301
+vi>es	Tôi muốn thuê một chiếc Honda Wave trong ngày.	Honda Wave	Honda Wave
+vi>es	Thành phố Hồ Chí Minh nóng hơn Hà Nội nhiều.	Thành phố Hồ Chí Minh	Ciudad Ho Chi Minh
+vi>es	Con gái tôi rất thích phim hoạt hình Pokémon.	Pokémon	Pokémon
+vi>es	Hướng dẫn viên của chúng tôi, chị Minh Anh, nói tiếng Anh rất giỏi.	Minh Anh	Minh Anh
+vi>es	Anh sạc điện thoại bằng pin dự phòng Anker giúp tôi.	Anker	Anker
+vi>es	Chúng tôi cần hai vé xe giường nằm đi Sa Pa.	Sa Pa	Sa Pa
+vi>es	Tôi thấy chiếc Toyota Vios mới ở bãi đỗ xe.	Toyota Vios	Toyota Vios
+vi>es	Có nhà hàng nào gần phố đi bộ Nguyễn Huệ không?	Nguyễn Huệ	Nguyễn Huệ
+vi>es	Anh Quang làm mất AirPods Pro trên xe buýt.	AirPods Pro	AirPods Pro
+vi>es	Mật khẩu Wi-Fi ở mặt sau thực đơn.	Wi-Fi	Wi-Fi
+vi>es	Ba giờ chúng tôi nhận phòng ở Sheraton.	Sheraton	Sheraton
+vi>es	Con trai tôi tối nào cũng chơi Minecraft.	Minecraft	Minecraft
+vi>es	Tour đi Đà Nẵng bắt đầu lúc bảy giờ.	Đà Nẵng	Da Nang
+vi>es	Chị Mai mua một chiếc Kindle ở sân bay.	Kindle	Kindle
+vi>es	Tivi này có xem được Netflix không?	Netflix	Netflix
+vi>es	Văn phòng chúng tôi ở tầng 12 tòa Landmark 81.	Landmark 81	Landmark 81
+vi>es	Tôi cần nạp tiền cho sim Vinaphone.	Vinaphone	Vinaphone

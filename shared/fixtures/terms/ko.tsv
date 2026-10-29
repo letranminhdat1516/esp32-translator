@@ -1,0 +1,86 @@
+# Term corpus ko <-> vi (Korean), P2.5 / R10. Format: shared/fixtures/terms/README.md
+# direction	source sentence	term	expected
+ko>vi	공항까지 가는 Grab 택시를 예약했어요.	Grab	Grab
+ko>vi	12시에 벤탄 시장에서 만날까요?	벤탄	Bến Thành
+ko>vi	새로 산 iPhone 15 모델이 자꾸 신호가 끊겨요.	iPhone 15	iPhone 15
+ko>vi	다음 주말에 푸꾸옥에 가요.	푸꾸옥	Phú Quốc
+ko>vi	어젯밤에 Shopee 앱에서 신발을 주문했어요.	Shopee	Shopee
+ko>vi	VinFast 전시장은 일요일에도 열어요?	VinFast	VinFast
+ko>vi	동료인 사라 존슨이 나중에 합류할 거예요.	사라 존슨	Sarah Johnson
+ko>vi	호텔은 호안끼엠 호수 근처예요.	호안끼엠	Hoàn Kiếm
+ko>vi	파일을 Zalo 메신저로 보내 주세요.	Zalo	Zalo
+ko>vi	하롱베이까지 얼마나 걸려요?	하롱	Hạ Long
+ko>vi	현금이 없어서 MoMo 앱으로 결제했어요.	MoMo	MoMo
+ko>vi	Vietnam Airlines 항공편이 두 시간 지연됐어요.	Vietnam Airlines	Vietnam Airlines
+ko>vi	여기서는 Samsung Galaxy S24 모델이 더 싸대요.	Samsung Galaxy S24	Samsung Galaxy S24
+ko>vi	호이안에 있는 Airbnb 숙소에서 사흘 밤을 묵었어요.	호이안	Hội An
+ko>vi	가장 가까운 Circle K 편의점이 어디예요?	Circle K	Circle K
+ko>vi	에마는 Highlands Coffee 매장의 커피를 마셔 보고 싶어 해요.	Highlands Coffee	Highlands Coffee
+ko>vi	하노이에서 후에로 가는 기차는 8시에 출발해요.	후에	Huế
+ko>vi	택시에 MacBook Pro 노트북을 두고 내렸어요.	MacBook Pro	MacBook Pro
+ko>vi	데이비드가 오페라 하우스 앞에서 기다리고 있어요.	데이비드	David
+ko>vi	내일 아침에 페리를 타고 깟바섬에 가요.	깟바	Cát Bà
+ko>vi	언니는 다낭에 있는 Viettel 회사에서 일해요.	Viettel	Viettel
+ko>vi	여기서 Visa 카드로 결제할 수 있어요?	Visa	Visa
+ko>vi	Bitexco 타워에서 노을을 봤어요.	Bitexco	Bitexco
+ko>vi	호텔 근처에 Lotte Mart 매장이 있어요?	Lotte Mart	Lotte Mart
+ko>vi	다나카 씨는 오늘 밤 VN 301 편으로 도착해요.	VN 301	VN 301
+ko>vi	하루 동안 Honda Wave 오토바이를 빌리고 싶어요.	Honda Wave	Honda Wave
+ko>vi	제일 맛있는 쌀국수는 리트엉끼엣 거리에서 먹었어요.	리트엉끼엣	Lý Thường Kiệt
+ko>vi	딸이 포켓몬 만화를 정말 좋아해요.	포켓몬	Pokémon
+ko>vi	가이드인 민아인 씨는 영어를 아주 잘해요.	민아인	Minh Anh
+ko>vi	Anker 보조배터리로 휴대폰을 충전해 주세요.	Anker	Anker
+ko>vi	사파로 가는 야간 버스 표가 두 장 필요해요.	사파	Sa Pa
+ko>vi	주차장에서 새 Toyota Vios 차를 봤어요.	Toyota Vios	Toyota Vios
+ko>vi	응우옌후에 거리 근처에 괜찮은 식당이 있어요?	응우옌후에	Nguyễn Huệ
+ko>vi	크리스가 버스에서 AirPods Pro 이어폰을 잃어버렸어요.	AirPods Pro	AirPods Pro
+ko>vi	Wi-Fi 비밀번호는 메뉴판 뒷면에 있어요.	Wi-Fi	Wi-Fi
+ko>vi	3시에 Sheraton 호텔에서 체크인해요.	Sheraton	Sheraton
+ko>vi	아들은 매일 저녁 Minecraft 게임을 해요.	Minecraft	Minecraft
+ko>vi	메콩 델타 투어는 7시에 시작해요.	메콩	Mê Kông
+ko>vi	안나는 공항에서 Kindle 단말기를 샀어요.	Kindle	Kindle
+ko>vi	이 TV로 Netflix 서비스를 볼 수 있어요?	Netflix	Netflix
+ko>vi	우리 사무실은 Landmark 81 빌딩 12층에 있어요.	Landmark 81	Landmark 81
+ko>vi	Vinaphone 유심을 충전해야 해요.	Vinaphone	Vinaphone
+vi>ko	Tôi đã đặt Grab ra sân bay rồi.	Grab	Grab
+vi>ko	Mình gặp nhau ở chợ Bến Thành lúc mười hai giờ nhé.	Bến Thành	벤탄
+vi>ko	Chiếc iPhone 15 của tôi cứ bị mất sóng.	iPhone 15	iPhone 15
+vi>ko	Cuối tuần sau chúng tôi bay ra Phú Quốc.	Phú Quốc	푸꾸옥
+vi>ko	Tối qua em mua đôi giày trên Shopee.	Shopee	Shopee
+vi>ko	Showroom VinFast có mở cửa chủ nhật không?	VinFast	VinFast
+vi>ko	Anh Nguyễn Văn Nam sẽ đến đón chị ở khách sạn.	Nguyễn Văn Nam	Nguyễn Văn Nam
+vi>ko	Khách sạn ở gần hồ Hoàn Kiếm.	Hoàn Kiếm	호안끼엠
+vi>ko	Anh gửi file qua Zalo giúp em nhé.	Zalo	Zalo
+vi>ko	Đi vịnh Hạ Long mất bao lâu?	Hạ Long	하롱
+vi>ko	Tôi trả bằng MoMo vì không có tiền mặt.	MoMo	MoMo
+vi>ko	Chuyến bay Vietnam Airlines bị trễ hai tiếng.	Vietnam Airlines	Vietnam Airlines
+vi>ko	Chị Lan nói ở đây Samsung Galaxy S24 rẻ hơn.	Samsung Galaxy S24	Samsung Galaxy S24
+vi>ko	Chúng tôi ở Hội An ba đêm.	Hội An	호이안
+vi>ko	Cửa hàng Circle K gần nhất ở đâu vậy?	Circle K	Circle K
+vi>ko	Chị Hương muốn uống cà phê ở Highlands Coffee.	Highlands Coffee	Highlands Coffee
+vi>ko	Tàu từ Hà Nội vào Huế chạy lúc tám giờ.	Hà Nội	하노이
+vi>ko	Tôi để quên MacBook Pro trên taxi.	MacBook Pro	MacBook Pro
+vi>ko	Anh Tuấn đang đợi chúng ta trước Nhà hát Lớn.	Tuấn	Tuấn
+vi>ko	Sáng mai mình đi phà ra đảo Cát Bà nhé.	Cát Bà	깟바
+vi>ko	Em gái tôi làm cho Viettel ở Đà Nẵng.	Viettel	Viettel
+vi>ko	Ở đây có trả bằng thẻ Visa được không?	Visa	Visa
+vi>ko	Chúng tôi ngắm hoàng hôn từ tòa Bitexco.	Bitexco	Bitexco
+vi>ko	Gần khách sạn có Lotte Mart không?	Lotte Mart	Lotte Mart
+vi>ko	Ông Tanaka đến trên chuyến bay VN 301 tối nay.	VN 301	VN 301
+vi>ko	Tôi muốn thuê một chiếc Honda Wave trong ngày.	Honda Wave	Honda Wave
+vi>ko	Thành phố Hồ Chí Minh nóng hơn Hà Nội nhiều.	Thành phố Hồ Chí Minh	호찌민시
+vi>ko	Con gái tôi rất thích phim hoạt hình Pokémon.	Pokémon	포켓몬
+vi>ko	Hướng dẫn viên của chúng tôi, chị Minh Anh, nói tiếng Anh rất giỏi.	Minh Anh	Minh Anh
+vi>ko	Anh sạc điện thoại bằng pin dự phòng Anker giúp tôi.	Anker	Anker
+vi>ko	Chúng tôi cần hai vé xe giường nằm đi Sa Pa.	Sa Pa	사파
+vi>ko	Tôi thấy chiếc Toyota Vios mới ở bãi đỗ xe.	Toyota Vios	Toyota Vios
+vi>ko	Có nhà hàng nào gần phố đi bộ Nguyễn Huệ không?	Nguyễn Huệ	응우옌후에
+vi>ko	Anh Quang làm mất AirPods Pro trên xe buýt.	AirPods Pro	AirPods Pro
+vi>ko	Mật khẩu Wi-Fi ở mặt sau thực đơn.	Wi-Fi	Wi-Fi
+vi>ko	Ba giờ chúng tôi nhận phòng ở Sheraton.	Sheraton	Sheraton
+vi>ko	Con trai tôi tối nào cũng chơi Minecraft.	Minecraft	Minecraft
+vi>ko	Tour đi Đà Nẵng bắt đầu lúc bảy giờ.	Đà Nẵng	다낭
+vi>ko	Chị Mai mua một chiếc Kindle ở sân bay.	Kindle	Kindle
+vi>ko	Tivi này có xem được Netflix không?	Netflix	Netflix
+vi>ko	Văn phòng chúng tôi ở tầng 12 tòa Landmark 81.	Landmark 81	Landmark 81
+vi>ko	Tôi cần nạp tiền cho sim Vinaphone.	Vinaphone	Vinaphone
