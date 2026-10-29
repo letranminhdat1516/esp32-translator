@@ -72,5 +72,10 @@
   "glossary.error.duplicate": "Từ này đã có trong từ điển",
   "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác",
   "menu.relay": "Claude relay",
-  "cue.unclear": "Không nghe rõ"
+  "cue.unclear": "Không nghe rõ",
+  "status.preparing": "Đang chuẩn bị…",
+  "failed.noRecognizer": "Máy này chưa nhận giọng được ngôn ngữ này.",
+  "permission.microphone": "Cần quyền dùng micro để nghe bạn nói. Cho phép trong Cài đặt của máy rồi thử lại.",
+  "line.unclear": "Không nghe rõ",
+  "permission.bluetooth": "Chưa được phép dùng Bluetooth nên không kết nối được board. Điện thoại vẫn dịch bình thường; cho phép trong Cài đặt của máy để dùng board."
 }

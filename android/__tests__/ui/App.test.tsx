@@ -24,7 +24,7 @@ describe('App (development: sample intents)', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it('boots with the empty state, warns once, and opens the glossary and back', async () => {
-    await render(<App />);
+    await render(<App initialState={sampleState} />);
     expect(console.warn).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Bắt đầu nghe')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Cài đặt'));
@@ -35,7 +35,7 @@ describe('App (development: sample intents)', () => {
   });
 
   it('opens the language sheet from the header pill', async () => {
-    await render(<App />);
+    await render(<App initialState={sampleState} />);
     await fireEvent.press(screen.getByLabelText(/Tiếng Việt sang/));
     expect(await screen.findByText('Ngôn ngữ')).toBeTruthy();
   });
@@ -72,7 +72,7 @@ describe('App (production)', () => {
   });
 
   it('requires intents', async () => {
-    await expect(render(<App />)).rejects.toThrow(/intents/);
+    await expect(render(<App initialState={sampleState} />)).rejects.toThrow(/intents/);
   });
 
   it('runs with given intents and no warning', async () => {
