@@ -579,6 +579,175 @@
           "expected": null
         }
       ]
+    },
+    {
+      "name": "mask returns NFC text even when no term is found",
+      "text": "Việt Nam ơi",
+      "terms": [],
+      "target": "en",
+      "masked": "Việt Nam ơi",
+      "isEmpty": true,
+      "restores": [
+        {
+          "translated": "Hello",
+          "expected": "Hello"
+        }
+      ]
+    },
+    {
+      "name": "an NFD term matches NFC text",
+      "text": "Việt Nam",
+      "terms": [
+        {
+          "id": "vn",
+          "text": "Việt Nam"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1"
+    },
+    {
+      "name": "C++ matches: no bound after an edge that is not a letter or digit",
+      "text": "học C++ nhé, C+++",
+      "terms": [
+        {
+          "id": "c",
+          "text": "C++"
+        }
+      ],
+      "target": "en",
+      "masked": "học Zorvik1 nhé, Zorvik1+"
+    },
+    {
+      "name": "a bound before a letter edge: C++ inside a word does not match",
+      "text": "abcC++",
+      "terms": [
+        {
+          "id": "c",
+          "text": "C++"
+        }
+      ],
+      "target": "en",
+      "masked": "abcC++",
+      "isEmpty": true
+    },
+    {
+      "name": "equal length, no shared word: letter edges keep both out of abc",
+      "text": "abc",
+      "terms": [
+        {
+          "id": "ab",
+          "text": "ab"
+        },
+        {
+          "id": "bc",
+          "text": "bc"
+        }
+      ],
+      "target": "en",
+      "masked": "abc",
+      "isEmpty": true
+    },
+    {
+      "name": "equal length, separate words: both masked in text order",
+      "text": "bc ab",
+      "terms": [
+        {
+          "id": "ab",
+          "text": "ab"
+        },
+        {
+          "id": "bc",
+          "text": "bc"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1 Zorvik2",
+      "restores": [
+        {
+          "translated": "Zorvik2 Zorvik1",
+          "expected": "ab bc"
+        }
+      ]
+    },
+    {
+      "name": "length is counted in UTF-16 units: an astral term outranks a longer-looking BMP one",
+      "text": "𝐀𝐁 x",
+      "terms": [
+        {
+          "id": "x",
+          "text": "𝐀𝐁 "
+        },
+        {
+          "id": "y",
+          "text": "𝐀𝐁 x"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1"
+    },
+    {
+      "name": "a surface shared by two terms belongs to the first (NFC de-duplication)",
+      "text": "Grab",
+      "terms": [
+        {
+          "id": "a",
+          "text": "Grab",
+          "fixed": {
+            "en": "GrabCar"
+          }
+        },
+        {
+          "id": "b",
+          "text": "Ride",
+          "variants": [
+            "Grab"
+          ],
+          "fixed": {
+            "en": "Ride"
+          }
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1",
+      "restores": [
+        {
+          "translated": "Zorvik1",
+          "expected": "GrabCar"
+        }
+      ]
+    },
+    {
+      "name": "equal length overlap: the term listed first wins",
+      "text": "a+b",
+      "terms": [
+        {
+          "id": "1",
+          "text": "a+"
+        },
+        {
+          "id": "2",
+          "text": "+b"
+        }
+      ],
+      "target": "en",
+      "masked": "Zorvik1b"
+    },
+    {
+      "name": "equal length overlap, other order: the term listed first wins",
+      "text": "a+b",
+      "terms": [
+        {
+          "id": "2",
+          "text": "+b"
+        },
+        {
+          "id": "1",
+          "text": "a+"
+        }
+      ],
+      "target": "en",
+      "masked": "aZorvik1"
     }
   ]
 }

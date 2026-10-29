@@ -3,46 +3,10 @@ import 'package:live_translator/engine/engine_api.g.dart';
 import 'package:live_translator/engine/session_machine.dart';
 
 import '../shared_fixtures.dart';
+import 'session_json.dart';
 
 MissingMsg miss([String lang = 'ja']) =>
     MissingMsg(kind: MissingKind.speechModel, language: lang);
-
-List<MissingMsg> missingOf(Object? json) => [
-  for (final m in json as List)
-    MissingMsg(
-      kind: MissingKind.values.byName((m as Map)['kind'] as String),
-      language: m['language'] as String,
-      from: m['from'] as String?,
-      to: m['to'] as String?,
-    ),
-];
-
-SessionState stateOf(Map<String, dynamic> j) => switch (j['type']) {
-  'loading' => const Loading(),
-  'choosing' => Choosing(reason: j['reason'] as String?),
-  'checking' => Checking(j['code'] as String),
-  'needsDownload' => NeedsDownload(j['code'] as String, missingOf(j['missing']), error: j['error'] as String?),
-  'downloading' => Downloading(j['code'] as String),
-  'preparing' => Preparing(j['code'] as String, restarts: j['restarts'] as int? ?? 0),
-  'running' => Running(j['code'] as String, restarts: j['restarts'] as int? ?? 0),
-  'switching' => Switching(j['from'] as String, j['to'] as String),
-  'failed' => Failed(j['code'] as String, j['reason'] as String),
-  final t => throw StateError('unknown state $t'),
-};
-
-SessionEvent eventOf(Map<String, dynamic> j) => switch (j['type']) {
-  'catalogReady' => CatalogReady(saved: j['saved'] as String?, offered: strings(j['offered']).toSet()),
-  'picked' => Picked(j['code'] as String),
-  'checked' => Checked(missingOf(j['missing'])),
-  'downloadTapped' => const DownloadTapped(),
-  'downloadDone' => const DownloadDone(),
-  'downloadFailed' => DownloadFailed(j['error'] as String),
-  'started' => const Started(),
-  'startFailed' => StartFailed(j['reason'] as String),
-  'recognizerDied' => const RecognizerDied(),
-  'retry' => const Retry(),
-  final t => throw StateError('unknown event $t'),
-};
 
 /// Cases: shared/fixtures/session_machine.json (see shared/fixtures/README.md).
 void main() {
@@ -50,6 +14,28 @@ void main() {
 
   test('missing kinds', () {
     expect(MissingKind.values.map((k) => k.name), strings(fixture['missingKinds']));
+  });
+
+  group('full matrix', () {
+    final matrix = casesOf(fixture, 'matrix');
+
+    test('covers every state type x every event type', () {
+      final pairs = {
+        for (final c in matrix) '${(c['state'] as Map)['type']} + ${(c['event'] as Map)['type']}',
+      };
+      expect(pairs, {
+        for (final s in stateTypes)
+          for (final e in eventTypes) '$s + $e',
+      });
+      expect(matrix.length, stateTypes.length * eventTypes.length);
+    });
+
+    for (final c in matrix) {
+      test(c['name'] as String, () {
+        final s = stateOf(c['state'] as Map<String, dynamic>);
+        expect(next(s, eventOf(c['event'] as Map<String, dynamic>)), stateOf(c['expected'] as Map<String, dynamic>));
+      });
+    }
   });
 
   group('transition table', () {

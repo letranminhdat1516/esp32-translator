@@ -6,6 +6,21 @@ import 'package:live_translator/board/protocol.dart';
 
 import '../shared_fixtures.dart';
 
+/// An instant seen from a fixed UTC offset. Dart's DateTime only knows UTC
+/// and the machine's zone; timeText reads just these two members.
+class _ZonedTime implements DateTime {
+  _ZonedTime(this.millisecondsSinceEpoch, this.timeZoneOffset);
+
+  @override
+  final int millisecondsSinceEpoch;
+
+  @override
+  final Duration timeZoneOffset;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('$invocation');
+}
+
 /// Cases: shared/fixtures/protocol.json (see shared/fixtures/README.md).
 void main() {
   final fixture = loadFixture('protocol');
@@ -58,9 +73,7 @@ void main() {
   group('time', () {
     for (final c in casesOf(fixture, 'timeText')) {
       test(c['name'] as String, () {
-        // Dart can only build a DateTime in UTC or the machine's zone.
-        expect(c['utcOffsetMinutes'], 0);
-        final t = DateTime.fromMillisecondsSinceEpoch(c['epochMs'] as int, isUtc: true);
+        final t = _ZonedTime(c['epochMs'] as int, Duration(minutes: c['utcOffsetMinutes'] as int));
         expect(timeText(t), c['expected']);
       });
     }

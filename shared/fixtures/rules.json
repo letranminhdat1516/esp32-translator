@@ -38,6 +38,16 @@
         }
       ],
       "beforeTranslation": []
+    },
+    "alternation": {
+      "recognition": [
+        {
+          "id": "t",
+          "pattern": "ab|ba",
+          "template": "X"
+        }
+      ],
+      "beforeTranslation": []
     }
   },
   "cases": [
@@ -593,6 +603,34 @@
       "fn": "fixRecognition",
       "input": "ok, book, ok2, ok",
       "expected": "OK, book, ok2, OK"
+    },
+    {
+      "name": "dialect: \\d matches an ASCII digit (price context)",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mắc quá, 5 cái",
+      "expected": "Đắt quá, 5 cái"
+    },
+    {
+      "name": "dialect: \\d does not match an Arabic-Indic digit",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mắc quá, ٥ cái",
+      "expected": "Mắc quá, ٥ cái"
+    },
+    {
+      "name": "dialect: \\d does not match a fullwidth digit",
+      "engine": "vi",
+      "fn": "forTranslation",
+      "input": "Mắc quá, ５ cái",
+      "expected": "Mắc quá, ５ cái"
+    },
+    {
+      "name": "dialect: the pattern is grouped before the bounds are added",
+      "engine": "alternation",
+      "fn": "fixRecognition",
+      "input": "xa ab ba abc",
+      "expected": "xa X X abc"
     }
   ],
   "adversarial": {
@@ -641,5 +679,39 @@
         "prefix": ""
       }
     ]
+  },
+  "portableSyntax": {
+    "digits": "ascii",
+    "forbidden": [
+      {
+        "name": "possessive quantifier",
+        "regex": "(?<!\\\\)(?:[*+?]|\\})\\+"
+      },
+      {
+        "name": "atomic group",
+        "regex": "\\(\\?>"
+      },
+      {
+        "name": "inline flags",
+        "regex": "\\(\\?[a-zA-Z]+[:)]"
+      },
+      {
+        "name": "named group or backreference",
+        "regex": "\\(\\?<[a-zA-Z]|\\\\k<"
+      },
+      {
+        "name": "anchors and escapes missing in JS",
+        "regex": "\\\\[AZzGhHRXK]"
+      },
+      {
+        "name": "POSIX class",
+        "regex": "\\[\\[:"
+      },
+      {
+        "name": "Unicode class other than \\p{L}, \\p{N}, \\p{M}",
+        "regex": "\\\\[pP]\\{(?!L\\}|N\\}|M\\})"
+      }
+    ],
+    "lookbehind": "bounded"
   }
 }

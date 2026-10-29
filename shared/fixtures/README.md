@@ -38,6 +38,7 @@ new case here.
 | `terms.json` | `term_protector.dart` | `term_protector_test.dart` |
 | `text_pipeline.json` | `text_pipeline.dart` | `text_pipeline_test.dart` |
 | `board_text.json` | `board_text.dart`, `translit.dart`, `board_glyphs.dart` | `board_text_test.dart` |
+| `translit.json` (tables, not cases) | `translit.dart` | `translit_test.dart` |
 | `glossary.json` | `glossary.dart` | `glossary_test.dart` |
 | `language_catalog.json` | `language_catalog.dart` | `language_catalog_test.dart` |
 | `model.json` | `model.dart` | `model_test.dart` |
@@ -58,7 +59,9 @@ new case here.
   "cases": [ { "name", "engine": engineId, "fn": "fixRecognition" | "forTranslation",
                "input": string, "expected": string } ],
   "adversarial": { "minLength": int, "maxMsPerRule": int, "maxMsPipeline": int,
-                   "subjects": [ { "name", "unit": string, "prefix": string } ] }
+                   "subjects": [ { "name", "unit": string, "prefix": string } ] },
+  "portableSyntax": { "digits": "ascii", "lookbehind": "bounded",
+                      "forbidden": [ { "name", "regex": string } ] }
 }
 Engine = { "pack": code }                                   // the pack's recognition + beforeTranslation rules
        | { "recognition": [Rule], "beforeTranslation": [Rule] }   // rules given inline
@@ -68,21 +71,28 @@ Rule   = { "id", "pattern", "template", "atClauseStart"?: bool (false), "context
 For each case build the engine and call `fn(input)`; the result must equal
 `expected`. Every `VietnameseFixupTests` case of the Swift app is here with
 engine `vi` (`fixLoanwords` → `fixRecognition`, `forTranslation` →
-`forTranslation`). Engine rules a port must implement to pass:
+`forTranslation`). Engine rules, one per line:
 
-- input is NFC-normalized before any rule runs (one case is NFD);
-- patterns are case-insensitive, Unicode, and whole-word: the engine adds
-  `(?<![\p{L}\p{N}])` before and `(?![\p{L}\p{N}])` after the pack pattern;
-  with `atClauseStart` the prefix is `(^|[,.!?])\s*` and the template gets the
-  punctuation back as `$1`; `$n` in a template is group n (empty if absent);
-- `context`, when set, must match somewhere in the whole text or the rule does
-  nothing;
-- `forTranslation` = `fixRecognition`, then the beforeTranslation rules, then
-  tidy (collapse spaces, drop spaces before `,.!?`, drop commas after
-  punctuation, drop leading `space , . !`, trim the end, upper-case the first
-  letter if the original started upper-case); if no letter is left, return the
-  `fixRecognition` result instead. A pack without rules returns the input
-  untouched (not even NFC).
+- Input is NFC-normalized before any rule runs (one case is NFD).
+- Rules run in list order, each as a replace-all over the result of the previous one.
+- The pack pattern is wrapped as `(?:pattern)` first, then the bounds are added: `(?<![\p{L}\p{N}])(?:pattern)(?![\p{L}\p{N}])`.
+- With `atClauseStart` the prefix is `(^|[,.!?])\s*` instead, and the template gets the punctuation back as `$1`.
+- Matching is case-insensitive and Unicode (JS: flags `giu`; ICU: case-insensitive).
+- `$n` in a template is capture group n (empty when the group did not take part or does not exist).
+- `context`, when set, is a separate case-insensitive regex that must match somewhere in the whole text, or the rule does nothing.
+- `forTranslation` = `fixRecognition`, then the beforeTranslation rules, then tidy: collapse whitespace runs to one space, drop spaces before `,.!?`, drop commas right after `,.!?`, drop leading spaces/`,`/`.`/`!`, trim the end, upper-case the first letter when the original input started upper-case.
+- If no letter (`\p{L}`) is left after tidy, `forTranslation` returns the `fixRecognition` result instead.
+- A pack with no recognition rules returns the input untouched (not even NFC); with no beforeTranslation rules, `forTranslation` returns `fixRecognition`'s result.
+
+Regex dialect (`portableSyntax`). Pack patterns are written in the subset that
+ICU (`NSRegularExpression`), JavaScript `RegExp` with the `u` flag (Hermes) and
+Dart agree on; `rule_engine_test.dart` lints every pattern and context of every
+`shared/languages/*.json` against it:
+
+- `digits: "ascii"`: `\d` means `[0-9]` only. Dart and JS already do this; ICU and Swift `Regex` match every Unicode decimal digit, so the Swift port must make `\d` ASCII-only (e.g. rewrite `\d` to `[0-9]` outside character-class escapes before compiling, or Swift `Regex` with `.asciiOnlyDigits()`). Cases `dialect: …` check it (an Arabic-Indic or fullwidth digit is not a price).
+- `lookbehind: "bounded"`: a lookbehind body has no `*`, `+` or `{n,}` (ICU rejects unbounded lookbehind); alternatives of different fixed lengths are fine.
+- `forbidden`: none of these regexes may match a pattern: possessive quantifiers, atomic groups, inline flags, named groups and `\k<…>`, `\A \Z \z \G \h \H \R \X \K`, POSIX classes, `\p{…}` other than `\p{L}`, `\p{N}`, `\p{M}`.
+- `\s` is left to each engine (Unicode whitespace in all three; packs only use it before punctuation or the end).
 
 `adversarial` (timing, not exact output): build each subject as `prefix` +
 `unit` repeated until its length is at least `minLength`; every compiled rule of
@@ -108,12 +118,21 @@ argument error (placeholder without exactly one `{n}`, or nothing around it).
 Otherwise its text must equal `masked`, and `isEmpty` (no term found) must
 match when given. Then, for each `restores` entry, `restore(translated, masked)`
 must return `expected` (`null` = restore fails: a placeholder lost, duplicated,
-or invented). Behaviour (Review Focus 3): terms and variants matched literally,
-longest first, never double-masked; Latin case-insensitive (the spoken form
-comes back), other scripts exact; whole words except in CJK/kana/Hangul/Thai;
-placeholders numbered 1, 2, … in order of appearance, skipping numbers the text
-already contains; one number per fixed translation of a term or per distinct
-spoken form; placeholders matched case-insensitively on restore.
+or invented). Behaviour (Review Focus 3), one rule per line:
+
+- `mask` NFC-normalizes the text and every term/variant first; the masked text is NFC even when no term is found.
+- Candidates are each term's `text` then its `variants`; empty ones are skipped; a surface already seen (after NFC, exact) is skipped, so a surface shared by two terms belongs to the first.
+- Candidates are tried longest first, length in UTF-16 code units; equal lengths keep their input order.
+- Each candidate is matched literally (all regex metacharacters escaped) at every position; a match overlapping an already masked span is skipped (never double-masked).
+- Case: a candidate containing a non-Latin letter matches exactly (case-sensitive); otherwise case-insensitively, and the spoken form found in the text is what comes back.
+- Word bounds only at edges that are letters or digits (`\p{L}\p{N}`): a bound `(?<![\p{L}\p{N}])` before when the first character is a letter/digit, `(?![\p{L}\p{N}])` after when the last one is, so `C++` matches before `+`, and `An` does not match in `Anh`.
+- No bound at an edge whose character is in a script written without spaces: U+0E00–U+0E7F, U+1100–U+11FF, U+3040–U+30FF, U+3130–U+318F, U+3400–U+4DBF, U+4E00–U+9FFF, U+AC00–U+D7A3, U+F900–U+FAFF.
+- Placeholder = prefix + n + suffix from the shape (`{n}` exactly once, some text around it, else an argument error).
+- Numbers are 1, 2, … in order of appearance in the text, skipping every number the source text already shows in that shape (matched case-insensitively).
+- One number per (term with a fixed translation for the target), else per distinct spoken form; the number turns back into the fixed translation, or the spoken form when the term has none for the target.
+- `restore` on a mask that found nothing returns the input unchanged.
+- `restore` finds placeholders case-insensitively, replaces each with its output, and does not rescan the result.
+- `restore` returns null when a number we issued appears a different number of times than in the masked text, or a number we did not issue (and the source did not contain) appears.
 
 ## text_pipeline.json — TextPipeline
 
@@ -173,13 +192,59 @@ replaces them for that case.
   ranges merged.
 - `parseRanges(text)`: blank lines and `#` comments skipped; anything else that
   is not hex or a reversed range is an error.
-- `encode(input, fontSets)` must equal `expected`: NFC first; whitespace and
-  controls collapse to one space, trimmed; drawable characters kept; Latin
-  folded, Cyrillic/Greek/kana transliterated, symbols spelled; each run of
-  undrawable letters becomes one `·`; blank input gives `""`.
+- `encode(input, fontSets)` must equal `expected`. The tables named below are
+  in `translit.json` (exported from `translit.dart`, the source of truth). The
+  algorithm, one step per line:
+  - NFC the input.
+  - Split it into words on runs of `[\s\u0000-\u001f\u007f-\u009f   ]`; encode each word; drop words that encode to `""`; join with one space; collapse runs of spaces; trim.
+  - Result empty: `""` if the NFC input was blank, else `·`.
+  - Per word, first a compatibility fold: each code point that is not drawable, has no letter table, is not kana, is not a `punctuation` key, not a `latinSpecial` key, not an other-script digit and cannot be mark-folded is replaced by its NFKC form (fullwidth `Ａ` → `A`, `ﬁ` → `fi`, `①` → `1`).
+  - All-caps word: at least two code points have a letter table (cyrillic/greek) and all of those are upper-case.
+  - Then per code point, first rule that applies:
+  - drawable with `fontSets` (see `ranges`) → kept;
+  - Cyrillic/Greek letter → its `cyrillic`/`greek` value (via lower case); a capital gives a capital first letter, or all capitals in an all-caps word; `υ`/`ύ` right after `ο`/`ό` (either case) gives `u`;
+  - kana (`kana.isKana`) → romaji by the `kana` rules below; an unreadable kana gives `·`;
+  - `punctuation` value, else `latinSpecial` value, else ASCII digit for a digit of another script (`digitZeros`: zero code points, each followed by 1–9), else the letter with its marks removed (NFD, drop `\p{M}`) when that differs and is drawable;
+  - a single mark or invisible (`\p{M}`, `\p{C}`) → dropped;
+  - any other letter or number (`\p{L}\p{N}`) → `·`, but not twice in a row;
+  - anything else (symbols, emoji, other punctuation) → dropped.
 - `encodeInvariants`: for every sample × every fontSets, `encode` is not empty,
   every character is a space or drawable with those sets, there is no leading
   or trailing space and no double space.
+
+## translit.json — transliteration and folding tables
+
+Data, not cases: the tables of `app/lib/core/translit.dart` (the source of
+truth; `app/test/core/translit_test.dart` probes the Dart functions over whole
+Unicode blocks and fails if the export differs). Ports load these tables
+instead of copying them; `board_text.json` checks the result.
+
+```
+{
+  "cyrillic": { lowerCaseLetter: latin },  "greek": { lowerCaseLetter: latin },
+  "capitals": { "cases": [ { "letter", "allCaps": bool, "expected" } ] },
+  "upsilonAfterOmicron": { "letters": ["υ","ύ"], "latin": "u", "omicrons": [...] },
+  "latinSpecial": { char: ascii },          // letters with no decomposition: ł→l, ß→ss, đ→d …
+  "punctuation": { char: spelling },        // may contain a space ("、" → ", ")
+  "digitZeros": [codePoint],                // U+0660, U+06F0, U+0966, U+09E6, U+0E50
+  "kana": { "hiraganaRange", "katakanaRange", "katakanaOffset": 96, "hiragana": { kana: romaji },
+            "smallY": { "ゃ": "a", "ゅ": "u", "ょ": "o" }, "sokuon": "っ", "n": "ん",
+            "nApostropheBefore": [kana], "silent": [char], "isKana": [[lo, hi]] }
+}
+```
+
+Rules, one per line:
+
+- A Cyrillic/Greek letter is looked up by its lower case; an empty value (`ъ`, `ь`) gives nothing.
+- A capital gives its value with the first letter upper-cased, or all upper-case when the word is all-caps (`capitals.cases`).
+- `υ`/`ύ` directly after an omicron (`omicrons`) gives `u` (the diphthong `ου`).
+- Katakana in `katakanaRange` reads as the hiragana `katakanaOffset` below it.
+- `silent` characters (long-vowel mark, iteration marks) give nothing.
+- `sokuon` reads the next kana: nothing if there is none; the next kana unchanged if its romaji starts with a vowel or `n`; else its first consonant doubled (`t` before `ch`) + its romaji.
+- `n` gives `n'` when the next kana (as hiragana) is in `nApostropheBefore`, else `n`.
+- A small `ゃゅょ` alone gives `y` + its vowel.
+- A hiragana whose romaji has two or more letters and ends in `i`, followed by a small `ゃゅょ`: drop the `i`; stems `sh`, `ch`, `j` add the vowel, others add `y` + vowel (`きょ` → `kyo`, `しゃ` → `sha`); both kana are used.
+- Any other code point in `isKana` with no `hiragana` entry is unreadable (BoardText gives `·`).
 
 ## glossary.json — glossary validation
 
@@ -291,6 +356,16 @@ event step, `handle(event, t0 + atMs)` must return the transition `expect`
 After a step with `state`, the state must be that. `atMs` is not always
 increasing within a scenario; pass it through as given.
 
+Rules, one per line (state: idle/active, lastSpeech, gateOpen, speaking, noAutoStartUntil; all start idle / past / false / false / past):
+
+- `boardAudio`, `gateOpen`, `ttsStart`, `userStart` are "speech": lastSpeech = now; then if idle and now ≥ noAutoStartUntil → active, return `start`; otherwise nothing.
+- `gateOpen` also sets gateOpen; `ttsStart` sets speaking; `userStart` first clears the hold-off (noAutoStartUntil = past), so a tap always starts.
+- `gateClosed` / `ttsEnd` clear gateOpen / speaking and, only while active, set lastSpeech = now (the timeout counts from when speech ended); never a transition.
+- `tick` returns `stop` (→ idle) only when active, the gate is closed, nothing is being spoken, and now − lastSpeech ≥ idleTimeout.
+- `stop` clears gateOpen and speaking; returns `stop` (→ idle) only if it was active.
+- `userStop` is `stop` plus a latch: noAutoStartUntil = forever, so board audio, gate and TTS cannot start a conversation until the next `userStart`.
+- `startFailed(now)`: back to idle with no transition, flags cleared, noAutoStartUntil = now + retryDelay (automatic events are ignored until then; a tap retries at once).
+
 ## subtitle_translator.json — SubtitleTranslator
 
 ```
@@ -315,6 +390,22 @@ work run. Steps between two waits are one synchronous burst. Afterwards:
 with no result or an empty one; `requestCounts` = how many requests equal
 `text`; `maxRequestLength` = no request longer (UTF-16 length); `wordCounts` =
 words (split on spaces, empties dropped) of a turn's last result.
+
+Rules, one per line:
+
+- A turn's text = the translations of its finals in order, then the current partial translation, empty parts skipped, joined by one space; every change is reported through `onResult(turn, text)`.
+- `addFinal(text, turn)`: appends a final slot whose placeholder is the turn's current partial translation; clears the partial (source and translation) and drops a pending partial request of that turn.
+- `addFinal` with empty text: the slot is final with `""` at once and `onResult` fires; nothing is translated.
+- Non-empty finals are queued and translated one at a time, oldest first, each exactly once.
+- A failed final translation keeps the placeholder (the partial translation it had).
+- After `addFinal(…, turn)` only turns greater than `turn − 3` are kept; late results for dropped turns are discarded.
+- `setPartial(text, turn)` with the same text as the turn's current partial source does nothing.
+- `setPartial` with empty text clears the partial translation, drops the pending partial request and fires `onResult`.
+- Partials are latest-wins: one pending partial request across all turns; a newer `setPartial` replaces it.
+- Queued finals always go before the pending partial.
+- A partial translation is applied only if it succeeded and the turn's partial source is still that text (not changed, not finalized).
+- Work starts after the caller's synchronous burst (the next microtask / task), not inside `setPartial`/`addFinal`.
+- `reset()` drops every turn, queued final and pending partial; translations already in flight are discarded when they return.
 
 ## turn_assembler.json — TurnAssembler (+ the two recordings)
 
@@ -343,6 +434,18 @@ Replays: `shared/fixtures/<recording>` is JSON Lines of
 the iOS recognizer, vi-VN). Feed every event at `t0 + t`; after each event
 that returns a change while a turn exists, remember `turn.text` for `turn.id`.
 The texts per turn id, in first-seen order, must equal `expectLines`.
+
+Rules, one per line (quiet = now − time of the previous non-empty event; "greater" is strict):
+
+- The event text is trimmed, then `fixLoanwords` is applied.
+- Empty text: if the turn has a partial, clear it and return a change `{started: false, finalText: null}`; else return null (nothing changed). Empty events do not update the previous-event time.
+- A new turn starts (fresh id, ids 1, 2, … never reused, also across `reset`) when: there is no turn; or this is the first event ever; or quiet > staleGap; or the turn has no partial and (quiet > turnGap or the turn was closed by the cap).
+- So while a partial is pending the turn never splits on turnGap, only after staleGap.
+- Partial: replaces the turn's partial. Final: appended to the turn's finals, partial cleared, `finalText` = the text.
+- Cap: after a final, the turn is closed when its text is longer than maxCharacters **grapheme clusters** (Dart `characters.length`, not UTF-16 units) or now − turn start > maxDuration; the next non-empty event then starts a new turn.
+- The returned change is `{started, finalText}` for every non-empty event.
+- `reset()` forgets the turn and the cap flag (the previous-event time is kept).
+- Turn text = finals then partial, empty parts skipped, joined by one space.
 
 ## adpcm.json — ADPCM decoder
 
@@ -383,8 +486,10 @@ firmware encoder (`firmware/main/adpcm.c`) round trip.
 - `labelText(input)` keeps whole characters up to 32 UTF-8 bytes, no ellipsis.
 - `boardInfo`: parsing the `…0005` value `[version u8][fontSets u32 LE]`;
   fewer than 5 bytes → null; extra bytes ignored.
-- `timeText`: `"<unix seconds> <UTC offset minutes>"` for that instant and
-  offset (whole seconds, milliseconds dropped).
+- `timeText`: `"<unix seconds> <UTC offset minutes>"` for that instant seen
+  at that UTC offset (whole seconds, milliseconds dropped; the offset is signed
+  minutes, e.g. `420`, `-300`, `330`). Ports take the offset from the phone's
+  time zone at that instant.
 
 ## session_machine.json — session state machine
 
@@ -392,6 +497,7 @@ firmware encoder (`firmware/main/adpcm.c`) round trip.
 {
   "missingKinds": ["speechModel", "translation", "ttsVoice"],
   "transitions": [ { "name", "state": State, "event": Event, "expected": State } ],
+  "matrix":      [ { "name", "state": State, "event": Event, "expected": State } ],   // 9 x 10 = 90 cells
   "generations": [ { "name", "start": { "state": State, "generation": int },
                      "steps": [ { "event": Event, "state": State, "generation": int } ] } ]
 }
@@ -408,8 +514,36 @@ Missing = { "kind": missingKind, "language": code, "from"?: code, "to"?: code }
 ```
 
 `next(state, event)` must equal `expected` (value equality, `missing` compared
-element by element). Events not listed for a state leave it unchanged (cases
-named `unlisted: …`). `generations`: starting from `start`, each
+element by element), for every case of `transitions` (hand-picked, incl.
+variants such as `restarts: 1` or a saved language that is not offered) and of
+`matrix`. `matrix` is the full table: every state type × every event type with
+representative values, generated from the Dart machine by
+`app/test/engine/session_matrix_generator.dart` (run it with `flutter test` on
+that file after changing the machine) and asserted by `session_machine_test.dart`,
+which also checks that all 90 pairs are present.
+
+The transition table (these 14 pairs change the state; **every other pair
+leaves the state unchanged**, e.g. preparing + picked, checking + picked,
+downloading + picked, running + downloadDone, loading + started):
+
+| State | Event | Next |
+|---|---|---|
+| loading | catalogReady(saved, offered) | no saved → choosing(reason null); saved in offered → checking(saved); else → choosing(reason "unavailable") |
+| choosing | picked(c) | checking(c) |
+| needsDownload | picked(c) | checking(c) |
+| failed | picked(c) | checking(c) |
+| checking(c) | checked(missing) | empty → preparing(c, restarts 0); else → needsDownload(c, missing, error null) |
+| needsDownload(c) | downloadTapped | downloading(c) |
+| downloading(c) | downloadDone | checking(c) (re-check: one download may not cover everything) |
+| downloading(c) | downloadFailed(e) | needsDownload(c, [], error e) |
+| preparing(c, r) | started | running(c, r) |
+| preparing(c) | startFailed(reason) | failed(c, reason) |
+| running(c) | picked(y) | y = c → unchanged; else → switching(c, y) |
+| running(c, r) | recognizerDied | r = 0 → preparing(c, restarts 1); else → failed(c, "recognizer stopped") |
+| switching(from, to) | checked(missing) | empty → preparing(to, 0); else → needsDownload(to, missing) |
+| failed(c) | retry | checking(c) |
+
+`generations`: starting from `start`, each
 `advance(session, event)` must give that state and generation; the generation
 goes up by one only when the new state is a `switching` different from the old
 state.
@@ -420,7 +554,9 @@ state.
 
 | Test | Why |
 |---|---|
-| `rule_engine_test`: every bundled rule has a unique id; the adversarial timing loop | a property of the pack data; a clock measurement (subjects and limits are in `rules.json`) |
+| `rule_engine_test`: every bundled rule has a unique id; the adversarial timing loop; the portable-syntax lint | properties of the pack data; a clock measurement (subjects, limits and the forbidden list are in `rules.json`) |
+| `translit_test` | proves `translit.json` equals `translit.dart`; ports load the tables, `board_text.json` checks them |
+| `session_matrix_generator.dart` | writes the `matrix` of `session_machine.json` from the Dart machine; not part of the suite |
 | `text_pipeline_test`: a translator error propagates | exception thrown by the injected fake |
 | `board_text_test`: Latin ranges equal `firmware/main/glyphs.c` | reads firmware source the apps do not ship |
 | `board_glyphs_test` (whole file) | Flutter asset loading (`rootBundle`) and the shared-instance assertion |

@@ -32,7 +32,7 @@ void main() {
         final p = pipelineOf(c);
         final prep = p.prepare(c['input'] as String, directionOf(c));
         expect(prep.text, c['prepared']);
-        for (final f in casesOf(c, 'finish')) {
+        for (final f in optionalCasesOf(c, 'finish')) {
           expect(p.finish(f['translated'] as String, prep), f['expected']);
         }
       });
