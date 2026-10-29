@@ -2,73 +2,103 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/model_test.dart.
-/// The language packs every app loads, read in place from the repository (SwiftPM copies a symlinked resource
-/// directory as a dangling relative link, so they are not bundled). Phase 1: point this at shared/languages.
-let languagesDirectory = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()  // TranslatorCoreTests
-    .deletingLastPathComponent()  // Tests
-    .deletingLastPathComponent()  // ios
-    .deletingLastPathComponent()  // repository root
-    .appendingPathComponent("shared/languages")
+// Port of app/test/core/model_test.dart, driven by shared/fixtures/model.json, plus Swift-only edge cases.
+
+/// The language packs every app loads (`shared/languages`), read in place from the repository.
+let languagesDirectory = Fixtures.sharedDirectory.appendingPathComponent("languages")
 
 func packJSON(_ name: String) throws -> String {
     try String(contentsOf: languagesDirectory.appendingPathComponent("\(name).json"), encoding: .utf8)
 }
 
-private func base() throws -> [String: Any] {
-    try JSONSerialization.jsonObject(with: Data(packJSON("en").utf8)) as! [String: Any]
+private func base(_ code: String = "en") throws -> [String: Any] {
+    try JSONSerialization.jsonObject(with: Data(packJSON(code).utf8)) as! [String: Any]
 }
 
 private func encode(_ object: [String: Any]) -> String {
     String(decoding: try! JSONSerialization.data(withJSONObject: object), as: UTF8.self)
 }
 
-private func packErrorField(_ json: String) -> String? {
-    do {
-        _ = try LanguagePack.parse(json)
-        return nil
-    } catch let error as PackError {
-        return error.field
-    } catch {
-        return "unexpected \(error)"
+/// A fixture pack case: `base` pack with the `remove` keys deleted and the `set` keys set.
+private func patchedPack(_ c: [String: Any]) throws -> String {
+    var m = try base(c["base"] as! String)
+    for key in (c["remove"] as? [String]) ?? [] { m.removeValue(forKey: key) }
+    for (key, value) in (c["set"] as? [String: Any]) ?? [:] { m[key] = value }
+    return encode(m)
+}
+
+private let model = Fixtures.load("model")
+
+@Suite struct ModelFixtureTests {
+    @Test func enumNamesAndFontSetBits() {
+        #expect(Script.allCases.map(\.rawValue) == model["scripts"] as! [String])
+        #expect(RecognizerKind.allCases.map(\.rawValue) == model["recognizerKinds"] as! [String])
+        let bits = model["fontSetBits"] as! [String: Int]
+        let sets: [String: FontSets] = [
+            "latinVI": .latinVI, "latinExtA": .latinExtA, "cjk": .cjk, "hangul": .hangul, "thai": .thai,
+        ]
+        #expect(Set(bits.keys) == Set(sets.keys))
+        for (name, bit) in bits { #expect(sets[name]?.value == bit, "\(name)") }
+    }
+
+    @Test(arguments: ["vi", "en"]) func shippedPack(code: String) throws {
+        let e = try #require((model["shippedPacks"] as! [String: [String: Any]])[code])
+        let p = try LanguagePack.parse(packJSON(code))
+        #expect(p.code == e["code"] as! String)
+        #expect(p.appleLocale == e["appleLocale"] as! String)
+        #expect(p.androidLocale == e["androidLocale"] as! String)
+        #expect(p.whisperCode == e["whisperCode"] as! String)
+        #expect(p.label == e["label"] as! String)
+        #expect(p.labelLatin == e["labelLatin"] as! String)
+        #expect(p.script.rawValue == e["script"] as! String)
+        #expect(p.minConfidence == e["minConfidence"] as? Double)
+        #expect(!p.recognition.isEmpty == e["hasRecognition"] as! Bool)
+        #expect(!p.beforeTranslation.isEmpty == e["hasBeforeTranslation"] as! Bool)
+        #expect(p.terms.count == e["termCount"] as! Int)
+        #expect(p.hints.count == e["hintCount"] as! Int)
+    }
+
+    @Test func shippedPacksCoverEveryLanguageFile() throws {
+        let files = try FileManager.default.contentsOfDirectory(atPath: languagesDirectory.path)
+            .filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }
+        #expect(Set(files) == Set((model["shippedPacks"] as! [String: Any]).keys))
+    }
+
+    @Test(arguments: Fixtures.cases(in: model, "packOk", fixture: "model"))
+    func packOk(_ c: FixtureCase) throws {
+        let j = c.json
+        let p = try LanguagePack.parse(patchedPack(j))
+        let e = j["expect"] as! [String: Any]
+        if let script = e["script"] as? String { #expect(p.script.rawValue == script) }
+        if let n = e["recognitionCount"] as? Int { #expect(p.recognition.count == n) }
+        if let a = e["atClauseStart"] as? Bool { #expect(p.recognition.first?.atClauseStart == a) }
+        if let origin = e["termOrigin"] as? String {
+            #expect(p.terms.count == 1)
+            #expect(p.terms.first?.origin.rawValue == origin)
+        }
+        if let hints = e["hints"] as? [String] { #expect(p.hints == hints) }
+        if e.keys.contains("minConfidence") { #expect(p.minConfidence == e["minConfidence"] as? Double) }
+    }
+
+    @Test(arguments: Fixtures.cases(in: model, "packErrors", fixture: "model"))
+    func packError(_ c: FixtureCase) throws {
+        let j = c.json
+        let json = try patchedPack(j)
+        #expect { try LanguagePack.parse(json) } throws: { error in
+            (error as? PackError)?.field == j["field"] as? String
+        }
+    }
+
+    @Test(arguments: Fixtures.cases(in: model, "covers", fixture: "model"))
+    func covers(_ c: FixtureCase) throws {
+        let j = c.json
+        let script = try #require(Script(rawValue: j["script"] as! String))
+        let sets = FontSets(rawValue: UInt32(j["fontSets"] as! Int))
+        #expect(sets.covers(script) == j["expected"] as! Bool)
     }
 }
 
 @Suite struct LanguagePackParseTests {
-    @Test func viParses() throws {
-        let p = try LanguagePack.parse(packJSON("vi"))
-        #expect(p.code == "vi")
-        #expect(p.appleLocale == "vi-VN")
-        #expect(p.androidLocale == "vi-VN")
-        #expect(p.whisperCode == "vi")
-        #expect(p.label == "Tiếng Việt")
-        #expect(p.labelLatin == "VI")
-        #expect(p.script == .latin)
-        #expect(p.minConfidence == nil)
-        #expect(!p.recognition.isEmpty)
-        #expect(!p.beforeTranslation.isEmpty)
-        #expect(p.terms.isEmpty)
-        #expect(p.hints.isEmpty)
-    }
-
-    @Test func enParses() throws {
-        let p = try LanguagePack.parse(packJSON("en"))
-        #expect(p.code == "en")
-        #expect(p.appleLocale == "en-US")
-        #expect(p.androidLocale == "en-US")
-        #expect(p.whisperCode == "en")
-        #expect(p.label == "English")
-        #expect(p.labelLatin == "EN")
-        #expect(p.minConfidence == 0.4)
-    }
-
-    @Test func missingLabelThrowsPackErrorLabel() throws {
-        var m = try base()
-        m.removeValue(forKey: "label")
-        #expect(packErrorField(encode(m)) == "label")
-    }
-
     /// Same field and reason as the Dart helpers (`_str`, `_opt<T>` with Dart's `$T`, `_strList`, `_objList`,
     /// `_fixedVal`): a bad list or map entry reports the list's or map's path.
     @Test(arguments: [
@@ -98,36 +128,9 @@ private func packErrorField(_ json: String) -> String? {
         #expect(throws: expected) { try LanguagePack.parse(encode(m)) }
     }
 
-    @Test func invalidRecognitionPatternThrowsWithPath() throws {
-        var m = try base()
-        m["recognition"] = [["id": "r", "pattern": "(", "template": "x"]]
-        #expect(packErrorField(encode(m)) == "recognition[0].pattern")
-    }
-
-    @Test func invalidBeforeTranslationContextThrowsWithPath() throws {
-        var m = try base()
-        m["beforeTranslation"] = [
-            ["id": "a", "pattern": "a", "template": "b"],
-            ["id": "r", "pattern": "a", "template": "b", "context": "["],
-        ]
-        #expect(packErrorField(encode(m)) == "beforeTranslation[1].context")
-    }
-
-    @Test func unknownScriptThrowsPackErrorScript() throws {
-        var m = try base()
-        m["script"] = "klingon"
-        #expect(packErrorField(encode(m)) == "script")
-    }
-
-    @Test func unknownTermOriginThrowsWithPath() throws {
-        var m = try base()
-        m["terms"] = [["id": "t", "text": "x", "origin": "alien"]]
-        #expect(packErrorField(encode(m)) == "terms[0].origin")
-    }
-
     @Test func notJSONOrNotAnObjectThrowsAtRoot() {
-        #expect(packErrorField("{") == "")
-        #expect(packErrorField("[]") == "")
+        #expect { try LanguagePack.parse("{") } throws: { ($0 as? PackError)?.field == "" }
+        #expect(throws: PackError(field: "", reason: "pack must be a JSON object")) { try LanguagePack.parse("[]") }
     }
 
     @Test func termDefaults() throws {
@@ -142,23 +145,11 @@ private func packErrorField(_ json: String) -> String? {
 
 @Suite struct LanguagePackRoundTripTests {
     @Test func fullPackEncodeParseEquals() throws {
-        var m = try base()
-        m["script"] = "cjk"
-        m["recognition"] = [[
-            "id": "r1", "pattern": #"\bfoo\b"#, "template": "bar", "atClauseStart": true, "context": "baz",
-        ]]
-        m["beforeTranslation"] = [["id": "b1", "pattern": "x", "template": "y"]]
-        m["terms"] = [[
-            "id": "t1", "text": "Tuan", "variants": ["Tuấn", "Toan"], "fixed": ["en": "Tuan"], "origin": "user",
-        ]]
-        m["hints"] = ["a", "b"]
-        let p = try LanguagePack.parse(encode(m))
+        let full = try #require((model["packOk"] as! [[String: Any]]).first { $0["set"] != nil })
+        let p = try LanguagePack.parse(patchedPack(full))
         let again = try LanguagePack.parse(p.jsonString())
         #expect(again == p)
         #expect(again.hashValue == p.hashValue)
-        #expect(again.recognition.first?.atClauseStart == true)
-        #expect(again.terms.first?.origin == .user)
-        #expect(again.script == .cjk)
     }
 
     @Test(arguments: ["vi", "en"]) func shippedPacksRoundTrip(name: String) throws {
@@ -168,30 +159,6 @@ private func packErrorField(_ json: String) -> String? {
 }
 
 @Suite struct FontSetsTests {
-    @Test func bitValues() {
-        #expect(FontSets.latinVI.value == 1)
-        #expect(FontSets.latinExtA.value == 2)
-        #expect(FontSets.cjk.value == 4)
-        #expect(FontSets.hangul.value == 8)
-        #expect(FontSets.thai.value == 16)
-    }
-
-    @Test func latinVIDoesNotCoverCJK() {
-        #expect(!FontSets.latinVI.covers(.cjk))
-    }
-
-    @Test func coversMapping() {
-        #expect(FontSets.latinVI.covers(.latin))
-        #expect(FontSets.latinExtA.covers(.latin))
-        #expect(!FontSets.cjk.covers(.latin))
-        #expect(FontSets.cjk.covers(.cjk))
-        #expect(FontSets.hangul.covers(.hangul))
-        #expect(FontSets.thai.covers(.thai))
-        let all = FontSets(rawValue: 31)
-        #expect(!all.covers(.cyrillic))
-        #expect(!all.covers(.other))
-    }
-
     @Test func unionContainsAndEquality() {
         let s = FontSets.latinVI | FontSets.thai
         #expect(s.value == 17)

@@ -3,6 +3,6 @@
 set -e
 cd "$(dirname "$0")"
 mkdir -p build
-swiftc -O -parse-as-library -target arm64-apple-macos15.0 \
-    PreviewMocks.swift PreviewApp.swift ../Sources/UI/ContentView.swift -o build/phone-preview
+swiftc -O -DDEBUG -parse-as-library -target arm64-apple-macos15.0 \
+    PreviewMocks.swift PreviewApp.swift ../Sources/UI/ContentView.swift ../Sources/UI/UIState.swift ../Sources/UI/LanguageSheet.swift ../Sources/UI/ReadinessView.swift ../Sources/UI/GlossaryView.swift ../Sources/UI/UISamples.swift ../Sources/Core/Model.swift ../Sources/Core/BoardLink.swift ../Sources/Core/BoardProtocol.swift ../Sources/Core/SessionMachine.swift ../Sources/Core/VoiceEngine.swift -o build/phone-preview
 exec build/phone-preview
