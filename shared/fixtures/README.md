@@ -274,8 +274,8 @@ Each case starts from an empty store and adds every `existing` input in order
   `limit`, `codePoint` and the offending `value` when given; the list and the
   stored data are unchanged.
 
-Rules: every string trimmed and non-empty; at most 64 characters (Unicode
-scalars, not UTF-16 units; one case uses U+1D400); no U+0000–U+001F,
+Rules: every string trimmed and non-empty; at most 64 grapheme clusters (Dart
+`characters.length`: not UTF-16 units, not scalars; cases use U+1D400 and NFD Vietnamese); no U+0000–U+001F,
 U+007F–U+009F, U+202A–U+202E, U+2066–U+2069; at most 8 variants and 500 terms;
 text and variants unique across the glossary ignoring case (NFC + lower case),
 a term's own old text excluded on update.

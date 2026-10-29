@@ -7,7 +7,7 @@ import Foundation
 enum GlossaryError: Error, Equatable, Sendable {
     /// A term, variant or fixed translation is empty or only blanks.
     case emptyText(field: String)
-    /// A string is longer than `limit` characters (Unicode scalars).
+    /// A string is longer than `limit` grapheme clusters (Swift `Character`s, as Dart `characters`).
     case tooLong(field: String, limit: Int)
     /// A term has more than `limit` variants.
     case tooManyVariants(limit: Int)
@@ -134,7 +134,7 @@ actor GlossaryStore {
             default: break
             }
         }
-        if s.unicodeScalars.count > maxLength { throw .tooLong(field: field, limit: maxLength) }
+        if s.count > maxLength { throw .tooLong(field: field, limit: maxLength) }
         return s
     }
 
