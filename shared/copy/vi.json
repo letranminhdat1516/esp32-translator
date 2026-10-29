@@ -70,5 +70,8 @@
   "glossary.error.tooMany": "Tối đa 500 từ",
   "glossary.error.badCharacters": "Có ký tự không hợp lệ",
   "glossary.error.duplicate": "Từ này đã có trong từ điển",
-  "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác"
+  "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác",
+  "menu.relay": "Claude relay",
+  "legacy.modelsTitle": "Cần tải mô hình English ↔ Tiếng Việt",
+  "legacy.modelsButton": "Tải mô hình"
 }

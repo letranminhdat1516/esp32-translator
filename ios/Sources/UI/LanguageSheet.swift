@@ -10,7 +10,7 @@ struct LanguageSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Ngôn ngữ")
+            Text(Copy.t("language.sheetTitle"))
                 .font(.system(size: 18, weight: .semibold))
                 .padding(.horizontal, 20)
                 .padding(.top, 20)

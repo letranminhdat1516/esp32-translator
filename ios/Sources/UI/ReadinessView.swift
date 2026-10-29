@@ -97,7 +97,7 @@ struct ReadinessView: View {
             Text(ReadinessText.failedTitle).font(.system(size: 18, weight: .semibold))
             Text(ReadinessText.failureReason(reason))
                 .font(.system(size: 15)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
-            primaryButton("Thử lại", action: ui.retry)
+            primaryButton(Copy.t("failed.retry"), action: ui.retry)
         }
     }
 
@@ -147,7 +147,7 @@ struct ReadinessView: View {
 }
 #Preview("Needs download, failed") {
     readinessPreview {
-        $0.session = .needsDownload("ja", missing: UIState.sampleMissing, error: "Không có kết nối mạng (-1009)")
+        $0.session = .needsDownload("ja", missing: UIState.sampleMissing, error: "The Internet connection appears to be offline (-1009)")
     }
 }
 #Preview("Downloading") {
