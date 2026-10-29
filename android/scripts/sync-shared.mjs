@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Copies the language-neutral data in ../shared into src/shared-generated/ as JSON modules that
 // Metro can bundle (Metro does not reach outside the project root, and it cannot import .txt).
-// Run by `npm run sync-shared` and before every `npm test` (`pretest`).
+// `npm run sync-shared` rewrites them; `node scripts/sync-shared.mjs --check` (run before every
+// `npm test` as `pretest`) writes nothing and exits 1 when they differ from shared/.
 //
 //   languages.json   { "<code>": <shared/languages/<code>.json as an object> }, codes sorted
 //   boardGlyphs.json { "cjk": "<cjk.txt text>", "hangul": "...", "thai": "..." } (parsed at runtime)
@@ -41,13 +42,29 @@ function generate() {
   };
 }
 
-fs.mkdirSync(out, {recursive: true});
+const check = process.argv.includes('--check');
+const stale = [];
+if (!check) {
+  fs.mkdirSync(out, {recursive: true});
+}
 for (const [name, value] of Object.entries(generate())) {
   const file = path.join(out, name);
   const text = JSON.stringify(value, null, 1) + '\n';
   const old = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
-  if (old !== text) {
+  if (old === text) {
+    continue;
+  }
+  if (check) {
+    stale.push(name);
+  } else {
     fs.writeFileSync(file, text);
     console.log(`sync-shared: wrote src/shared-generated/${name}`);
   }
+}
+if (stale.length > 0) {
+  console.error(
+    `sync-shared: src/shared-generated/{${stale.join(',')}} differ from shared/; ` +
+      'run `npm run sync-shared` and commit the result',
+  );
+  process.exit(1);
 }
