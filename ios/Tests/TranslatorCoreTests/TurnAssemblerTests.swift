@@ -35,7 +35,7 @@ func replay(_ events: [(Double, TranscriptEvent)]) -> [String] {
         let events = try recordedEvents("split_byst12_s20")
         let lines = replay(events)
         #expect(lines.count == 1)
-        guard case .final(let final, _) = events.last!.1 else { Issue.record("no final"); return }
+        guard case .final(let final, _, _) = events.last!.1 else { Issue.record("no final"); return }
         #expect(lines.first == final)
     }
 
@@ -43,7 +43,7 @@ func replay(_ events: [(Double, TranscriptEvent)]) -> [String] {
     @Test func longMonologueKeepsEveryWord() throws {
         let events = try recordedEvents("long_monologue")
         let finals = events.compactMap { e -> String? in
-            if case .final(let t, _) = e.1 { return t.trimmingCharacters(in: .whitespaces) }
+            if case .final(let t, _, _) = e.1 { return t.trimmingCharacters(in: .whitespaces) }
             return nil
         }
         let lines = replay(events)

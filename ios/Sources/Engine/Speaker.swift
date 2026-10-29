@@ -1,8 +1,7 @@
 import AVFAudio
 
-// Copied from ios/Sources/Speech/Speaker.swift (the Swift app keeps its own copy until P8).
-// Changes: the language comes from the pair (no locale literal), each utterance carries the id Dart gave it
-// and reports start and end by that id, and `stop()` for stopSpeaking.
+// One speech output for both users: AppleVoiceEngine speaks utterances by id (ttsStart/ttsEnd), the Swift app's
+// ConversationEngine watches the queue (onBusyChange, quiet utterances).
 
 /// Speaks the home-language translation into the AirPods with the best voice on the device.
 @MainActor
@@ -13,17 +12,29 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     /// Slightly faster than default to keep up with the conversation
     private let rate: Float = 0.54
 
-    /// Ids of the queued utterances; the warm-up utterance has none
-    private var ids: [ObjectIdentifier: Int64] = [:]
+    /// Utterances spoken with an id, held until they end: holding them keeps their identifiers from being reused
+    /// by a later utterance at the same address
+    private var ids: [ObjectIdentifier: (utterance: AVSpeechUtterance, id: Int)] = [:]
 
     /// Called with the utterance id when it starts, and when it finishes or is cancelled
-    var onStart: ((Int64) -> Void)?
-    var onEnd: ((Int64) -> Void)?
+    var onStart: ((Int) -> Void)?
+    var onEnd: ((Int) -> Void)?
+
+    /// Utterances queued or being spoken, the warm-up included
+    private(set) var queued = 0 {
+        didSet {
+            if oldValue == 0 && queued > 0 { onBusyChange?(true) }
+            if oldValue > 0 && queued <= 0 { onBusyChange?(false) }
+        }
+    }
+
+    /// Called when the synthesizer starts speaking (true) and when its queue runs empty (false)
+    var onBusyChange: ((Bool) -> Void)?
 
     /// `language` is a language code or locale identifier ("vi", "vi-VN")
     init(language: String) {
         synthesizer.usesApplicationAudioSession = true
-        voice = EngineMapping.bestVoice(language)
+        voice = EngineMapping.bestVoice(language) ?? AVSpeechSynthesisVoice(language: language)
         super.init()
         synthesizer.delegate = self
     }
@@ -32,7 +43,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
         Diag.log("tts: start \"\(u.speechString.prefix(40))\"")
         let key = ObjectIdentifier(u)
         Task { @MainActor in
-            if let id = self.ids[key] { self.onStart?(id) }
+            if let entry = self.ids[key] { self.onStart?(entry.id) }
         }
     }
 
@@ -49,17 +60,30 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func ended(_ key: ObjectIdentifier) {
-        if let id = ids.removeValue(forKey: key) { onEnd?(id) }
+        queued -= 1
+        if let entry = ids.removeValue(forKey: key) { onEnd?(entry.id) }
     }
 
-    func speak(_ text: String, id: Int64) {
+    /// The engine's call: start and end are reported with `id`
+    func speak(_ text: String, id: Int) {
+        enqueue(text, id: id, quiet: false)
+    }
+
+    /// The Swift app's call: `quiet` halves the volume (while the user is speaking)
+    func speak(_ text: String, quiet: Bool = false) {
+        enqueue(text, id: nil, quiet: quiet)
+    }
+
+    private func enqueue(_ text: String, id: Int?, quiet: Bool) {
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
         utterance.rate = rate
+        if quiet { utterance.volume = 0.5 }
         utterance.preUtteranceDelay = 0
         utterance.postUtteranceDelay = 0
-        ids[ObjectIdentifier(utterance)] = id
-        Diag.log("tts: enqueue \(id) (queue \(ids.count)) \"\(text.prefix(40))\"")
+        if let id { ids[ObjectIdentifier(utterance)] = (utterance, id) }
+        queued += 1
+        Diag.log("tts: enqueue \(id.map(String.init) ?? "-") (queue \(queued)) \"\(text.prefix(40))\"")
         synthesizer.speak(utterance)
     }
 
@@ -74,6 +98,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
         utterance.voice = voice
         utterance.volume = 0
         synthesizer.speak(utterance)
+        queued += 1
     }
 
     var voiceName: String { voice?.name ?? "default" }

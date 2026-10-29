@@ -27,7 +27,7 @@ final class Results {
 
 @MainActor
 @Suite struct SubtitleTranslatorTests {
-    func settle() async throws { try await Task.sleep(for: .milliseconds(200)) }
+    // No fixed waits: `idle()` returns once every queued request has been handled, however loaded the machine is
 
     @Test func finalsAreTranslatedOnceAndJoined() async throws {
         let fake = FakeTranslator()
@@ -40,7 +40,7 @@ final class Results {
         st.setPartial("anh", turn: 1)
         st.addFinal("anh khỏe không", turn: 1)
         st.setPartial("", turn: 1)
-        try await settle()
+        await st.idle()
         #expect(results.byTurn[1] == "XIN CHÀO ANH KHỎE KHÔNG")
         let requests = await fake.requests
         // Each final once; partials only while current (latest wins)
@@ -57,7 +57,7 @@ final class Results {
         st.addFinal("một", turn: 1)
         st.addFinal("hai", turn: 1)
         st.setPartial("ba", turn: 2)
-        try await Task.sleep(for: .milliseconds(400))
+        await st.idle()
         #expect(results.byTurn[1] == "MỘT HAI")
         #expect(results.byTurn[2] == "BA")
     }
@@ -68,9 +68,9 @@ final class Results {
         let results = Results()
         let st = SubtitleTranslator(translate: { try await fake.translate($0) }) { results.byTurn[$0] = $1 }
         st.setPartial("bốn", turn: 1)
-        try await settle()
+        await st.idle()
         st.addFinal("bốn năm", turn: 1)
-        try await settle()
+        await st.idle()
         #expect(results.byTurn[1] == "BỐN")
     }
 
@@ -82,9 +82,9 @@ final class Results {
         for i in 0..<30 {
             st.setPartial("câu số \(i)", turn: 1)
             st.addFinal("câu số \(i) xong", turn: 1)
-            try await Task.sleep(for: .milliseconds(5))
+            await Task.yield()
         }
-        try await settle()
+        await st.idle()
         let longest = await fake.requests.map(\.count).max() ?? 0
         #expect(longest <= "câu số 29 xong".count)
         #expect(results.byTurn[1]?.split(separator: " ").count == 30 * 4)
@@ -97,7 +97,7 @@ final class Results {
         st.addFinal("một", turn: 1)
         st.addFinal("", turn: 1)
         st.addFinal("hai", turn: 1)
-        try await settle()
+        await st.idle()
         #expect(await fake.requests.contains("") == false)
         #expect(results.byTurn[1] == "MỘT HAI")
     }
@@ -109,7 +109,7 @@ final class Results {
         st.addFinal("một", turn: 1)
         st.addFinal("hai", turn: 1)
         st.reset()
-        try await Task.sleep(for: .milliseconds(300))
+        await st.idle()
         #expect(results.byTurn[1] == nil || results.byTurn[1] == "")
     }
 }

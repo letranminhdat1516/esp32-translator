@@ -58,8 +58,8 @@ struct TurnAssembler {
     mutating func handle(_ event: TranscriptEvent, at now: Date) -> Change? {
         let raw: String
         switch event {
-        case .partial(let t): raw = t
-        case .final(let t, _): raw = t
+        case .partial(let t, _): raw = t
+        case .final(let t, _, _): raw = t
         }
         let text = VietnameseFixup.fixLoanwords(raw.trimmingCharacters(in: .whitespacesAndNewlines))
 

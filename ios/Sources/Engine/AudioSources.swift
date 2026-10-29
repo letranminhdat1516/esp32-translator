@@ -1,8 +1,8 @@
 import AVFAudio
 import os
 
-// Copied from ios/Sources/Audio/AudioSources.swift without ESPAudioSource (Dart decodes the board audio and
-// feeds PCM through feedTheirAudio). The Swift app keeps its own copy until P8.
+// Audio sources shared by AppleVoiceEngine and the Swift app's ConversationEngine. The engine gets the board
+// audio as PCM (feedTheirAudio); ConversationEngine decodes it with Audio/ESPAudioSource.swift.
 
 /// Converts buffers to the format SpeechAnalyzer wants (usually 16 kHz mono Int16)
 final class BufferConverter {
@@ -21,19 +21,36 @@ final class BufferConverter {
         let ratio = target.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
         guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return nil }
-        var consumed = false
+        let input = OneBuffer(buffer)
         var error: NSError?
         let status = converter.convert(to: out, error: &error) { _, inputStatus in
-            if consumed {
+            guard let next = input.take() else {
                 inputStatus.pointee = .noDataNow
                 return nil
             }
-            consumed = true
             inputStatus.pointee = .haveData
-            return buffer
+            return next
         }
         return status == .error || out.frameLength == 0 ? nil : out
     }
+
+    /// The input of one `convert` call, handed out once. The converter calls its input block synchronously inside
+    /// `convert(to:error:withInputFrom:)`, so the block never runs concurrently with the caller.
+    private final class OneBuffer: @unchecked Sendable {
+        private var buffer: AVAudioPCMBuffer?
+        init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+        func take() -> AVAudioPCMBuffer? {
+            defer { buffer = nil }
+            return buffer
+        }
+    }
+}
+
+/// `VoiceGate.resetWearerLevel` for notification observers (any thread): the one VoiceGate call that is
+/// thread safe (it only sets a locked flag the audio thread reads)
+private struct WearerLevelReset: @unchecked Sendable {
+    let gate: VoiceGate
+    func callAsFunction() { gate.resetWearerLevel() }
 }
 
 /// AirPods mic (or the iPhone mic without earbuds), with echo cancellation of the spoken output.
@@ -67,9 +84,10 @@ final class MicSource {
         #if os(iOS)
         names.append(AVAudioSession.routeChangeNotification)
         #endif
+        let resetWearerLevel = WearerLevelReset(gate: gate)
         for name in names {
-            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { [gate] _ in
-                gate.resetWearerLevel()
+            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { _ in
+                resetWearerLevel()
             })
         }
         let input = engine.inputNode
@@ -118,7 +136,10 @@ final class MicSource {
 /// Plays silence while no conversation is going on, so iOS keeps the app running in the background (the BLE
 /// keepalive timer, board audio, the idle timeout). Mixable output only: no mic, no ducking, so other apps'
 /// audio is untouched and the AirPods stay in high-quality A2DP.
-final class SilencePlayer {
+///
+/// `@unchecked Sendable`: its configuration-change observer runs on the notification's thread; it reads `wanted`
+/// (locked) and restarts the AVAudioEngine, which may be started and stopped from any thread.
+final class SilencePlayer: @unchecked Sendable {
     private let engine = AVAudioEngine()
 
     init() {

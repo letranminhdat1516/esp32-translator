@@ -3,24 +3,30 @@ import CoreMedia
 import os
 import Speech
 
-enum TranscriptEvent: Sendable {
-    /// Volatile result that may still change; each one replaces the previous volatile text
-    case partial(String)
+// One recognizer per language, used by AppleVoiceEngine (resolved per locale: SpeechTranscriber, else
+// DictationTranscriber) and by the Swift app's ConversationEngine (engine picked by the caller). Events carry the
+// length of their audio; hints (contextual strings), asset status and asset installation with progress.
+
+enum TranscriptEvent: Sendable, Equatable {
+    /// Volatile result that may still change; each one replaces the previous volatile text.
+    /// `audio` is the length of the audio it covers, in seconds.
+    case partial(String, audio: TimeInterval = 0)
     /// Finalized phrase, will not change. `confidence` is the mean word confidence (0…1) when the engine reports it.
-    case final(String, confidence: Double?)
+    case final(String, confidence: Double?, audio: TimeInterval = 0)
 }
 
 /// Continuous, fully on-device speech recognition with SpeechAnalyzer (iOS 26).
 /// The analyzer runs for the whole session instead of per utterance, so models never reload.
 final class LiveTranscriber: @unchecked Sendable {
     enum Engine {
-        /// Newest and fastest model; used for English
+        /// Newest and fastest model; used where it supports the locale
         case speech
-        /// Dictation model; the only one that supports Vietnamese
+        /// Dictation model; covers locales SpeechTranscriber does not (Vietnamese)
         case dictation
     }
 
     let locale: Locale
+    let engine: Engine
     private(set) var audioFormat: AVAudioFormat?
     private let module: any SpeechModule
     private var analyzer: SpeechAnalyzer?
@@ -31,25 +37,55 @@ final class LiveTranscriber: @unchecked Sendable {
 
     init(locale: Locale, engine: Engine) {
         self.locale = locale
+        self.engine = engine
+        module = Self.module(locale: locale, engine: engine)
+    }
+
+    private static func module(locale: Locale, engine: Engine) -> any SpeechModule {
         switch engine {
         case .speech:
-            module = SpeechTranscriber(locale: locale, transcriptionOptions: [],
-                                       reportingOptions: [.volatileResults, .fastResults],
-                                       attributeOptions: [.transcriptionConfidence])
+            SpeechTranscriber(locale: locale, transcriptionOptions: [],
+                              reportingOptions: [.volatileResults, .fastResults],
+                              attributeOptions: [.transcriptionConfidence])
         case .dictation:
-            module = DictationTranscriber(locale: locale, contentHints: [],
-                                          transcriptionOptions: [.punctuation],
-                                          reportingOptions: [.volatileResults, .frequentFinalization],
-                                          attributeOptions: [])
+            DictationTranscriber(locale: locale, contentHints: [],
+                                 transcriptionOptions: [.punctuation],
+                                 reportingOptions: [.volatileResults, .frequentFinalization],
+                                 attributeOptions: [])
         }
     }
 
-    /// Downloads the speech model if missing (once, then works offline)
-    func installAssetsIfNeeded() async throws {
-        _ = try? await AssetInventory.reserve(locale: locale)
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
-            try await request.downloadAndInstall()
+    /// The on-device recognizer for a language code or locale identifier ("en", "en-US"): SpeechTranscriber if
+    /// it supports it, else DictationTranscriber; nil when neither does
+    static func resolve(_ language: String) async -> LiveTranscriber? {
+        let wanted = Locale(identifier: language)
+        if SpeechTranscriber.isAvailable, let locale = await SpeechTranscriber.supportedLocale(equivalentTo: wanted) {
+            return LiveTranscriber(locale: locale, engine: .speech)
         }
+        if let locale = await DictationTranscriber.supportedLocale(equivalentTo: wanted) {
+            return LiveTranscriber(locale: locale, engine: .dictation)
+        }
+        return nil
+    }
+
+    var assetStatus: AssetInventory.Status {
+        get async { await AssetInventory.status(forModules: [module]) }
+    }
+
+    /// Downloads the speech model if missing (once, then works offline); `progress` gets 0…1
+    func installAssets(progress: @escaping @Sendable (Double) -> Void) async throws {
+        _ = try? await AssetInventory.reserve(locale: locale)
+        guard let request = try await AssetInventory.assetInstallationRequest(supporting: [module]) else { return }
+        let observation = request.progress.observe(\.fractionCompleted, options: [.new]) { p, _ in
+            progress(p.fractionCompleted)
+        }
+        defer { observation.invalidate() }
+        try await request.downloadAndInstall()
+    }
+
+    /// The same without progress (the Swift app's ConversationEngine, ios/Tools/vi-harness)
+    func installAssetsIfNeeded() async throws {
+        try await installAssets(progress: { _ in })
     }
 
     func start(onEvent: @escaping @Sendable (TranscriptEvent) -> Void) async throws {
@@ -68,12 +104,12 @@ final class LiveTranscriber: @unchecked Sendable {
                 if let t = module as? SpeechTranscriber {
                     for try await r in t.results {
                         self.logLag(r.range)
-                        onEvent(Self.event(text: r.text, isFinal: r.isFinal))
+                        onEvent(Self.event(text: r.text, isFinal: r.isFinal, range: r.range))
                     }
                 } else if let t = module as? DictationTranscriber {
                     for try await r in t.results {
                         self.logLag(r.range)
-                        onEvent(Self.event(text: r.text, isFinal: r.isFinal))
+                        onEvent(Self.event(text: r.text, isFinal: r.isFinal, range: r.range))
                     }
                 }
                 Diag.log("[\(self.locale.identifier)] results stream FINISHED without error")
@@ -84,7 +120,19 @@ final class LiveTranscriber: @unchecked Sendable {
         try await analyzer.start(inputSequence: stream)
     }
 
-    /// Safe to call from the audio thread or the BLE queue
+    /// Words the recognizer should expect (names, places, glossary terms). Empty clears them.
+    func setHints(_ hints: [String]) async {
+        guard let analyzer else { return }
+        let context = AnalysisContext()
+        context.contextualStrings = hints.isEmpty ? [:] : [.general: hints]
+        do {
+            try await analyzer.setContext(context)
+        } catch {
+            Diag.log("[\(locale.identifier)] hints not set: \(error)")
+        }
+    }
+
+    /// Safe to call from the audio thread or any queue
     func feed(_ buffer: AVAudioPCMBuffer) {
         Diag.count("feed.\(locale.identifier)", Int(buffer.frameLength))
         Diag.count("rms.\(locale.identifier)", Self.rmsMilli(buffer))
@@ -128,11 +176,15 @@ final class LiveTranscriber: @unchecked Sendable {
         return Int((sum / Double(n)).squareRoot() * 1000)
     }
 
-    private static func event(text: AttributedString, isFinal: Bool) -> TranscriptEvent {
+    private static func event(text: AttributedString, isFinal: Bool, range: CMTimeRange) -> TranscriptEvent {
         let s = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isFinal else { return .partial(s) }
-        let confidences = text.runs.compactMap(\.transcriptionConfidence)
+        let seconds = CMTimeGetSeconds(range.duration)
+        let audio = seconds.isFinite ? max(0, seconds) : 0
+        guard isFinal else { return .partial(s, audio: audio) }
+        // Subscript by attribute type, not `\.transcriptionConfidence`: a key path through the dynamic attribute
+        // lookup is not Sendable (strict concurrency warning, an error in Swift 6)
+        let confidences = text.runs.compactMap { $0[AttributeScopes.SpeechAttributes.ConfidenceAttribute.self] }
         let mean = confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count)
-        return .final(s, confidence: mean)
+        return .final(s, confidence: mean, audio: audio)
     }
 }

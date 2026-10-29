@@ -1,23 +1,29 @@
-import CoreBluetooth
+@preconcurrency import CoreBluetooth  // CBUUID, CBPeripheral: used on the BLE queue only
 import Foundation
+import os
 
-/// BLE link to the ESP32 board (protocol: see firmware/main/ble_link.c).
+/// BLE link to the ESP32 board (protocol: see firmware/main/ble_link.c and Core/BoardProtocol.swift).
 /// CoreBluetooth callbacks run on a dedicated queue so audio packets never wait for the main thread.
 /// The board's Claude service is used only by the Claude relay (ClaudeRelayService): the translator never reads it.
-final class ESPLink: NSObject, @unchecked Sendable {
-    enum State: Equatable { case off, scanning, connecting, ready }
+///
+/// `BoardLink` (ARCHITECTURE R4): state/audio/control streams, the board info read from `…0005` on connect, the
+/// clock and the language label (kind 3) resent whenever the link becomes ready, the 20 s keepalive, a services
+/// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff
+/// (first rescan at once, then 0.5 s → 10 s).
+/// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
+final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
+    typealias State = BoardState
 
-    static let service = CBUUID(string: "A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let audioChar = CBUUID(string: "A7C00002-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let textChar = CBUUID(string: "A7C00003-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let controlChar = CBUUID(string: "A7C00004-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
+    static let service = CBUUID(string: BoardProtocol.serviceUUID)
+    static let audioChar = CBUUID(string: BoardProtocol.audioUUID)
+    static let textChar = CBUUID(string: BoardProtocol.textUUID)
+    static let controlChar = CBUUID(string: BoardProtocol.controlUUID)
+    static let infoChar = CBUUID(string: BoardProtocol.infoUUID)
 
     static let claudeService = CBUUID(string: "A7C00010-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let claudeRequest = CBUUID(string: "A7C00011-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let claudeAnswer = CBUUID(string: "A7C00012-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
     static let claudeVoice = CBUUID(string: "A7C00013-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-
-    enum TextKind: UInt8 { case subtitle = 0, status = 1, time = 2 }
 
     /// Called on the BLE queue for every audio packet
     var onAudioPacket: (@Sendable (Data) -> Void)?
@@ -36,12 +42,36 @@ final class ESPLink: NSObject, @unchecked Sendable {
     /// which the board takes only on the link holding that role
     var onTranslatorActive: (@Sendable () -> Void)?
 
+    // BoardLink streams (broadcast; sent on the BLE queue)
+    private let stateEvents = Broadcast<BoardState>()
+    private let audioEvents = Broadcast<Data>(bufferingPolicy: .bufferingNewest(BoardProtocol.audioBufferPackets))
+    private let controlEvents = Broadcast<BoardControl>()
+    /// `currentState` and `info`, read from any thread
+    private let shared = OSAllocatedUnfairLock(initialState: (state: BoardState.off,
+                                                              info: BoardLabel.info(from: nil)))
+
+    var state: AsyncStream<BoardState> { stateEvents.stream() }
+    var audio: AsyncStream<Data> { audioEvents.stream() }
+    var control: AsyncStream<BoardControl> { controlEvents.stream() }
+    var currentState: BoardState { shared.withLock { $0.state } }
+    var info: BoardInfo { shared.withLock { $0.info } }
+
     private let queue = DispatchQueue(label: "esp.ble", qos: .userInteractive)
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var textCharacteristic: CBCharacteristic?
     private var controlCharacteristic: CBCharacteristic?
-    private var pendingChunks: [Data] = []
+    /// The board-info characteristic while its value is being read during setup
+    private var infoCharacteristic: CBCharacteristic?
+    /// Subtitle chunks not yet written, tied to the current text characteristic (BLE queue)
+    private var textQueue = BoardWriteQueue<CBCharacteristic>()
+    /// The language label to resend on ready (BLE queue)
+    private var label = BoardLabel()
+    /// Pause before the next scan after a drop or a failed connect (BLE queue)
+    private var backoff = ReconnectBackoff()
+    private var retry: DispatchWorkItem?
+    /// The translator service being set up; callbacks for an older one are ignored (BLE queue)
+    private var setup = SetupGuard<CBService>()
     /// Keepalive on the control characteristic while connected (BLE queue). The board stops streaming audio after
     /// 60 s without any app write: a bonded iPhone keeps the link for notifications (ANCS) after the app is gone.
     private var keepalive: DispatchSourceTimer?
@@ -63,40 +93,39 @@ final class ESPLink: NSObject, @unchecked Sendable {
     /// The relay's last setClaudeSubscribed (a delayed auth retry must not resubscribe after an unsubscribe)
     private var claudeAnswerWanted = false
 
-    /// The round screen fits about 5 lines of 36 px text, so only the tail is sent
-    private let maxTextBytes = 150
-
     override init() {
         super.init()
         central = CBCentralManager(delegate: self, queue: queue)
     }
 
-    /// Sends text to the screen. A new message replaces an unsent one (the board resets its buffer on a first chunk).
+    /// Sends text to the screen (`BoardProtocol.frameText`). A new message replaces an unsent one (the board resets
+    /// its buffer on a first chunk). A label (kind 3) is remembered and resent on every ready; it is sent only to a
+    /// board with board info (older firmware shows unknown kinds as subtitles).
     func send(text: String, kind: TextKind) {
         queue.async { [self] in
-            guard let peripheral, let textCharacteristic else { return }
-            let payload = Data(Self.tail(of: text, maxBytes: maxTextBytes).utf8)
-            let size = max(20, peripheral.maximumWriteValueLength(for: .withoutResponse)) - 2
-            var chunks: [Data] = []
-            var offset = 0
-            repeat {
-                let end = min(offset + size, payload.count)
-                var flags: UInt8 = 0
-                if offset == 0 { flags |= 0x01 }
-                if end == payload.count { flags |= 0x02 }
-                chunks.append(Data([flags, kind.rawValue]) + payload[offset..<end])
-                offset = end
-            } while offset < payload.count
-            pendingChunks = chunks
-            flush(peripheral, textCharacteristic)
+            var shown = text
+            if kind == .label {
+                guard let cut = label.send(text) else { return }
+                shown = cut
+            }
+            guard let peripheral else { return }
+            let chunks = BoardProtocol.frameText(shown, kind: kind,
+                                                 maxWrite: peripheral.maximumWriteValueLength(for: .withoutResponse))
+            guard textQueue.replace(chunks) else { return }
+            flush(peripheral)
         }
+    }
+
+    /// `BoardLink.sendText`: same as `send(text:kind:)`
+    func sendText(_ text: String, kind: TextKind) {
+        send(text: text, kind: kind)
     }
 
     /// Re-sends the wall clock (after a significant time change); does nothing until the link is set up
     func sendTime() {
         queue.async { [self] in
             guard let peripheral, peripheral.state == .connected, let textCharacteristic else { return }
-            write(peripheral, Self.timePayload(), for: textCharacteristic, type: .withResponse)
+            write(peripheral, BoardProtocol.timeFrame(), for: textCharacteristic, type: .withResponse)
         }
     }
 
@@ -159,12 +188,22 @@ final class ESPLink: NSObject, @unchecked Sendable {
         }
     }
 
-    /// The board link is gone (BLE queue)
-    private func linkGone() {
+    /// The translator characteristics are dead (drop, Bluetooth off, services reset) (BLE queue)
+    private func translatorGone() {
         stopKeepalive()
         textCharacteristic = nil
         controlCharacteristic = nil
-        pendingChunks.removeAll()
+        infoCharacteristic = nil
+        textQueue.detach()
+        setup.reset()
+        // The next board may be older firmware: no label and Latin-only until its board info is read
+        label.linkGone()
+        shared.withLock { $0.info = BoardLabel.info(from: nil) }
+    }
+
+    /// The board link is gone (BLE queue)
+    private func linkGone() {
+        translatorGone()
         translatorWritten = false
         let hadClaude = claudeRequestChar != nil
         claudeRequestChar = nil
@@ -187,32 +226,39 @@ final class ESPLink: NSObject, @unchecked Sendable {
         keepalive = nil
     }
 
-    private func flush(_ peripheral: CBPeripheral, _ characteristic: CBCharacteristic) {
-        while !pendingChunks.isEmpty && peripheral.canSendWriteWithoutResponse {
-            write(peripheral, pendingChunks.removeFirst(), for: characteristic, type: .withoutResponse)
+    private func flush(_ peripheral: CBPeripheral) {
+        textQueue.drain(canSend: { peripheral.canSendWriteWithoutResponse }) { characteristic, chunk in
+            write(peripheral, chunk, for: characteristic, type: .withoutResponse)
         }
     }
 
-    /// Wall clock for the board's lock face: one text write, kind 2, ASCII "<unix seconds> <UTC offset minutes>"
-    /// (same format as the Mac's Claude time message; see firmware/main/clock.h)
-    static func timePayload(at date: Date = Date(), in timeZone: TimeZone = .current) -> Data {
-        let seconds = Int64(date.timeIntervalSince1970.rounded(.down))
-        let offset = timeZone.secondsFromGMT(for: date) / 60
-        return Data([0x03, TextKind.time.rawValue]) + Data("\(seconds) \(offset)".utf8)
+    private func setState(_ state: State) {
+        shared.withLock { $0.state = state }
+        stateEvents.send(state)
+        onStateChange?(state)
     }
 
-    /// Takes the tail of a string within a byte budget, never splitting a character
-    private static func tail(of text: String, maxBytes: Int) -> String {
-        guard text.utf8.count > maxBytes else { return text }
-        var result = Substring(text)
-        while result.utf8.count > maxBytes { result = result.dropFirst() }
-        if let space = result.firstIndex(of: " ") { result = result[result.index(after: space)...] }
-        return "…" + result
+    /// After a drop or a failed connect: scan again after the backoff (BLE queue)
+    private func scheduleRescan() {
+        retry?.cancel()
+        let delay = backoff.nextDelay()
+        guard delay > 0 else {
+            startScan()  // the first rescan after a drop is immediate
+            return
+        }
+        Diag.log("ble: rescan in \(delay) s")
+        setState(.scanning)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, central.state == .poweredOn else { return }
+            startScan()
+        }
+        retry = work
+        queue.asyncAfter(deadline: .now() + delay, execute: work)
     }
-
-    private func setState(_ state: State) { onStateChange?(state) }
 
     private func startScan() {
+        retry?.cancel()
+        retry = nil
         if let known = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
             connect(known)
             return
@@ -233,8 +279,11 @@ final class ESPLink: NSObject, @unchecked Sendable {
 extension ESPLink: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         if central.state == .poweredOn {
+            backoff.reset()
             startScan()
         } else {
+            retry?.cancel()
+            retry = nil
             linkGone()
             setState(.off)
         }
@@ -250,22 +299,26 @@ extension ESPLink: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        startScan()
+        scheduleRescan()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         linkGone()
-        startScan()
+        scheduleRescan()
     }
 }
 
 extension ESPLink: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard peripheral === self.peripheral else { return }
         for s in peripheral.services ?? [] {
             switch s.uuid {
             case Self.service:
-                peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar], for: s)
-            case Self.claudeService:
+                setup.begin(s)
+                peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar],
+                                                   for: s)
+            case Self.claudeService where claudeRequestChar == nil:
+                // Once per connection: a translator services reset rediscovers with the relay's characteristics kept
                 peripheral.discoverCharacteristics([Self.claudeRequest, Self.claudeAnswer, Self.claudeVoice], for: s)
             default:
                 break
@@ -288,7 +341,10 @@ extension ESPLink: CBPeripheralDelegate {
             }
             return
         }
-        guard service.uuid == Self.service else { return }
+        // Only the service being set up: a discovery from before a services reset or a drop must not mark its dead
+        // characteristics ready (Review Focus 1)
+        guard service.uuid == Self.service, peripheral === self.peripheral, setup.isCurrent(service) else { return }
+        var info: CBCharacteristic?
         for c in service.characteristics ?? [] {
             switch c.uuid {
             case Self.audioChar: peripheral.setNotifyValue(true, for: c)
@@ -296,28 +352,74 @@ extension ESPLink: CBPeripheralDelegate {
             case Self.controlChar:
                 controlCharacteristic = c
                 peripheral.setNotifyValue(true, for: c)
+            case Self.infoChar: info = c
             default: break
             }
         }
-        // Set the board clock (with response: never dropped or replaced by a subtitle write)
+        // A subtitle sent from now on is kept and written once the clock and the label are out
+        if let textCharacteristic { textQueue.attach(textCharacteristic, ready: false) }
+        // Board info first (absent on older firmware): it decides whether the label is sent
+        if let info {
+            infoCharacteristic = info
+            peripheral.readValue(for: info)
+        } else {
+            finishSetup(peripheral, boardInfo: nil)
+        }
+    }
+
+    /// Board info known (nil: absent or unreadable): clock, label, mic, keepalive, then ready (BLE queue)
+    private func finishSetup(_ peripheral: CBPeripheral, boardInfo value: Data?) {
+        infoCharacteristic = nil
+        let boardInfo = BoardLabel.info(from: value)
+        shared.withLock { $0.info = boardInfo }
+        label.boardInfo(parsed: value.flatMap(BoardProtocol.parseBoardInfo) != nil)
+        Diag.log("ble: board info v\(boardInfo.protocolVersion) fonts \(boardInfo.fontSets)")
+        // Set the board clock, then the label it forgot (with response: never dropped or replaced by a subtitle)
         if let textCharacteristic {
-            write(peripheral, Self.timePayload(), for: textCharacteristic, type: .withResponse)
+            let maxWrite = peripheral.maximumWriteValueLength(for: .withoutResponse)
+            for frame in label.readyFrames(maxWrite: maxWrite) {
+                write(peripheral, frame, for: textCharacteristic, type: .withResponse)
+            }
+            // Then whatever subtitle came in during setup
+            textQueue.markReady()
+            flush(peripheral)
         }
         // Turn the board mic on right away: the conversation starts with no taps
         if let controlCharacteristic {
             write(peripheral, Data([1]), for: controlCharacteristic, type: .withResponse)
             startKeepalive()
         }
+        backoff.reset()
         setState(.ready)
     }
 
+    /// The board changed its GATT table (e.g. new firmware on a bonded phone): the translator characteristics are
+    /// dead. Discover again and redo the setup (board info, clock, label, mic) on the same connection.
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        guard peripheral === self.peripheral, invalidatedServices.contains(where: { $0.uuid == Self.service })
+        else { return }
+        Diag.log("ble: board services changed, setting up again")
+        translatorGone()
+        setState(.connecting)
+        peripheral.discoverServices([Self.service])
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if characteristic.uuid == Self.infoChar {
+            // Only the read of the current setup (a services reset may have replaced it)
+            guard characteristic === infoCharacteristic else { return }
+            if let error { Diag.log("ble: board info read failed: \(error)") }
+            finishSetup(peripheral, boardInfo: error == nil ? characteristic.value : nil)
+            return
+        }
         keepaliveIfStale(peripheral)
         guard let value = characteristic.value else { return }
         if characteristic.uuid == Self.audioChar {
             onAudioPacket?(value)
+            audioEvents.send(value)
         } else if characteristic.uuid == Self.controlChar, let state = value.first {
             onMicChange?(state != 0)
+            controlEvents.send(.micChanged(state != 0))
             onTranslatorActive?()   // the board notifies the control value when it gives the role back
         } else if characteristic.uuid == Self.claudeAnswer {
             onClaudeInput?(value)
@@ -353,9 +455,15 @@ extension ESPLink: CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) {
         if let error, c.uuid == Self.claudeRequest { Diag.log("claude relay write failed: \(error)") }
+        if let error, c.uuid == Self.textChar {
+            // Only the current link's queue: a stale write may fail after a services reset or a reconnect
+            Diag.log("ble: text write failed: \(error)")
+            textQueue.writeFailed(on: c)
+        }
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
-        if let textCharacteristic { flush(peripheral, textCharacteristic) }
+        guard peripheral === self.peripheral else { return }
+        flush(peripheral)
     }
 }
