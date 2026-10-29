@@ -1,62 +1,14 @@
 package vn.cicca.livetranslator.engine
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
-import io.flutter.embedding.engine.plugins.FlutterPlugin
-import io.flutter.embedding.engine.plugins.activity.ActivityAware
-import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.plugin.common.PluginRegistry
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-/**
- * Registers the Android [VoiceEngineApi] on the Flutter engine (added in MainActivity). The engine lives as
- * long as the Flutter engine; [VoiceService] keeps the process in the foreground while a conversation runs.
- */
-class VoiceEnginePlugin : FlutterPlugin, ActivityAware {
-    private var engine: NativeVoiceEngine? = null
-    private var binding: FlutterPlugin.FlutterPluginBinding? = null
-    private var activityBinding: ActivityPluginBinding? = null
-
-    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        this.binding = binding
-        val e = NativeVoiceEngine(binding.applicationContext, PigeonEventSink(binding.binaryMessenger))
-        engine = e
-        VoiceEngineApi.setUp(binding.binaryMessenger, e)
-    }
-
-    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        VoiceEngineApi.setUp(binding.binaryMessenger, null)
-        engine?.shutdown()
-        engine = null
-        this.binding = null
-    }
-
-    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
-        activityBinding = binding
-        engine?.permissions?.let {
-            it.activity = binding.activity
-            binding.addRequestPermissionsResultListener(it)
-        }
-    }
-
-    override fun onDetachedFromActivity() {
-        engine?.permissions?.let {
-            activityBinding?.removeRequestPermissionsResultListener(it)
-            it.activity = null
-        }
-        activityBinding = null
-    }
-
-    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) = onAttachedToActivity(binding)
-    override fun onDetachedFromActivityForConfigChanges() = onDetachedFromActivity()
-}
 
 /** What keeps a conversation alive: the audio session (router) and the foreground service */
 interface ConversationForeground {
@@ -65,9 +17,14 @@ interface ConversationForeground {
     fun stop()
 }
 
-/** Runtime permissions, asked through the Flutter activity */
-class Permissions(private val context: Context) : PluginRegistry.RequestPermissionsResultListener {
-    @Volatile var activity: Activity? = null
+/** Shows the system permission dialog; the answer comes back through [Permissions.onRequestPermissionsResult] */
+fun interface PermissionRequester {
+    fun request(permissions: Array<String>, requestCode: Int)
+}
+
+/** Runtime permissions, asked through the app's activity (VoiceEngineModule sets [requester]) */
+class Permissions(private val context: Context) {
+    @Volatile var requester: PermissionRequester? = null
     private var pending: CompletableDeferred<Boolean>? = null
 
     fun granted(permission: String) =
@@ -77,14 +34,14 @@ class Permissions(private val context: Context) : PluginRegistry.RequestPermissi
     suspend fun ensure(permissions: List<String>): Boolean {
         val missing = permissions.filterNot { granted(it) }
         if (missing.isEmpty()) return true
-        val a = activity ?: return false
+        val r = requester ?: return false
         val result = CompletableDeferred<Boolean>()
         pending = result
-        withContext(Dispatchers.Main) { a.requestPermissions(missing.toTypedArray(), REQUEST) }
+        withContext(Dispatchers.Main) { r.request(missing.toTypedArray(), REQUEST) }
         return result.await() && missing.all { granted(it) }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {
+    fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray): Boolean {
         if (requestCode != REQUEST) return false
         pending?.complete(grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED })
         pending = null
@@ -104,17 +61,18 @@ class Permissions(private val context: Context) : PluginRegistry.RequestPermissi
 }
 
 /**
- * The Android voice engine behind the pigeon [VoiceEngineApi]: mic → [VoiceGate] → Vietnamese recognizer,
- * board audio → the other language's recognizer, ML Kit translation, TTS, downloads and the audio session.
+ * The Android voice engine behind the VoiceEngine TurboModule ([VoiceEngineModule]): mic → [VoiceGate] → home
+ * recognizer, board audio → the other language's recognizer, ML Kit translation, TTS, downloads and the audio
+ * session. The home language always comes from the caller (`capabilities(home)`, the pair).
  *
- * Errors reach Dart as [FlutterError] with the EngineError names (translateFailed, notReady, downloadFailed).
+ * Errors are [EngineException]s with the EngineError names (translateFailed, notReady, downloadFailed).
  */
 class NativeVoiceEngine(
     private val context: Context,
     private val events: EngineEventSink,
     private val recognizers: RecognizerCatalog = DeviceRecognizers(context),
     foreground: ConversationForeground? = null,
-) : VoiceEngineApi {
+) {
     /** The audio session and the foreground service, up while a conversation runs */
     private val foreground: ConversationForeground = foreground ?: object : ConversationForeground {
         override fun start() {
@@ -166,7 +124,7 @@ class NativeVoiceEngine(
             override fun ended(startMs: Long, endMs: Long) = mine.endUtterance(startMs, endMs)
         }, clock = { MicCapture.since(startElapsed) })
         @Volatile var theirSamples = 0L
-        /** What Dart last asked with micOn */
+        /** What JS last asked with micOn */
         @Volatile var micOn = false
 
         fun close() {
@@ -176,23 +134,28 @@ class NativeVoiceEngine(
         }
     }
 
-    override fun capabilities(): CapabilitiesMsg {
+    /** Runs on an IO thread (OS and ML Kit queries can be slow); [home] is the mic side's language */
+    suspend fun capabilities(home: String): CapabilitiesMsg = withContext(Dispatchers.IO) {
         val translatable = translator.translatable()
-        val kinds = recognizers.kinds(translatable)
-        return CapabilitiesMsg(
+        val kinds = recognizers.kinds(home, translatable)
+        CapabilitiesMsg(
             recognizers = kinds.map { (language, list) -> RecognizerEntryMsg(language, list) },
             translatable = translatable,
-            vietnameseVoice = speaker.hasVoice(),
+            vietnameseVoice = speaker.hasVoice(home),
         )
     }
 
-    override fun missing(pair: PairMsg): List<MissingMsg> = MissingItems.compute(
-        translation = translator.missing(pair.home, pair.other),
-        speechModels = recognizers.speechModelsMissing(pair),
-        vietnameseVoice = speaker.hasVoice(),
-    )
+    /** Runs on an IO thread, like [capabilities] */
+    suspend fun missing(pair: PairMsg): List<MissingMsg> = withContext(Dispatchers.IO) {
+        MissingItems.compute(
+            translation = translator.missing(pair.home, pair.other),
+            speechModels = recognizers.speechModelsMissing(pair),
+            vietnameseVoice = speaker.hasVoice(pair.home),
+            home = pair.home,
+        )
+    }
 
-    override suspend fun download(item: MissingMsg) = withContext(Dispatchers.IO) { downloads.download(item) }
+    suspend fun download(item: MissingMsg) = withContext(Dispatchers.IO) { downloads.download(item) }
 
     /**
      * Starts (or switches to) a conversation. Idempotent for the running pair. Starts are ordered by
@@ -201,7 +164,7 @@ class NativeVoiceEngine(
      * once, before the session is published; if it fails nothing is left half-started, so the next
      * start() retries. Switching pairs keeps the foreground up and carries the mic state over.
      */
-    override suspend fun start(pair: PairMsg, recognizerX: String, hints: List<String>) {
+    suspend fun start(pair: PairMsg, recognizerX: String, hints: List<String>) {
         val token = synchronized(lock) {
             // Idempotent: the same pair and generation is already running
             if (session?.pair == pair) return
@@ -236,7 +199,7 @@ class NativeVoiceEngine(
             val micWasOn = old.micOn
             old.close()
             if (micWasOn) {
-                try { micOn(true) } catch (e: FlutterError) { Log.w(TAG, "mic after the switch: ${e.message}") }
+                try { micOn(true) } catch (e: EngineException) { Log.w(TAG, "mic after the switch: ${e.message}") }
             }
         }
     }
@@ -247,7 +210,8 @@ class NativeVoiceEngine(
         val clock = { MicCapture.since(startElapsed) }
         return withContext(Dispatchers.IO) {
             val generation = pair.generation
-            val mineKind = recognizers.mineKind(recognizerX)
+            val mineKind = recognizers.mineKind(pair.home, recognizerX)
+            speaker.hasVoice(pair.home) // speech output in the pair's home language
             val mine = recognizers.create(
                 RecognizerRequest(mineKind, pair.home, hints, mine = true, clock = clock, onResult = { r ->
                     events.mine(
@@ -271,7 +235,7 @@ class NativeVoiceEngine(
     }
 
     /** Idempotent; also cancels a start still in progress */
-    override fun stop() {
+    fun stop() {
         val s: Session?
         val wasUp: Boolean
         synchronized(lock) {
@@ -286,8 +250,8 @@ class NativeVoiceEngine(
         if (s != null || wasUp) Log.i(TAG, "stopped")
     }
 
-    /** Throws `notReady` when the mic cannot start (Dart also gets audioSession(interrupted)) */
-    override fun micOn(on: Boolean) {
+    /** Throws `notReady` when the mic cannot start (JS also gets audioSession(interrupted)) */
+    fun micOn(on: Boolean) {
         val s = synchronized(lock) { session } ?: return
         when {
             // An OS recognizer below Android 13 listens to the mic itself
@@ -298,27 +262,31 @@ class NativeVoiceEngine(
         s.micOn = on
     }
 
-    override fun feedTheirAudio(pcm16le: ByteArray, sampleRate: Long) {
+    /** Board PCM as 16-bit little-endian mono bytes */
+    fun feedTheirAudio(pcm16le: ByteArray, sampleRate: Long) =
+        feedTheirAudio(VoiceGate.pcm16FromBytes(pcm16le), sampleRate.toInt())
+
+    /** Board PCM, mono samples; dropped when no conversation runs */
+    fun feedTheirAudio(pcm: ShortArray, sampleRate: Int) {
         val s = synchronized(lock) { session } ?: return
-        val pcm = VoiceGate.pcm16FromBytes(pcm16le)
         s.theirSamples += pcm.size
-        s.theirs.audio(pcm, sampleRate.toInt())
+        s.theirs.audio(pcm, sampleRate)
     }
 
-    override suspend fun translate(text: String, from: String, to: String): String =
+    suspend fun translate(text: String, from: String, to: String): String =
         withContext(Dispatchers.IO) { translator.translate(text, from, to) }
 
-    override fun speak(text: String, id: Long) = speaker.speak(text, id)
+    fun speak(text: String, id: Long) = speaker.speak(text, id)
 
-    override fun stopSpeaking() = speaker.stop()
+    fun stopSpeaking() = speaker.stop()
 
-    override fun setHints(hints: List<String>) {
+    fun setHints(hints: List<String>) {
         val s = synchronized(lock) { session } ?: return
         s.mine.setHints(hints)
         s.theirs.setHints(hints)
     }
 
-    override fun openTtsSettings() = Speaker.openTtsSettings(context)
+    fun openTtsSettings() = Speaker.openTtsSettings(context)
 
     fun shutdown() {
         stop()

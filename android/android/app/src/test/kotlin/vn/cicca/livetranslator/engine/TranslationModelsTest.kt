@@ -31,7 +31,7 @@ class TranslationModelsTest {
         try {
             models.toDownload("vi", "xx", downloaded = setOf("vi"))
             throw AssertionError("expected downloadFailed")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("downloadFailed", e.code)
         }
     }

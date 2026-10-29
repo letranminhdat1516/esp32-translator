@@ -20,10 +20,14 @@ import java.util.Locale
 class Speaker(
     private val context: Context,
     private val events: EngineEventSink,
-    /** The voice language: always the home language in the app (tests pass one the phone has) */
-    private val locale: Locale = Locale.forLanguageTag(HOME_LANGUAGE),
+    /**
+     * The voice language. The engine sets the home language with [hasVoice] (from `capabilities(home)` and
+     * the pair); until then there is none and [speak] ends each id at once. Tests pass one the phone has.
+     */
+    language: Locale? = null,
 ) {
     private val lock = Any()
+    private var locale: Locale? = language
     private var ready = false
     private var voiceAvailable = false
     private val waiting = ArrayList<Pair<String, Long>>()
@@ -51,6 +55,7 @@ class Speaker(
     }
 
     private fun checkVoice(): Boolean {
+        val locale = locale ?: return false
         val result = tts.isLanguageAvailable(locale)
         val voices = tts.voices.orEmpty().filter { sameLanguage(it.locale, locale) }
         // Engines name locales with ISO 639-1 or 639-2 codes (Samsung: "eng", "vie")
@@ -60,6 +65,16 @@ class Speaker(
     }
 
     val isReady: Boolean get() = synchronized(lock) { ready }
+
+    /** Makes [language] (a language code; the home language in the app) the voice language and checks it */
+    fun hasVoice(language: String): Boolean = synchronized(lock) {
+        val wanted = Locale.forLanguageTag(language)
+        if (wanted != locale) {
+            locale = wanted
+            voiceAvailable = false
+        }
+        hasVoice()
+    }
 
     /** A voice for the locale (Vietnamese in the app) is installed (re-checked on every call once TTS is ready: the user may install one) */
     fun hasVoice(): Boolean = synchronized(lock) {

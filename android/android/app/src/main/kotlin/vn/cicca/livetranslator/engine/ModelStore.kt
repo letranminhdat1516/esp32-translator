@@ -91,7 +91,7 @@ class ModelStore(
             }
             Log.i(TAG, "${spec.fileName}: downloaded and verified ($done bytes)")
             progress(1.0)
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             part.delete()
             throw e
         } catch (e: Exception) {

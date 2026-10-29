@@ -56,8 +56,8 @@ class RecognizerRequest(
  * What recognizers this phone has, and building them for a session.
  */
 interface RecognizerCatalog {
-    /** Recognizer kinds per language code, in preference order (P3) */
-    fun kinds(languages: List<String>): Map<String, List<String>>
+    /** Recognizer kinds per language code of [languages] plus [home] (the mic side), in preference order (P3) */
+    fun kinds(home: String, languages: List<String>): Map<String, List<String>>
 
     /** Languages of the pair whose only offline recognizer is Whisper and whose model is not downloaded */
     fun speechModelsMissing(pair: PairMsg): List<String>
@@ -68,8 +68,8 @@ interface RecognizerCatalog {
      */
     fun create(request: RecognizerRequest): UtteranceRecognizer
 
-    /** The kind used for the Vietnamese side when Dart names only the other side's kind */
-    fun mineKind(recognizerX: String): String
+    /** The kind used for the [home] (mic) side when Dart names only the other side's kind */
+    fun mineKind(home: String, recognizerX: String): String
 }
 
 /**
@@ -91,8 +91,8 @@ class RecognizerChoice(
 ) {
     fun canFeed(kind: String) = kind == Kinds.WHISPER || api >= FED_AUDIO_API
 
-    fun kinds(language: String): List<String> {
-        val fromMic = language == HOME_LANGUAGE
+    /** [fromMic]: the language is the home side, heard by the mic (else it arrives as board PCM) */
+    fun kinds(language: String, fromMic: Boolean): List<String> {
         fun osUsable(kind: String) = fromMic || canFeed(kind)
         return buildList {
             if (language in onDeviceLanguages && osUsable(Kinds.OS_ON_DEVICE)) add(Kinds.OS_ON_DEVICE)
@@ -106,8 +106,8 @@ class RecognizerChoice(
      * takes the best offline one, and online only when Dart asked for online (its consent) and nothing
      * offline exists.
      */
-    fun mine(recognizerX: String): String = when {
-        HOME_LANGUAGE in onDeviceLanguages -> Kinds.OS_ON_DEVICE
+    fun mine(home: String, recognizerX: String): String = when {
+        home in onDeviceLanguages -> Kinds.OS_ON_DEVICE
         whisperAvailable -> Kinds.WHISPER
         recognizerX == Kinds.OS_ONLINE && onlineAvailable -> Kinds.OS_ONLINE
         else -> Kinds.WHISPER

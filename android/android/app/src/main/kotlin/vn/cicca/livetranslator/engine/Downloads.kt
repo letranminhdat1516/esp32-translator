@@ -36,8 +36,9 @@ class Downloads(
         }
         try {
             when (item.kind) {
+                // missing() always names both sides of a translation item
                 MissingKind.TRANSLATION -> translator.download(
-                    item.from ?: HOME_LANGUAGE,
+                    item.from ?: throw EngineErrors.downloadFailed("translation item without a source language"),
                     item.to ?: item.language,
                     report,
                 )
@@ -50,10 +51,10 @@ class Downloads(
                 }
             }
         } catch (e: Exception) {
-            val error = (e as? FlutterError)?.message ?: e.message ?: e.javaClass.simpleName
+            val error = (e as? EngineException)?.message ?: e.message ?: e.javaClass.simpleName
             Log.w(TAG, "download $item failed: $error")
             events.download(DownloadMsg(item, progress = last, done = true, error = error))
-            throw e as? FlutterError ?: EngineErrors.downloadFailed(error)
+            throw e as? EngineException ?: EngineErrors.downloadFailed(error)
         }
         Log.i(TAG, "download $item done")
         events.download(DownloadMsg(item, progress = 1.0, done = true))
@@ -75,10 +76,16 @@ fun Context.isOnline(): Boolean {
 object MissingItems {
     /**
      * [translation]: the ML Kit item for the pair, if any; [speechModels]: languages of the pair that need
-     * the Whisper model and do not have it; [vietnameseVoice]: a Vietnamese TTS voice is installed.
+     * the Whisper model and do not have it; [vietnameseVoice]: a TTS voice for [home] (Vietnamese in the app)
+     * is installed.
      */
-    fun compute(translation: List<MissingMsg>, speechModels: List<String>, vietnameseVoice: Boolean): List<MissingMsg> =
+    fun compute(
+        translation: List<MissingMsg>,
+        speechModels: List<String>,
+        vietnameseVoice: Boolean,
+        home: String,
+    ): List<MissingMsg> =
         speechModels.map { MissingMsg(MissingKind.SPEECH_MODEL, it) } +
             translation +
-            (if (vietnameseVoice) emptyList() else listOf(MissingMsg(MissingKind.TTS_VOICE, HOME_LANGUAGE)))
+            (if (vietnameseVoice) emptyList() else listOf(MissingMsg(MissingKind.TTS_VOICE, home)))
 }

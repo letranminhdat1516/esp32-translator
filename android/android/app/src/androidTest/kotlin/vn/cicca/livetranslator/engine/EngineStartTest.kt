@@ -40,9 +40,9 @@ class EngineStartTest {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
 
-        override fun kinds(languages: List<String>) = emptyMap<String, List<String>>()
+        override fun kinds(home: String, languages: List<String>) = emptyMap<String, List<String>>()
         override fun speechModelsMissing(pair: PairMsg) = emptyList<String>()
-        override fun mineKind(recognizerX: String) = Kinds.WHISPER
+        override fun mineKind(home: String, recognizerX: String) = Kinds.WHISPER
         override fun create(request: RecognizerRequest): UtteranceRecognizer {
             if (holdNext) {
                 holdNext = false
@@ -132,7 +132,7 @@ class EngineStartTest {
         try {
             engine.start(pair(1), Kinds.WHISPER, emptyList())
             throw AssertionError("expected notReady")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("notReady", e.code)
         }
         assertFalse(engine.isRunning)

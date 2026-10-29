@@ -11,4 +11,3 @@
 -keep class vn.cicca.livetranslator.engine.NativeVoiceEngine { public *; }
 -keep class vn.cicca.livetranslator.engine.PairMsg { *; }
 -keep class vn.cicca.livetranslator.engine.TheirsMsg { *; }
--keep class vn.cicca.livetranslator.engine.EngineErrorsKt { *; }

@@ -8,10 +8,6 @@ import com.google.mlkit.nl.translate.TranslateRemoteModel
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
 
@@ -62,36 +58,15 @@ class MlKitTranslator(
     /** Every language ML Kit can translate, as language tags */
     fun translatable(): List<String> = TranslateLanguage.getAllLanguages().sorted()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     /**
-     * Downloaded models as last seen. `missing()` is a synchronous call on the main thread, and ML Kit
-     * completes getDownloadedModels through the main looper, so blocking there deadlocks (measured: 5 s
-     * timeout on the Note 9). The set is refreshed off the main thread at launch, after every download and
-     * after every `missing()`.
+     * The downloaded models. ML Kit completes the query through the main looper, so this must not be awaited
+     * by blocking the main thread (the engine calls it from a background coroutine).
      */
-    @Volatile private var cached: Set<String>? = null
-
-    init {
-        refresh()
-    }
-
     suspend fun downloaded(): Set<String> =
-        (manager.getDownloadedModels(TranslateRemoteModel::class.java).await().map { it.language }.toSet() +
-            TranslateLanguage.ENGLISH).also { cached = it }
+        manager.getDownloadedModels(TranslateRemoteModel::class.java).await().map { it.language }.toSet() +
+            TranslateLanguage.ENGLISH
 
-    private fun refresh() {
-        scope.launch {
-            try { downloaded() } catch (e: Exception) { Log.w(TAG, "model list: ${e.message}") }
-        }
-    }
-
-    /** Never blocks: answers from the cached model list (until the first refresh lands, models count as missing) */
-    fun missing(home: String, other: String): List<MissingMsg> {
-        val have = cached ?: setOf(TranslateLanguage.ENGLISH)
-        refresh()
-        return models.missing(home, other, have)
-    }
+    suspend fun missing(home: String, other: String): List<MissingMsg> = models.missing(home, other, downloaded())
 
     /** Downloads every model the pair still needs. [progress] gets 0 before and 1 after (no finer progress in ML Kit) */
     suspend fun download(home: String, other: String, progress: (Double) -> Unit) {

@@ -43,7 +43,7 @@ class MicCaptureTest {
         try {
             mic.start()
             throw AssertionError("expected notReady")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("notReady", e.code)
         }
         assertFalse(mic.isRunning)

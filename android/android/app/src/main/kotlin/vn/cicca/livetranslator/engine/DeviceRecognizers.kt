@@ -41,9 +41,10 @@ class DeviceRecognizers(
         d.download(progress)
     }
 
-    override fun kinds(languages: List<String>): Map<String, List<String>> {
+    override fun kinds(home: String, languages: List<String>): Map<String, List<String>> {
         val c = choice()
-        return (languages + HOME_LANGUAGE).distinct().associateWith { c.kinds(it) }.filterValues { it.isNotEmpty() }
+        return (languages + home).distinct().associateWith { c.kinds(it, fromMic = it == home) }
+            .filterValues { it.isNotEmpty() }
     }
 
     override fun speechModelsMissing(pair: PairMsg): List<String> {
@@ -51,12 +52,13 @@ class DeviceRecognizers(
         if (!w.libraryLoaded || w.modelPresent()) return emptyList()
         val c = choice()
         // Whisper is needed where no on-device OS recognizer can serve the language
-        return listOf(pair.home, pair.other).distinct().filter { Kinds.OS_ON_DEVICE !in c.kinds(it) }
+        return listOf(pair.home, pair.other).distinct()
+            .filter { Kinds.OS_ON_DEVICE !in c.kinds(it, fromMic = it == pair.home) }
     }
 
     override fun create(request: RecognizerRequest): UtteranceRecognizer {
         val c = choice()
-        val offered = c.kinds(request.language)
+        val offered = c.kinds(request.language, fromMic = request.mine)
         val fed = request.kind == Kinds.WHISPER || c.canFeed(request.kind)
         return when (request.kind) {
             Kinds.WHISPER -> {
@@ -77,9 +79,9 @@ class DeviceRecognizers(
         }
     }
 
-    override fun mineKind(recognizerX: String): String = choice().mine(recognizerX)
+    override fun mineKind(home: String, recognizerX: String): String = choice().mine(home, recognizerX)
 
-    /** Installed on-device languages (API 33+), asked once at launch; capabilities() must answer at once */
+    /** Installed on-device languages (API 33+), asked once at launch */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     private fun queryOnDeviceLanguages() {
         Handler(Looper.getMainLooper()).post {

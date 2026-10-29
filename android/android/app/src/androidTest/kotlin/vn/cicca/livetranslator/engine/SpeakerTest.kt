@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,7 +40,7 @@ class SpeakerTest {
     }
 
     @Test fun speakEmitsStartThenEndInOrder() {
-        speaker = newSpeaker()
+        speaker = newSpeaker(Locale.forLanguageTag(HOME_LANGUAGE))
         val voice = speaker.hasVoice()
         Log.i(TAG, "Vietnamese voice installed: $voice")
         speaker.speak("Xin chào", 1)
@@ -86,12 +87,23 @@ class SpeakerTest {
 
     @Test fun missingIncludesTtsVoiceExactlyWhenNoVietnameseVoice() {
         speaker = newSpeaker()
-        val voice = speaker.hasVoice()
+        val voice = speaker.hasVoice(HOME_LANGUAGE)
         val items = MissingItems.compute(
-            translation = emptyList(), speechModels = emptyList(), vietnameseVoice = voice,
+            translation = emptyList(), speechModels = emptyList(), vietnameseVoice = voice, home = HOME_LANGUAGE,
         )
         Log.i(TAG, "Vietnamese voice $voice → missing $items")
         assertEquals(!voice, items.any { it.kind == MissingKind.TTS_VOICE })
+    }
+
+    /** The engine gives the voice language later (capabilities(home), the pair); none before that */
+    @Test fun theVoiceLanguageComesFromTheCaller() {
+        speaker = newSpeaker()
+        assertFalse("no language yet: no voice", speaker.hasVoice())
+        assertTrue("the phone needs an English voice for this test", speaker.hasVoice("en"))
+        assertTrue(speaker.hasVoice())
+        speaker.speak("One", 31)
+        waitFor(20_000) { "end 31" in log }
+        assertEquals(listOf("start 31", "end 31"), log.toList())
     }
 
     @Test fun openTtsSettingsShowsTheSystemScreen() {

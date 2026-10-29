@@ -41,7 +41,7 @@ class ModelStoreTest {
         try {
             s.download {}
             throw AssertionError("expected downloadFailed")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("downloadFailed", e.code)
             assertTrue(e.message.orEmpty(), "SHA-256" in e.message.orEmpty())
         }
@@ -60,7 +60,7 @@ class ModelStoreTest {
         try {
             store(online = false).download {}
             throw AssertionError("expected downloadFailed")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("downloadFailed", e.code)
         }
     }
@@ -73,7 +73,7 @@ class ModelStoreTest {
         try {
             s.download {}
             throw AssertionError("expected downloadFailed")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("downloadFailed", e.code)
         }
         assertEquals(0, tmp.root.listFiles()!!.size)

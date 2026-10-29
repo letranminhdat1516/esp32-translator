@@ -37,7 +37,7 @@ class OsRecognizerTest {
 
     @Test fun onDeviceIsReportedUnavailableBelowAndroid13() {
         assumeTrue(Build.VERSION.SDK_INT < RecognizerChoice.FED_AUDIO_API)
-        val kinds = catalog().kinds(listOf("en", "ja", "fr"))
+        val kinds = catalog().kinds(HOME_LANGUAGE, listOf("en", "ja", "fr"))
         Log.i(TAG, "capabilities on API ${Build.VERSION.SDK_INT}: $kinds")
         assertTrue(kinds.toString(), kinds.values.none { Kinds.OS_ON_DEVICE in it })
         // The board side cannot use OS recognizers here (no PCM feed below API 33)
@@ -45,14 +45,14 @@ class OsRecognizerTest {
         try {
             catalog().create(request(Kinds.OS_ON_DEVICE, HOME_LANGUAGE, mine = true))
             throw AssertionError("expected notReady")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("notReady", e.code)
         }
     }
 
     @Test fun onlineIsOfferedForTheMicSideWhenAServiceExists() {
         val online = SpeechRecognizer.isRecognitionAvailable(context)
-        val kinds = catalog().kinds(listOf("en"))
+        val kinds = catalog().kinds(HOME_LANGUAGE, listOf("en"))
         Log.i(TAG, "recognition service available: $online, kinds: $kinds")
         assertEquals(online, kinds[HOME_LANGUAGE].orEmpty().contains(Kinds.OS_ONLINE))
     }
@@ -62,7 +62,7 @@ class OsRecognizerTest {
         try {
             catalog().create(request(Kinds.OS_ONLINE, "en", mine = false))
             throw AssertionError("expected notReady")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("notReady", e.code)
             assertTrue(e.message.orEmpty(), "Android 13" in e.message.orEmpty())
         }
@@ -71,7 +71,7 @@ class OsRecognizerTest {
     @Test fun onlineIsUsedOnlyWhenDartAsksForIt() {
         val c = catalog()
         // Whatever Dart asks for the board side, the mic side never goes online on its own
-        assertTrue(c.mineKind(Kinds.WHISPER) != Kinds.OS_ONLINE)
+        assertTrue(c.mineKind(HOME_LANGUAGE, Kinds.WHISPER) != Kinds.OS_ONLINE)
         // Asked for online (Dart holds the consent): a mic-mode recognizer that listens itself
         assumeTrue(SpeechRecognizer.isRecognitionAvailable(context))
         val results = CopyOnWriteArrayList<Recognized>()

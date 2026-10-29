@@ -46,13 +46,13 @@ class VoiceServiceTest {
 
     private val created = CopyOnWriteArrayList<Pair<String, String>>()
     private val catalog = object : RecognizerCatalog {
-        override fun kinds(languages: List<String>) = emptyMap<String, List<String>>()
+        override fun kinds(home: String, languages: List<String>) = emptyMap<String, List<String>>()
         override fun speechModelsMissing(pair: PairMsg) = emptyList<String>()
         override fun create(request: RecognizerRequest): UtteranceRecognizer {
             created += request.kind to request.language
             return Recording()
         }
-        override fun mineKind(recognizerX: String) = Kinds.WHISPER
+        override fun mineKind(home: String, recognizerX: String) = Kinds.WHISPER
     }
     private lateinit var engine: NativeVoiceEngine
 

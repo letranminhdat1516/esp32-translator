@@ -147,7 +147,7 @@ class WhisperTest {
         lateinit var engine: NativeVoiceEngine
         instrumentation.runOnMainSync { engine = NativeVoiceEngine(context, sink) }
         try {
-            val caps = engine.capabilities()
+            val caps = engine.capabilities(HOME_LANGUAGE)
             val kinds = caps.recognizers.associate { it.language to it.kinds }
             Log.i(TAG, "capabilities: vi=${kinds[HOME_LANGUAGE]} en=${kinds["en"]} translatable=${caps.translatable.size} voice=${caps.vietnameseVoice}")
             assertEquals(Kinds.WHISPER, kinds[HOME_LANGUAGE]?.first())

@@ -5,6 +5,9 @@ import android.net.ConnectivityManager
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -13,6 +16,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * E3 on the device. [downloadThenTranslate] needs the network. [translatesOffline] runs only with the
@@ -60,25 +65,28 @@ class MlKitTranslatorTest {
         try {
             translator.translate("hello", other, absent!!)
             throw AssertionError("expected notReady")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("notReady", e.code)
         }
     }
 
-    /** missing() is a synchronous pigeon call on the main thread: the ML Kit query must not deadlock there */
-    @Test fun missingAnswersOnTheMainThread() {
+    /**
+     * missing() is an async pigeon call launched on the main thread; ML Kit completes its query through the main
+     * looper, so it must suspend there, not block. The first call already sees the real model list.
+     */
+    @Test fun missingAnswersWhenLaunchedOnTheMainThread() {
         val translator = MlKitTranslator({ context.isOnline() })
-        // The answer the background query gives (off the main thread, where awaiting works)
         val expected = runBlocking { TranslationModels().missing(home, other, translator.downloaded()) }
         var result: List<MissingMsg>? = null
-        var ms = 0L
+        val done = CountDownLatch(1)
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            val t0 = android.os.SystemClock.elapsedRealtime()
-            result = translator.missing(home, other)
-            ms = android.os.SystemClock.elapsedRealtime() - t0
+            CoroutineScope(Dispatchers.Main).launch {
+                result = translator.missing(home, other)
+                done.countDown()
+            }
         }
-        Log.i(TAG, "missing() on main: $result in $ms ms")
-        assertTrue("took $ms ms", ms < 200)
+        assertTrue("missing() did not answer", done.await(5, TimeUnit.SECONDS))
+        Log.i(TAG, "missing() launched on main: $result")
         assertEquals(expected, result)
     }
 
@@ -89,7 +97,7 @@ class MlKitTranslatorTest {
         try {
             translator.download(home, absent) { progress += it }
             throw AssertionError("expected downloadFailed")
-        } catch (e: FlutterError) {
+        } catch (e: EngineException) {
             assertEquals("downloadFailed", e.code)
         }
         assertEquals(listOf(0.0), progress)
