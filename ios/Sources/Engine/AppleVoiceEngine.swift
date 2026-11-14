@@ -47,7 +47,7 @@ protocol EngineMic: AnyObject {
     func stop()
 }
 
-/// What the engine needs from the device, replaceable in tests (`AppleVoiceEngine.live()` on iOS)
+/// What the engine needs from the device, replaceable in tests (`AppleVoiceEngine.live(packs:)` on iOS)
 struct AppleEnginePlatform {
     typealias MakeMic = @MainActor (_ format: AVAudioFormat, _ gate: VoiceGate,
                                     _ sink: @escaping (AVAudioPCMBuffer) -> Void,

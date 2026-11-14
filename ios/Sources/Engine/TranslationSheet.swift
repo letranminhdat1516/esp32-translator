@@ -4,10 +4,10 @@ import Translation
 import UIKit
 
 extension Downloads.Work {
-    /// The real downloads (computed: a stored static of a non-Sendable type is not concurrency safe)
-    static var live: Downloads.Work { Downloads.Work(
+    /// The real downloads; `locales` map the items' pack codes to the frameworks' locales
+    static func live(locales: EngineLocales) -> Downloads.Work { Downloads.Work(
         translation: { from, to in
-            let source = Locale.Language(identifier: from), target = Locale.Language(identifier: to)
+            let source = locales.translationLanguage(from), target = locales.translationLanguage(to)
             let availability = LanguageAvailability()
             if await availability.status(from: source, to: target) == .installed { return }
             try await TranslationSheet.prepare(source: source, target: target)
@@ -17,7 +17,7 @@ extension Downloads.Work {
             }
         },
         speech: { language, progress in
-            guard let recognizer = await LiveTranscriber.resolve(language) else {
+            guard let recognizer = await LiveTranscriber.resolve(locales.speechLocale(language).identifier) else {
                 throw DownloadFailure("no on-device recognizer for \(language)")
             }
             try await recognizer.installAssets(progress: progress)

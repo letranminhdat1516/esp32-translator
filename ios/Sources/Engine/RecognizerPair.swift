@@ -42,7 +42,8 @@ final class RecognizerPair {
     private var live = LiveSwitch()
 
     /// `beforeStart` runs at the beginning of a fresh start (the app asks for the mic permission there)
-    init(events: EngineEventSink, factory: @escaping Factory = { await LiveTranscriber.resolve($0) },
+    /// `factory` gets a pack code and maps it to the recognizer's locale (`EngineLocales.speechLocale`)
+    init(events: EngineEventSink, factory: @escaping Factory,
          beforeStart: @escaping @MainActor () async -> Void = {}) {
         self.events = events
         self.factory = factory
