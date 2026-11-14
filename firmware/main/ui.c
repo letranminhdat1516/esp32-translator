@@ -3,7 +3,7 @@
  *   top    : the other person's language while translating ("English", "日本語"), else the connection state
  *   middle : live subtitles for the other person (streamed by the app while you speak), centred while they fit
  *   bottom : round board mic button (mic icon; slashed and dimmed when off)
- *   edge   : a faint track around the rim; a thin blue arc grows along it with the speaker's level
+ *   edge   : level ring around the rim, brighter and thicker the louder the speaker (hidden in silence)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,7 +25,6 @@ LV_FONT_DECLARE(font_vi_36);
 #define COLOR_LIGHT   0xe3eaf0
 #define COLOR_OUTLINE 0x2a2d33
 #define COLOR_OFF_BG  0x16171a
-#define COLOR_TRACK   0x1c1d21
 
 /* Status while translating; replaced by the language label (kind 3) alone once the app sent one */
 #define LIVE_STATUS "Live translation"
@@ -160,10 +159,6 @@ lv_obj_t *ui_translator_screen(void)
     return s_translator_scr;
 }
 
-/* LVGL angles: 0 = 3 o'clock, clockwise. 110 is the lower left, where the design's arc starts */
-#define RING_START    110
-#define RING_MIN_SPAN 24
-
 void ui_set_level(int percent)
 {
     if (percent < 0) {
@@ -177,12 +172,11 @@ void ui_set_level(int percent)
     }
     s_level = percent;
     lock();
-    /* The track stays; the blue arc grows from the lower left, clockwise, with the level (dim when faint) */
-    if (percent == 0) {
-        lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
-    } else {
-        lv_arc_set_angles(s_ring, RING_START, RING_START + RING_MIN_SPAN + percent * (360 - RING_MIN_SPAN) / 100);
-        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(110 + percent * 145 / 100), LV_PART_INDICATOR);
+    lv_obj_set_hidden(s_ring, percent == 0);
+    if (percent != 0) {
+        /* Faint speech: thin and dim; clear speech: thick and bright */
+        lv_obj_set_style_arc_width(s_ring, 3 + percent / 12, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(60 + percent * 195 / 100), LV_PART_INDICATOR);
     }
     unlock();
 }
@@ -359,18 +353,14 @@ void ui_init(void)
     s_ring = lv_arc_create(scr);
     lv_obj_set_size(s_ring, 462, 462);
     lv_obj_center(s_ring);
-    lv_arc_set_rotation(s_ring, 0);
     lv_arc_set_bg_angles(s_ring, 0, 360);
-    lv_arc_set_angles(s_ring, RING_START, RING_START + RING_MIN_SPAN);
+    lv_arc_set_angles(s_ring, 0, 360);
     lv_obj_remove_style(s_ring, NULL, LV_PART_KNOB);
     lv_obj_set_clickable(s_ring, false);
-    lv_obj_set_style_arc_width(s_ring, 7, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(s_ring, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_ring, 7, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(s_ring, true, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_ring, 6, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_EN), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
+    lv_obj_set_hidden(s_ring, true);
 
     s_text_box = lv_obj_create(scr);
     /* 360 wide: the top and bottom lines stay inside the round glass. Exactly four lines tall, so a long
