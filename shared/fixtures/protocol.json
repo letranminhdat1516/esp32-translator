@@ -181,6 +181,14 @@
       }
     },
     {
+      "name": "version 2: pairing by code enforced",
+      "hex": "0201000000",
+      "expected": {
+        "protocolVersion": 2,
+        "fontSets": 1
+      }
+    },
+    {
       "name": "short input is null",
       "hex": "01030000",
       "expected": null

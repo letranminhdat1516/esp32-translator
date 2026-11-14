@@ -2,7 +2,12 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "board_info.h"
 #include "pairing.h"
+
+/* This firmware enforces pairing by code (the access rules below), so board info must say so: the app pins a board
+ * as secure only at version >= 2 and refuses a secure pin that reports less */
+_Static_assert(BOARD_INFO_VERSION >= 2, "board info must report pairing by code (version 2)");
 
 #define SEC 1000000LL
 #define MIN (60 * SEC)

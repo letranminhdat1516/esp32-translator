@@ -10,7 +10,8 @@
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
- *   info    ...0005  read    : open (the app reads it before pairing)
+ *   info    ...0005  read    : open (the app reads it before pairing): [version u8][font_sets u32 LE]; version 2 =
+ *                              pairing by code enforced (board_info.h), which the app requires of a pinned board
  *
  * Pairing by code (pairing.h): LE Secure Connections numeric comparison only (sm_sc_only; passkey entry and OOB
  * drop the link). Text, control and the audio / control CCCDs need an encrypted, authenticated link with a 16-byte
