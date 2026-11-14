@@ -144,6 +144,10 @@ protocol VoiceEngine: AnyObject, Sendable {
     /// PCM from the board, 16-bit mono.
     /// Throws `EngineError.notReady` while either recognizer (the other language's or the home one) is not running (never started, stopped, or died) until the next successful `start`.
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws
+    /// The same liveness check as `feedTheirAudio` without audio: throws `EngineError.notReady` while either
+    /// recognizer is not running. Phone-only feeds their recognizer from the iPhone mic inside the engine, so the
+    /// controller asks this instead of waiting for board audio.
+    func checkRecognizers() async throws
     /// Throws `EngineError.translateFailed` on failure; the caller decides the fallback.
     func translate(_ text: String, from: String, to: String) async throws -> String
     /// `ttsStart(id)` and `ttsEnd(id)` follow.
@@ -183,6 +187,7 @@ struct EngineEvents: Sendable {
 
 extension VoiceEngine {
     func setInputMode(_ mode: InputMode) async throws {}
+    func checkRecognizers() async throws {}
     func setTalkHeld(_ held: Bool) async throws {}
 
     /// Subscribes to all seven event streams now (synchronously); see the race note on `VoiceEngine`.

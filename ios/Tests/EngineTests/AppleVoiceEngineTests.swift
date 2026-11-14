@@ -409,6 +409,24 @@ final class AppleVoiceEngineTests: XCTestCase {
         XCTAssertEqual(error, .notReady)
     }
 
+    /// Phone-only's death signal: the same check without audio, for either recognizer
+    func testCheckRecognizersReportsADeadRecognizer() async throws {
+        let x = FakeRecognizer("en")
+        let r = rig(en: [x])
+        let before = await engineError { try await r.engine.checkRecognizers() }
+        XCTAssertEqual(before, .notReady, "before start")
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.checkRecognizers()
+        x.failFatally()
+        var after: EngineError?
+        for _ in 0..<200 where after == nil {
+            after = await engineError { try await r.engine.checkRecognizers() }
+            if after == nil { try? await Task.sleep(for: .milliseconds(5)) }
+        }
+        XCTAssertEqual(after, .notReady)
+        XCTAssertEqual(x.fedFrames, 0, "checking feeds nothing")
+    }
+
     // MARK: Board audio while their recognizer is not running (the controller's "recognizer died" signal)
 
     private let pcm = [Int16](repeating: 100, count: 320)

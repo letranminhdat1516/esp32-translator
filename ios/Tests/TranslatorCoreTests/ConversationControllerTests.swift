@@ -57,6 +57,7 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     private var _missingLatch: Latch?
     private var _speakFails = false
     private var _missingByLanguage: [String: [MissingMsg]]?
+    private var _recognizerChecks = 0
 
     init(_ fake: FakeVoiceEngine) { self.fake = fake }
 
@@ -101,6 +102,15 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     }
     func stop() async throws { try await fake.stop() }
     func micOn(_ on: Bool) async throws { try await fake.micOn(on) }
+    /// How often `checkRecognizers` was called.
+    var recognizerChecks: Int { lock.withLock { _recognizerChecks } }
+    func checkRecognizers() async throws {
+        let error = lock.withLock { () -> Error? in
+            _recognizerChecks += 1
+            return _feedError
+        }
+        if let error { throw error }
+    }
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
         if let error = lock.withLock({ _feedError }) { throw error }
         try await fake.feedTheirAudio(pcm, sampleRate: sampleRate)

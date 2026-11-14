@@ -25,6 +25,9 @@ final class ConversationController {
         var maxLines = 100
         /// The board mic streams 16 kHz mono
         var boardSampleRate = 16_000
+        /// Phone-only: how often the engine is asked whether both recognizers still run (no board audio = no
+        /// `feedTheirAudio` to report a death)
+        var recognizerCheckInterval: TimeInterval = 1
     }
 
     /// The pick when nothing is saved: the Swift app's EN ↔ VI pair.
@@ -77,6 +80,8 @@ final class ConversationController {
     private var openedOnce = false
     private var activity = ConversationActivity()
     private var micChain: Task<Void, Never>?
+    /// Phone-only's recognizer checks (`startRecognizerChecks`)
+    private var recognizerChecks: Task<Void, Never>?
 
     // Their side
     private var decoder = ADPCMDecoder()
@@ -191,7 +196,8 @@ final class ConversationController {
         tasks.removeAll()
         for task in oneOffs.values { task.cancel() }
         oneOffs.removeAll()
-        for task in [theirWorker, speechChain, micChain, boardChain, levelDecay] { task?.cancel() }
+        for task in [theirWorker, speechChain, micChain, boardChain, levelDecay, recognizerChecks] { task?.cancel() }
+        recognizerChecks = nil
         levelDecay = nil
         theirWorker = nil
         speechChain = nil
@@ -660,15 +666,42 @@ final class ConversationController {
         let e = epoch
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
-        } catch EngineError.notReady {
-            // A recognizer is gone, the board's or mine (the only error that means death); the machine allows one
-            // restart per running session, then `failed`
-            guard epoch == e, case .running = session.state else { return }
-            Diag.log("controller: a recognizer stopped")
-            dropMyPartial()
-            apply(.recognizerDied)
         } catch {
-            Diag.log("controller: feedTheirAudio failed: \(error)")
+            recognizerError(error, epoch: e, from: "feedTheirAudio")
+        }
+    }
+
+    /// A recognizer is gone, the board's or mine: `notReady` is the only error that means death. The machine allows
+    /// one restart per running session, then `failed`. Board audio and phone-only's checks both end here.
+    private func recognizerError(_ error: Error, epoch e: Int, from source: String) {
+        guard case EngineError.notReady = error else {
+            Diag.log("controller: \(source) failed: \(error)")
+            return
+        }
+        guard epoch == e, case .running = session.state else { return }
+        Diag.log("controller: a recognizer stopped (\(source))")
+        dropMyPartial()
+        apply(.recognizerDied)
+    }
+
+    /// Phone-only: the iPhone mic feeds their recognizer inside the engine, so no board audio reports a death; the
+    /// engine is asked every `recognizerCheckInterval` while phone-only runs.
+    private func startRecognizerChecks() {
+        recognizerChecks?.cancel()
+        let interval = tuning.recognizerCheckInterval, engine = self.engine
+        recognizerChecks = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled, let self else { return }
+                guard inputMode == .phoneOnly, engineStarted, case .running = session.state else { continue }
+                let e = epoch
+                do {
+                    try await engine.checkRecognizers()
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    recognizerError(error, epoch: e, from: "phone-only check")
+                }
+            }
         }
     }
 
@@ -929,6 +962,12 @@ final class ConversationController {
         inputMode = mode
         ui.phoneOnly = on
         if !on { ui.talkHeld = false }
+        if on {
+            startRecognizerChecks()
+        } else {
+            recognizerChecks?.cancel()
+            recognizerChecks = nil
+        }
         onMicSide?(on ? .theirs : .mine)
         enqueueRouting { try await $0.setInputMode(mode) }
     }
