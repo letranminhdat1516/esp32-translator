@@ -53,9 +53,9 @@ final class RecognizerPair {
     /// generation and hints changed), true for a fresh start. Throws `notReady` when a recognizer is missing,
     /// fails, or a later `start`/`stop` overtook this one.
     func start(_ pair: PairMsg, hints: [String]) async throws -> Bool {
-        // A dead X recognizer (its analysis ended with an error) is rebuilt even for the same languages
+        // A dead recognizer, X or home (its analysis ended with an error), is rebuilt even for the same languages
         if let running = self.pair, running.home == pair.home, running.other == pair.other, let x = theirs,
-           x.isAlive {
+           x.isAlive, mineAlive {
             self.pair = pair
             generation.value = pair.generation
             await x.setHints(hints)
@@ -141,6 +141,9 @@ final class RecognizerPair {
     /// The X recognizer runs: false before a start, after a stop, and once its analysis ended with an error,
     /// until the next successful start
     var theirsAlive: Bool { theirs?.isAlive ?? false }
+
+    /// The home recognizer runs, with the same meaning as `theirsAlive`
+    var mineAlive: Bool { mine?.isAlive ?? false }
 }
 
 /// A switch read from the recognizers' result tasks

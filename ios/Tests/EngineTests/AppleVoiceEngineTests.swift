@@ -415,11 +415,46 @@ final class AppleVoiceEngineTests: XCTestCase {
         XCTAssertTrue(dead.stopped)
     }
 
+    /// The home recognizer's analysis ended with an error: board audio throws `notReady` too (the controller's
+    /// one "recognizer died" signal, so the user's side is restarted once, then `failed`), the mic cannot be taken
+    /// for a dead recognizer, and a start with the same pair rebuilds everything (P2, ARCHITECTURE §6)
+    func testADeadHomeRecognizerIsNotReadyUntilARestart() async throws {
+        let dead = FakeRecognizer("vi"), fresh = FakeRecognizer("vi")
+        let r = rig(en: [FakeRecognizer("en"), FakeRecognizer("en")], vi: [dead, fresh])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        dead.failFatally()
+        let feed = await engineError { try await r.engine.feedTheirAudio(self.pcm, sampleRate: 16_000) }
+        XCTAssertEqual(feed, .notReady, "a dead home recognizer is reported, not fed around")
+        let mic = await engineError { try await r.engine.micOn(true) }
+        XCTAssertEqual(mic, .notReady, "the mic is not taken for a dead recognizer")
+        XCTAssertTrue(r.mics.isEmpty)
+
+        try await r.engine.start(pair: PairMsg(home: "vi", other: "en", generation: 2), recognizerX: onDevice,
+                                 hints: [])
+        XCTAssertEqual(r.speakers.count, 2, "a dead home recognizer counts as a different pair: all is rebuilt")
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        try await r.engine.micOn(true)
+        let sink = try XCTUnwrap(r.mics.last).sink
+        sink(try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: XCTUnwrap(fresh.audioFormat), frameCapacity: 160)).filled())
+        XCTAssertGreaterThan(fresh.fedFrames, 0, "the mic feeds the fresh home recognizer")
+        XCTAssertEqual(dead.fedFrames, 0)
+        await until { dead.stopped }
+        XCTAssertTrue(dead.stopped)
+    }
+
     func testHintsGoToTheirRecognizer() async throws {
         let x = FakeRecognizer("en")
         let r = rig(en: [x])
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
         try await r.engine.setHints(["Chợ Bến Thành"])
         XCTAssertEqual(x.hints.last, ["Chợ Bến Thành"])
+    }
+}
+
+private extension AVAudioPCMBuffer {
+    func filled() -> AVAudioPCMBuffer {
+        frameLength = frameCapacity
+        return self
     }
 }

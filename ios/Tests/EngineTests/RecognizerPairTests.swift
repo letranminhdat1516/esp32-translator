@@ -110,6 +110,30 @@ final class RecognizerPairTests: XCTestCase {
         XCTAssertFalse(engine.theirsAlive, "stopped")
     }
 
+    /// The home (Vietnamese) recognizer dies the same way: `mineAlive` drops and a same-language start rebuilds
+    /// the pair instead of keeping a dead home recognizer behind a live X one (P2, ARCHITECTURE §6)
+    func testHomeRecognizerAliveFollowsStartStopAndFatalErrors() async throws {
+        let dead = FakeRecognizer("vi"), fresh = FakeRecognizer("vi")
+        var xs = [FakeRecognizer("en"), FakeRecognizer("en")], homes = [dead, fresh]
+        let engine = RecognizerPair(events: sink, factory: { language in
+            language == "en" ? (xs.isEmpty ? nil : xs.removeFirst()) : (homes.isEmpty ? nil : homes.removeFirst())
+        })
+        XCTAssertFalse(engine.mineAlive, "never started")
+        _ = try await engine.start(PairMsg(home: "vi", other: "en", generation: 1), hints: [])
+        XCTAssertTrue(engine.mineAlive)
+        dead.failFatally()
+        XCTAssertFalse(engine.mineAlive, "the analysis ended with an error")
+        XCTAssertTrue(engine.theirsAlive, "only the home recognizer died")
+        let rebuilt = try await engine.start(PairMsg(home: "vi", other: "en", generation: 2), hints: [])
+        XCTAssertTrue(rebuilt, "a dead home recognizer is rebuilt even for the same languages")
+        XCTAssertTrue(engine.mine === fresh)
+        XCTAssertTrue(engine.mineAlive)
+        await until { dead.stopped }
+        XCTAssertTrue(dead.stopped)
+        engine.stop()
+        XCTAssertFalse(engine.mineAlive, "stopped")
+    }
+
     func testStopSilencesTheRunningRecognizers() async throws {
         let x = FakeRecognizer("en"), home = FakeRecognizer("vi")
         let engine = pair(["en": x, "vi": home])
