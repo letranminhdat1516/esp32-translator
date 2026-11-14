@@ -1,5 +1,5 @@
 {
-  "description": "Glossary validation (app/lib/core/glossary.dart GlossaryStore). Each case starts from an empty store, adds `existing` in order (all valid), then runs `op`.",
+  "description": "Glossary validation (ios/Sources/Core/Glossary.swift GlossaryStore). Each case starts from an empty store, adds `existing` in order (all valid), then runs `op`.",
   "limits": {
     "maxTerms": 500,
     "maxLength": 64,

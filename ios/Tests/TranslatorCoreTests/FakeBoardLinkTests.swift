@@ -2,8 +2,6 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/board/fake_board_link_test.dart.
-
 @Suite struct FakeBoardLinkTests {
     @Test func recordsTextsAndMicCallsInOrder() async {
         let link = FakeBoardLink()

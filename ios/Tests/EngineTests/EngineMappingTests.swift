@@ -3,7 +3,7 @@ import XCTest
 @testable import TranslatorCore
 
 /// The pure pieces between the iOS frameworks and the engine messages: event construction, errors, PCM, and the
-/// event streams. Moved from app/ios/RunnerTests/EngineMappingTests.swift.
+/// event streams.
 final class EngineMappingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000.5)
 

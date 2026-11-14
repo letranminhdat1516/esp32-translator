@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-// What the conversation screen shows besides the conversation itself: port of app/lib/ui/conversation_state.dart.
+// What the conversation screen shows besides the conversation itself.
 // Pure data plus intents as closures: the views read this and call the closures, and P2.2's controller fills it
 // without touching a view. With the defaults (`session == nil`) the views show what the engine drives today.
 
@@ -48,7 +48,7 @@ enum StatusChip: Hashable, Sendable {
     }
 }
 
-/// Which screen the session state asks for (the readiness view of the Dart app).
+/// Which screen the session state asks for (the readiness view).
 enum ReadinessKind: Hashable, Sendable {
     case choosing, needsDownload, downloading, failed, spinner, none
 

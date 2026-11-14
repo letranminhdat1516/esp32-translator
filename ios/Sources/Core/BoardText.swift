@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-// Port of app/lib/core/board_text.dart; contract: shared/fixtures/board_text.json.
+// Contract: shared/fixtures/board_text.json.
 
 /// Makes text safe for the board: every character left is one the board's fonts can draw, given the glyph sets it
 /// reports (`FontSets`).

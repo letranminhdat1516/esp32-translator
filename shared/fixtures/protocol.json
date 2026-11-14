@@ -1,5 +1,5 @@
 {
-  "description": "Board BLE protocol (app/lib/board/protocol.dart, byte-compatible with the firmware and ios/Sources/BLE/ESPLink.swift).",
+  "description": "Board BLE protocol (ios/Sources/Core/BoardProtocol.swift, byte-compatible with the firmware).",
   "uuids": {
     "service": "A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A",
     "audio": "A7C00002-3B2F-4C1E-9D8A-5F6E7D8C9B0A",

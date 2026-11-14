@@ -8,11 +8,11 @@ extension UIState {
 
     static var samplePacks: [LanguagePack] {
         [
-            LanguagePack(code: "en", appleLocale: "en-US", androidLocale: "en-US", whisperCode: "en", label: "English",
+            LanguagePack(code: "en", appleLocale: "en-US", label: "English",
                          labelLatin: "English", script: .latin),
-            LanguagePack(code: "ja", appleLocale: "ja-JP", androidLocale: "ja-JP", whisperCode: "ja", label: "日本語",
+            LanguagePack(code: "ja", appleLocale: "ja-JP", label: "日本語",
                          labelLatin: "Japanese", script: .cjk),
-            LanguagePack(code: "ko", appleLocale: "ko-KR", androidLocale: "ko-KR", whisperCode: "ko", label: "한국어",
+            LanguagePack(code: "ko", appleLocale: "ko-KR", label: "한국어",
                          labelLatin: "Korean", script: .hangul),
         ]
     }
@@ -39,7 +39,7 @@ extension UIState {
         ui.onlineCodes = ["ko"]
         ui.onlineAllowed = ["ko"]
         ui.onlineCandidates = [
-            LanguagePack(code: "fr", appleLocale: "fr-FR", androidLocale: "fr-FR", whisperCode: "fr", label: "Français",
+            LanguagePack(code: "fr", appleLocale: "fr-FR", label: "Français",
                          labelLatin: "Français", script: .latin),
         ]
         return ui

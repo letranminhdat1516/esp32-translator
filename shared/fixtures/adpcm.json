@@ -1,5 +1,5 @@
 {
-  "description": "ADPCMDecoder (app/lib/board/adpcm.dart; firmware/main/adpcm.c is the encoder). Packets: [seq u16 LE][predictor i16 LE][index u8][data, low nibble first].",
+  "description": "ADPCMDecoder (ios/Sources/Audio/ADPCMDecoder.swift; firmware/main/adpcm.c is the encoder). Packets: [seq u16 LE][predictor i16 LE][index u8][data, low nibble first].",
   "maxGapPackets": 10,
   "stepTable": [
     7,

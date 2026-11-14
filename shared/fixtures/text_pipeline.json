@@ -1,5 +1,5 @@
 {
-  "description": "TextPipeline (app/lib/core/text_pipeline.dart): rules of the source pack, then terms (glossary + home pack terms + other pack terms) masked; the reverse after translation.",
+  "description": "TextPipeline (ios/Sources/Core/TextPipeline.swift): rules of the source pack, then terms (glossary + home pack terms + other pack terms) masked; the reverse after translation.",
   "defaultPlaceholder": "Zorvik{n}",
   "packs": {
     "vi": {
@@ -8,8 +8,6 @@
     "en": {
       "code": "en",
       "appleLocale": "en-X",
-      "androidLocale": "en-X",
-      "whisperCode": "en",
       "label": "EN",
       "labelLatin": "EN",
       "script": "latin",
@@ -21,8 +19,6 @@
     "ja": {
       "code": "ja",
       "appleLocale": "ja-X",
-      "androidLocale": "ja-X",
-      "whisperCode": "ja",
       "label": "JA",
       "labelLatin": "JA",
       "script": "latin",
@@ -34,8 +30,6 @@
     "fr": {
       "code": "fr",
       "appleLocale": "fr-X",
-      "androidLocale": "fr-X",
-      "whisperCode": "fr",
       "label": "FR",
       "labelLatin": "FR",
       "script": "latin",
@@ -47,8 +41,6 @@
     "en-builtin-grab": {
       "code": "en",
       "appleLocale": "en-X",
-      "androidLocale": "en-X",
-      "whisperCode": "en",
       "label": "EN",
       "labelLatin": "EN",
       "script": "latin",
@@ -66,8 +58,6 @@
     "xx-gonna": {
       "code": "xx",
       "appleLocale": "xx-X",
-      "androidLocale": "xx-X",
-      "whisperCode": "xx",
       "label": "XX",
       "labelLatin": "XX",
       "script": "latin",

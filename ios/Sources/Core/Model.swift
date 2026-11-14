@@ -1,7 +1,7 @@
 import Foundation
 
-// Port of app/lib/core/model.dart: language packs, board font sets, engine capabilities, board info.
-// Packs are Codable from the same JSON the Dart and TypeScript apps load (app/assets/languages, later shared/languages).
+// Language packs, board font sets, engine capabilities, board info.
+// Packs are Codable from shared/languages/*.json.
 
 /// Writing system a language is displayed in; decides which board font set is needed (`FontSets.covers`).
 enum Script: String, Codable, CaseIterable, Sendable {
@@ -134,12 +134,10 @@ struct Term: Codable, Hashable, Sendable {
     }
 }
 
-/// One language: locales per engine, board label, script, their-side confidence gate, rules, terms, hints.
+/// One language: Apple locale, board label, script, their-side confidence gate, rules, terms, hints.
 struct LanguagePack: Codable, Hashable, Sendable {
     var code: String
     var appleLocale: String
-    var androidLocale: String
-    var whisperCode: String
     var label: String
     var labelLatin: String
     var script: Script
@@ -149,13 +147,11 @@ struct LanguagePack: Codable, Hashable, Sendable {
     var terms: [Term] = []
     var hints: [String] = []
 
-    init(code: String, appleLocale: String, androidLocale: String, whisperCode: String, label: String,
+    init(code: String, appleLocale: String, label: String,
          labelLatin: String, script: Script, minConfidence: Double? = nil, recognition: [Rule] = [],
          beforeTranslation: [Rule] = [], terms: [Term] = [], hints: [String] = []) {
         self.code = code
         self.appleLocale = appleLocale
-        self.androidLocale = androidLocale
-        self.whisperCode = whisperCode
         self.label = label
         self.labelLatin = labelLatin
         self.script = script
@@ -177,8 +173,6 @@ struct LanguagePack: Codable, Hashable, Sendable {
         minConfidence = try c.packOptional(Double.self, .minConfidence, "", dartType: "num")
         code = try c.packString(.code, "")
         appleLocale = try c.packString(.appleLocale, "")
-        androidLocale = try c.packString(.androidLocale, "")
-        whisperCode = try c.packString(.whisperCode, "")
         label = try c.packString(.label, "")
         labelLatin = try c.packString(.labelLatin, "")
         recognition = try c.packObjectList(Rule.self, .recognition)

@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of app/lib/core/board_glyphs.dart; contract: shared/fixtures/board_text.json (`parseRanges`, `glyphs`).
+// Contract: shared/fixtures/board_text.json (`parseRanges`, `glyphs`).
 
 /// The exact code points of the board's partition fonts (CJK, Hangul, Thai).
 ///

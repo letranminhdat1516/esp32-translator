@@ -306,12 +306,12 @@ final class ConversationController {
 
     private func applyCapabilities(_ caps: Capabilities) {
         self.caps = caps
-        let catalog = LanguageCatalog(packs: Array(packs.values), caps: caps, platform: .ios,
+        let catalog = LanguageCatalog(packs: Array(packs.values), caps: caps,
                                       onlineConsent: onlineAllowed)
         self.catalog = catalog
         ui.offeredPacks = catalog.offered
         ui.onlineCodes = Set(catalog.offered.filter { catalog.chain($0.code).first == .osOnline }.map(\.code))
-        // iOS has no online recognizer (LanguageCatalog), so there is nothing to opt in to
+        // The app does not allow the online recognizer (LanguageCatalog), so there is nothing to opt in to
         ui.onlineCandidates = []
         ui.onlineAllowed = onlineAllowed
     }

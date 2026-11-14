@@ -3,8 +3,8 @@ import Testing
 @testable import TranslatorCore
 
 // Every case of the shared fixtures for the runtime pieces (adpcm, conversation_activity, subtitle_translator,
-// turn_assembler), run against the Swift implementations as the TypeScript and Dart suites run them
-// (android/__tests__/*.test.ts, app/test). The hand-written suites next to this file keep the Swift-only cases.
+// turn_assembler), run against the Swift implementations. The hand-written suites next to this file keep the
+// Swift-only cases.
 
 private func bytes(_ hex: String) -> Data {
     var out = Data()
@@ -185,7 +185,7 @@ private func transcriptEvent(_ kind: String, _ text: String) -> TranscriptEvent 
 }
 
 @Suite struct TurnAssemblerFixtureTests {
-    let t0 = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01, as the TypeScript test
+    let t0 = Date(timeIntervalSince1970: 1_767_225_600)  // 2026-01-01
 
     @Test func fixtureHasEveryScenarioAndReplay() {
         #expect(Fixtures.cases(in: turnFixture, "scenarios", fixture: "turn_assembler").count == 6)

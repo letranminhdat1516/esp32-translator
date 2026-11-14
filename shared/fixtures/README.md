@@ -1,12 +1,9 @@
 # Shared test fixtures
 
-The contract between the Swift core (`ios/Sources/Core`) and the TypeScript core
-(`android/src/core`, `android/src/board`, `android/src/engine`). The cases were
-taken from the Flutter reference tests in `app/test/**` (plus a few edge cases
-added during the extraction); those tests now load these files and pass
-against the Dart reference (`cd app && flutter test`). A port that cannot pass a case stops
-and reports NEEDS_CONTEXT; it never edits a fixture. A new behaviour starts as a
-new case here.
+The behaviour contract of the iPhone app's platform-independent code
+(`ios/Sources/Core`, plus a few pieces in `App`, `Audio` and `Translate`), run by
+`cd ios && swift test`. A change that cannot pass a case stops and reports; it
+never edits a fixture silently. A new behaviour starts as a new case here.
 
 ## Conventions
 
@@ -28,26 +25,23 @@ new case here.
 - Terms are in the pack `terms` format: `{"id", "text", "variants"?, "fixed"?,
   "origin"?}`; `id` defaults to `text`, `variants` to `[]`, `fixed` to `{}`,
   `origin` to `"user"`.
-- `shared/languages/*.json` and `shared/board_glyphs/*.txt` are byte-identical
-  copies of `app/assets/languages` and `app/assets/board_glyphs`
-  (`app/test/shared_assets_test.dart`).
 
-| File | Module (Dart reference) | Dart test |
+| File | Swift module | Swift test |
 |---|---|---|
-| `rules.json` | `app/lib/core/rule_engine.dart` (replaces Swift `VietnameseFixup`) | `app/test/core/rule_engine_test.dart` |
-| `terms.json` | `term_protector.dart` | `term_protector_test.dart` |
-| `text_pipeline.json` | `text_pipeline.dart` | `text_pipeline_test.dart` |
-| `board_text.json` | `board_text.dart`, `translit.dart`, `board_glyphs.dart` | `board_text_test.dart` |
-| `translit.json` (tables, not cases) | `translit.dart` | `translit_test.dart` |
-| `glossary.json` | `glossary.dart` | `glossary_test.dart` |
-| `language_catalog.json` | `language_catalog.dart` | `language_catalog_test.dart` |
-| `model.json` | `model.dart` | `model_test.dart` |
-| `conversation_activity.json` | `conversation_activity.dart` | `conversation_activity_test.dart` |
-| `subtitle_translator.json` | `subtitle_translator.dart` | `subtitle_translator_test.dart` |
-| `turn_assembler.json` + `*.jsonl` | `turn_assembler.dart` | `turn_assembler_test.dart` |
-| `adpcm.json` | `app/lib/board/adpcm.dart` | `app/test/board/adpcm_test.dart` |
-| `protocol.json` | `app/lib/board/protocol.dart` | `app/test/board/protocol_test.dart` |
-| `session_machine.json` | `app/lib/engine/session_machine.dart` | `app/test/engine/session_machine_test.dart` |
+| `rules.json` | `RuleEngine` (replaces `VietnameseFixup`) | `RuleEngineTests` |
+| `terms.json` | `TermProtector` | `TermProtectorTests` |
+| `text_pipeline.json` | `TextPipeline` | `TextPipelineTests` |
+| `board_text.json` | `BoardText`, `Translit`, `BoardGlyphSets` | `BoardTextTests` |
+| `translit.json` (tables, not cases) | `Translit` | `TranslitTableTests` |
+| `glossary.json` | `GlossaryStore` | `GlossaryTests` |
+| `language_catalog.json` | `LanguageCatalog` | `LanguageCatalogTests` |
+| `model.json` | `Model` | `ModelTests` |
+| `conversation_activity.json` | `ConversationActivity` | `RuntimeFixtureTests` |
+| `subtitle_translator.json` | `SubtitleTranslator` | `RuntimeFixtureTests` |
+| `turn_assembler.json` + `*.jsonl` | `TurnAssembler` | `RuntimeFixtureTests`, `TurnAssemblerTests` |
+| `adpcm.json` | `ADPCMDecoder` | `RuntimeFixtureTests` |
+| `protocol.json` | `BoardProtocol` | `BoardProtocolTests` |
+| `session_machine.json` | `SessionMachine` | `SessionMachineTests` |
 
 ---
 
@@ -85,8 +79,8 @@ engine `vi` (`fixLoanwords` → `fixRecognition`, `forTranslation` →
 - A pack with no recognition rules returns the input untouched (not even NFC); with no beforeTranslation rules, `forTranslation` returns `fixRecognition`'s result.
 
 Regex dialect (`portableSyntax`). Pack patterns are written in the subset that
-ICU (`NSRegularExpression`), JavaScript `RegExp` with the `u` flag (Hermes) and
-Dart agree on; `rule_engine_test.dart` lints every pattern and context of every
+ICU (`NSRegularExpression`), JavaScript `RegExp` with the `u` flag and
+Dart agree on; `RuleEngineTests` lints every pattern and context of every
 `shared/languages/*.json` against it:
 
 - `digits: "ascii"`: `\d` means `[0-9]` only. Dart and JS already do this; ICU and Swift `Regex` match every Unicode decimal digit, so the Swift port must make `\d` ASCII-only (e.g. rewrite `\d` to `[0-9]` outside character-class escapes before compiling, or Swift `Regex` with `.asciiOnlyDigits()`). Cases `dialect: …` check it (an Arabic-Indic or fullwidth digit is not a price).
@@ -194,7 +188,7 @@ replaces them for that case.
 - `parseRanges(text)`: blank lines and `#` comments skipped; anything else that
   is not hex or a reversed range is an error.
 - `encode(input, fontSets)` must equal `expected`. The tables named below are
-  in `translit.json` (exported from `translit.dart`, the source of truth). The
+  in `translit.json` (equal to the tables in `Translit.swift`). The
   algorithm, one step per line:
   - NFC the input.
   - Split it into words on runs of `[\s\u0000-\u001f\u007f-\u009f   ]`; encode each word; drop words that encode to `""`; join with one space; collapse runs of spaces; trim.
@@ -215,10 +209,9 @@ replaces them for that case.
 
 ## translit.json — transliteration and folding tables
 
-Data, not cases: the tables of `app/lib/core/translit.dart` (the source of
-truth; `app/test/core/translit_test.dart` probes the Dart functions over whole
-Unicode blocks and fails if the export differs). Ports load these tables
-instead of copying them; `board_text.json` checks the result.
+Data, not cases: the tables of `ios/Sources/Core/Translit.swift`
+(`TranslitTableTests` fails if they differ); `board_text.json` checks the
+result.
 
 ```
 {
@@ -285,38 +278,38 @@ a term's own old text excluded on update.
 holds `content`. Opening the store must give the terms `texts` (absent = none)
 and set the "recovered from corruption" flag to `recovered`: invalid JSON, not a
 list, a bad entry, an entry over the limits or duplicates all recover to an
-empty glossary. (Where the bad data goes is platform-specific; the Dart store
+empty glossary. (Where the bad data goes is up to the store; the Swift store
 renames the file aside.)
 
 ## language_catalog.json — LanguageCatalog
 
 ```
 {
-  "homeCode": "vi", "platforms": ["ios", "android"], "invalidPlatforms": [string],
+  "homeCode": "vi",
   "chainOrder": ["osOnDevice", "whisper", "osOnline"],
   "packs": [ { "code", "label" } ],
-  "offered": [ { "name", "packs"?: [ {code, label} ], "caps": Caps, "platform",
+  "offered": [ { "name", "packs"?: [ {code, label} ], "caps": Caps, "online"?: bool,
                  "consent"?: [code], "expected": [code] } ],
-  "chain":   [ { "name", "caps": Caps, "platform", "consent"?: [code], "code", "expected": [RecognizerKind] } ]
+  "chain":   [ { "name", "caps": Caps, "online"?: bool, "consent"?: [code], "code", "expected": [RecognizerKind] } ]
 }
 Caps = { "recognizers": { code: [RecognizerKind] }, "translatable": [code] }
 ```
 
 Build the catalog from `packs` (or the case's own `packs`), the capabilities,
-the platform and the online consent set. `offered` lists the codes in order;
+whether the online recognizer is allowed (`online`, default false; the app
+never allows it) and the online consent set. `offered` lists the codes in order;
 `chain(code)` the recognizer kinds in order. Rules: Vietnamese (`homeCode`) is
 never offered; a pack is offered when it is translatable and its chain is not
 empty; the chain is the kinds the device has, in `chainOrder`, with `osOnline`
-only on Android and only for a consented language; offered packs are sorted by
-`label` lower-cased (UTF-16 code unit order), ties by `code`. Constructing with
-a platform in `invalidPlatforms` must fail.
+only when `online` is true and only for a consented language; offered packs are sorted by
+`label` lower-cased (UTF-16 code unit order), ties by `code`.
 
 ## model.json — language pack JSON and FontSets
 
 ```
 {
   "scripts": [string], "recognizerKinds": [string], "fontSetBits": { name: int },
-  "shippedPacks": { code: { "code", "appleLocale", "androidLocale", "whisperCode", "label",
+  "shippedPacks": { code: { "code", "appleLocale", "label",
                             "labelLatin", "script", "minConfidence": number | null,
                             "hasRecognition": bool, "hasBeforeTranslation": bool,
                             "termCount": int, "hintCount": int } },
@@ -518,9 +511,8 @@ Missing = { "kind": missingKind, "language": code, "from"?: code, "to"?: code }
 element by element), for every case of `transitions` (hand-picked, incl.
 variants such as `restarts: 1` or a saved language that is not offered) and of
 `matrix`. `matrix` is the full table: every state type × every event type with
-representative values, generated from the Dart machine by
-`app/test/engine/session_matrix_generator.dart` (run it with `flutter test` on
-that file after changing the machine) and asserted by `session_machine_test.dart`,
+representative values (generated from the original machine; regenerate it from
+`SessionMachine` when the machine changes) and asserted by `SessionMachineTests`,
 which also checks that all 90 pairs are present.
 
 The transition table (these 14 pairs change the state; **every other pair
@@ -548,24 +540,3 @@ downloading + picked, running + downloadDone, loading + started):
 `advance(session, event)` must give that state and generation; the generation
 goes up by one only when the new state is a `switching` different from the old
 state.
-
----
-
-## Not fixture-driven (stay in Dart, ports write their own)
-
-| Test | Why |
-|---|---|
-| `rule_engine_test`: every bundled rule has a unique id; the adversarial timing loop; the portable-syntax lint | properties of the pack data; a clock measurement (subjects, limits and the forbidden list are in `rules.json`) |
-| `translit_test` | proves `translit.json` equals `translit.dart`; ports load the tables, `board_text.json` checks them |
-| `session_matrix_generator.dart` | writes the `matrix` of `session_machine.json` from the Dart machine; not part of the suite |
-| `text_pipeline_test`: a translator error propagates | exception thrown by the injected fake |
-| `board_text_test`: Latin ranges equal `firmware/main/glyphs.c` | reads firmware source the apps do not ship |
-| `board_glyphs_test` (whole file) | Flutter asset loading (`rootBundle`) and the shared-instance assertion |
-| `glossary_test`: file round trip, change stream, read-only list, atomic write, parent directory, two corrupt files in one second, not-UTF-8 bytes, concurrent changes, write failure | storage, streams, timers and file-system errors are platform code |
-| `language_catalog_test`: offered/chain are read-only | Dart list immutability |
-| `model_test`: `|`/contains/equality, Capabilities and BoardInfo equality, `toJson` round trip | Dart value types |
-| `turn_assembler_test`: Turn equality | Dart value type |
-| `session_machine_test`: value equality | Dart value types |
-| `protocol_test`: `timeFrame` in local time | depends on the machine's time zone (UTC case is in `protocol.json`) |
-| `adpcm_test`: the Dart port of the firmware encoder | proves the fixture vector; the ports only need the vector |
-| `ble_board_link_test`, `fake_board_link_test`, `fake_voice_engine_test`, `app/test/ui/**`, `widget_test` | BLE link with fake adapter and timers, engine fakes, widgets and goldens |

@@ -1,5 +1,5 @@
 {
-  "description": "ConversationActivity (app/lib/core/conversation_activity.dart): when the app holds the earbuds mic. Each scenario starts a fresh machine (idle) with config (defaults below) and applies the steps in order.",
+  "description": "ConversationActivity (ios/Sources/App/ConversationActivity.swift): when the app holds the earbuds mic. Each scenario starts a fresh machine (idle) with config (defaults below) and applies the steps in order.",
   "defaults": {
     "idleTimeoutMs": 600000,
     "retryDelayMs": 30000

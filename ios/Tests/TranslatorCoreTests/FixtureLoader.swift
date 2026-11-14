@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-/// Reads the shared test fixtures (`shared/fixtures/*.json`, the contract with the TypeScript core) and the shared data
+/// Reads the shared test fixtures (`shared/fixtures/*.json`) and the shared data
 /// (`shared/languages`, `shared/board_glyphs`) in place from the repository, like `languagesDirectory`.
 enum Fixtures {
     static let sharedDirectory = URL(fileURLWithPath: #filePath)

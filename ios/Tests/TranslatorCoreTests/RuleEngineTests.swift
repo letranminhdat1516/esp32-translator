@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/rule_engine_test.dart, driven by shared/fixtures/rules.json.
+// Driven by shared/fixtures/rules.json.
 
 private let rulesFixture = Fixtures.load("rules")
 

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/term_protector_test.dart, driven by shared/fixtures/terms.json (Review Focus 3).
+// Driven by shared/fixtures/terms.json (Review Focus 3).
 
 private let termsFixture = Fixtures.load("terms")
 

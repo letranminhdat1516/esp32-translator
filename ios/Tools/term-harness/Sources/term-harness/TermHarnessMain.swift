@@ -112,7 +112,7 @@ import TermHarnessKit
                     .write(to: pack, atomically: true, encoding: .utf8)
                 log("\(lang): applePlaceholder = \(best.shape)")
             }
-            log("packs changed: run `npm run sync-shared` in android/ and both test suites")
+            log("packs changed: run `swift test` in ios/")
         }
     }
 

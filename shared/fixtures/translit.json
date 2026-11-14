@@ -1,5 +1,5 @@
 {
-  "description": "Transliteration and folding tables of app/lib/core/translit.dart (the source of truth), exported as data; app/test/core/translit_test.dart proves the export is exact. How BoardText uses them: see README.md (board_text.json and translit.json).",
+  "description": "Transliteration and folding tables of ios/Sources/Core/Translit.swift, as data; TranslitTableTests proves they are equal. How BoardText uses them: see README.md (board_text.json and translit.json).",
   "cyrillic": {
     "а": "a",
     "б": "b",

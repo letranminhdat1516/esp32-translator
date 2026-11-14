@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Port of app/lib/ui/glossary_screen.dart: "Từ điển riêng", terms that are kept as they are when translating. The
+// "Từ điển riêng", terms that are kept as they are when translating. The
 // view holds no list of its own: after a closure returns, the controller has updated `ui.glossaryTerms`.
 
 struct GlossaryView: View {

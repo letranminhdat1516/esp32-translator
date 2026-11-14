@@ -3,8 +3,7 @@ import Speech
 import XCTest
 @testable import TranslatorCore
 
-// Moved from app/ios/RunnerTests/RecognizerPairTests.swift (Flutter engine, Track D re-entrancy fix): events now
-// arrive on the Core streams and errors are `EngineError`.
+// RecognizerPair re-entrancy: events arrive on the Core streams and errors are `EngineError`.
 
 @MainActor
 final class RecognizerPairTests: XCTestCase {

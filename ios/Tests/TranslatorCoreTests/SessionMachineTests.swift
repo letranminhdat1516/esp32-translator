@@ -1,7 +1,7 @@
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/engine/session_machine_test.dart, driven by shared/fixtures/session_machine.json (hand-picked
+// Driven by shared/fixtures/session_machine.json (hand-picked
 // transitions, the full 9 x 10 matrix, generations), plus Swift-only cases.
 
 private let fixture = Fixtures.load("session_machine")

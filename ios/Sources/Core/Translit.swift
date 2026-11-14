@@ -1,7 +1,6 @@
 import Foundation
 
-// Port of app/lib/core/translit.dart. The tables are the export in shared/fixtures/translit.json (the Dart file is the
-// source of truth); TranslitTableTests fails if they differ.
+// The tables are also in shared/fixtures/translit.json; TranslitTableTests fails if they differ.
 
 /// Transliteration tables for the board, which can only draw the scripts whose font sets it reports: Cyrillic and
 /// Greek always come out in Latin letters; Japanese kana does when the board has no CJK font. Han, Hangul, Thai and

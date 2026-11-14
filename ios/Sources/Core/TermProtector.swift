@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of app/lib/core/term_protector.dart; contract: shared/fixtures/terms.json (Review Focus 3).
+// Contract: shared/fixtures/terms.json (Review Focus 3).
 
 /// Text with its protected terms swapped for placeholders, and what each placeholder stands for. Made by
 /// `TermProtector.mask`.

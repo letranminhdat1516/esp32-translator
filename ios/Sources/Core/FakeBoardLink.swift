@@ -1,7 +1,5 @@
 import Foundation
 
-// Port of app/lib/board/fake_board_link.dart.
-
 /// In-memory `BoardLink` for tests: records writes, emits on demand. Thread safe.
 final class FakeBoardLink: BoardLink, @unchecked Sendable {
     private let lock = NSLock()

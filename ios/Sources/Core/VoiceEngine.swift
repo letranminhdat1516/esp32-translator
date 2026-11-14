@@ -1,10 +1,9 @@
 import Foundation
 
-// Port of app/lib/engine/voice_engine.dart (contract) and the message types of app/lib/engine/engine_api.g.dart.
-// The Swift engine is in-process (ARCHITECTURE "Revision 2026-10-29" R3): no channel, no codec; the message types
-// keep their Dart names and fields so the Swift, Dart and TypeScript code read the same.
+// The voice engine contract and its message types. The engine is in-process (ARCHITECTURE R3); the message types
+// keep the field names the shared fixtures use.
 
-/// Typed failures of the voice engine. `rawValue` is the code the Dart and TypeScript sides use.
+/// Typed failures of the voice engine. `rawValue` is the code the shared fixtures use.
 enum EngineError: String, Error, CaseIterable, Sendable {
     case translateFailed, notReady, downloadFailed
 
@@ -36,7 +35,7 @@ struct RecognizerEntryMsg: Codable, Hashable, Sendable {
     var kinds: [String]
 }
 
-/// Capabilities in wire form (as the Dart and TypeScript engines report them); `toModel()` gives `Capabilities`.
+/// Capabilities in wire form (as the shared fixtures write them); `toModel()` gives `Capabilities`.
 struct CapabilitiesMsg: Codable, Hashable, Sendable {
     var recognizers: [RecognizerEntryMsg]
     var translatable: [String]

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TermHarnessKit
 
-// Driven by shared/fixtures/terms/harness.json, the same cases android/__tests__/termHarness.test.ts passes; plus
+// Driven by shared/fixtures/terms/harness.json, plus
 // the corpus (shared/fixtures/terms/<lang>.tsv) checked for shape and size.
 
 private let sharedDir = URL(fileURLWithPath: #filePath)

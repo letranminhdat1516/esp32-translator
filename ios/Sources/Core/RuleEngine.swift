@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of app/lib/core/rule_engine.dart; contract: shared/fixtures/rules.json (see shared/fixtures/README.md).
+// Contract: shared/fixtures/rules.json (see shared/fixtures/README.md).
 
 /// A `Rule` with its regular expressions compiled.
 struct CompiledRule: @unchecked Sendable {  // NSRegularExpression is immutable and thread safe

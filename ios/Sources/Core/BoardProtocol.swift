@@ -1,7 +1,6 @@
 import Foundation
 
-// Port of app/lib/board/protocol.dart: the subtitle board's BLE protocol, byte-compatible with the firmware and with
-// the framing in ios/Sources/BLE/ESPLink.swift (which keeps its own copy until S2 moves it here).
+// The subtitle board's BLE protocol, byte-compatible with the firmware (firmware/main/ble_link.c).
 
 /// First byte after the flags of a text chunk: what the board does with it.
 enum TextKind: UInt8, CaseIterable, Sendable {

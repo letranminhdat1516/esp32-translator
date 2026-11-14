@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-// Port of app/lib/core/text_pipeline.dart; contract: shared/fixtures/text_pipeline.json.
+// Contract: shared/fixtures/text_pipeline.json.
 
 /// Which way a phrase is translated.
 enum Direction: Sendable {

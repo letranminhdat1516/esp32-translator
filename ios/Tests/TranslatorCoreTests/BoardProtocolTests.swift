@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/board/protocol_test.dart, driven by shared/fixtures/protocol.json, plus Swift-only edge cases.
+// Driven by shared/fixtures/protocol.json, plus Swift-only edge cases.
 
 private func hex(_ d: Data) -> String {
     d.map { String(format: "%02x", $0) }.joined()

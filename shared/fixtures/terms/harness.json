@@ -1,5 +1,5 @@
 {
- "_doc": "Cases for the term harness (P2.5, R10): shared/fixtures/terms/README.md. Both ios/Tools/term-harness and android/src/harness/termHarness.ts pass them.",
+ "_doc": "Cases for the term harness (P2.5, R10): shared/fixtures/terms/README.md. ios/Tools/term-harness passes them.",
  "shapes": [
   "Zorvik{n}",
   "[[{n}]]",
@@ -634,21 +634,21 @@
  ],
  "setPlaceholder": [
   {
-   "name": "inserted after whisperCode",
-   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"label\": \"English\"\n}\n",
+   "name": "inserted after appleLocale",
+   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"label\": \"English\"\n}\n",
    "key": "applePlaceholder",
    "shape": "⟦{n}⟧",
-   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"applePlaceholder\": \"⟦{n}⟧\",\n  \"label\": \"English\"\n}\n"
+   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"applePlaceholder\": \"⟦{n}⟧\",\n  \"label\": \"English\"\n}\n"
   },
   {
    "name": "replaces the existing value",
-   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"androidPlaceholder\": \"Zorvik{n}\",\n  \"label\": \"English\"\n}\n",
-   "key": "androidPlaceholder",
+   "text": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"applePlaceholder\": \"Zorvik{n}\",\n  \"label\": \"English\"\n}\n",
+   "key": "applePlaceholder",
    "shape": "TERM{n}",
-   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"androidLocale\": \"en-US\",\n  \"whisperCode\": \"en\",\n  \"androidPlaceholder\": \"TERM{n}\",\n  \"label\": \"English\"\n}\n"
+   "expected": "{\n  \"code\": \"en\",\n  \"appleLocale\": \"en-US\",\n  \"applePlaceholder\": \"TERM{n}\",\n  \"label\": \"English\"\n}\n"
   },
   {
-   "name": "no whisperCode line",
+   "name": "no appleLocale line",
    "text": "{\"code\": \"en\"}\n",
    "key": "applePlaceholder",
    "shape": "TERM{n}",
