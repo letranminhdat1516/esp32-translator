@@ -590,14 +590,23 @@ final class ConversationController {
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
         } catch EngineError.notReady {
-            // The board recognizer is gone (the only error that means death); the machine allows one restart per
-            // running session, then `failed`
+            // A recognizer is gone, the board's or mine (the only error that means death); the machine allows one
+            // restart per running session, then `failed`
             guard epoch == e, case .running = session.state else { return }
-            Diag.log("controller: their recognizer stopped")
+            Diag.log("controller: a recognizer stopped")
+            dropMyPartial()
             apply(.recognizerDied)
         } catch {
             Diag.log("controller: feedTheirAudio failed: \(error)")
         }
+    }
+
+    /// My recognizer may have died mid-phrase: its last partial will never be finalized, and left in place it
+    /// would count as "I am speaking" and drop every phrase of theirs
+    private func dropMyPartial() {
+        handleMine(MineMsg(kind: .partial, text: "", startMs: 0, endMs: 0))
+        ui.myPartial = ""
+        myLastSpeech = .distantPast
     }
 
     private var userIsSpeaking: Bool {

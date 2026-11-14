@@ -134,7 +134,7 @@ protocol VoiceEngine: AnyObject, Sendable {
     func stop() async throws
     func micOn(_ on: Bool) async throws
     /// PCM from the board, 16-bit mono.
-    /// Throws `EngineError.notReady` while the other-language recognizer is not running (never started, stopped, or died) until the next successful `start`.
+    /// Throws `EngineError.notReady` while either recognizer (the other language's or the home one) is not running (never started, stopped, or died) until the next successful `start`.
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws
     /// Throws `EngineError.translateFailed` on failure; the caller decides the fallback.
     func translate(_ text: String, from: String, to: String) async throws -> String

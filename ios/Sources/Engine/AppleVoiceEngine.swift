@@ -154,8 +154,8 @@ final class AppleVoiceEngine: VoiceEngine {
         guard recognizerX == RecognizerKinds.onDevice else {
             throw EngineErrors.notReady("recognizer \(recognizerX) is not available on iOS")
         }
-        // A dead X recognizer counts as a different pair: everything is rebuilt
-        let sameLanguages = recognizers.theirsAlive
+        // A dead recognizer (X or home) counts as a different pair: everything is rebuilt
+        let sameLanguages = recognizers.theirsAlive && recognizers.mineAlive
             && (self.pair.map { $0.home == pair.home && $0.other == pair.other } ?? false)
         if !sameLanguages { tearDown() }
         guard try await recognizers.start(pair, hints: hints) else { return }
@@ -221,7 +221,8 @@ final class AppleVoiceEngine: VoiceEngine {
             if pair != nil { session.startSilence() }
             return
         }
-        guard homeRecognizer != nil else { throw EngineErrors.notReady("start the engine before the mic") }
+        // Not started, stopped, or the home analysis ended with an error: feeding it would be silent
+        guard recognizers.mineAlive else { throw EngineErrors.notReady("start the engine before the mic") }
         guard platform.micPermitted() else { throw EngineErrors.notReady("microphone access denied") }
         micWanted = true
         guard mic == nil else { return }
@@ -263,11 +264,14 @@ final class AppleVoiceEngine: VoiceEngine {
 
     // MARK: Board audio
 
-    /// PCM from the board (the controller decodes the BLE ADPCM). Throws `notReady` whenever the X recognizer is
+    /// PCM from the board (the controller decodes the BLE ADPCM). Throws `notReady` whenever either recognizer is
     /// not running (before `start`, after `stop`, or after its analysis ended with an error) until the next
-    /// successful `start`: the controller takes that as "recognizer died" (restart once, then failed).
+    /// successful `start`: the controller takes that as "recognizer died" (restart once, then failed). The home
+    /// recognizer is checked here too because the controller has no other death signal; the board streams while
+    /// it hears speech, the wearer's included, so a dead home recognizer is noticed as soon as anyone talks.
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
         guard recognizers.theirsAlive else { throw EngineErrors.notReady("their recognizer is not running") }
+        guard recognizers.mineAlive else { throw EngineErrors.notReady("the home recognizer is not running") }
         guard let x = theirRecognizer, let converter = theirConverter,
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }

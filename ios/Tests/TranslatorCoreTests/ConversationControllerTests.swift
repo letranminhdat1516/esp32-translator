@@ -61,7 +61,7 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
 
     func script(_ translate: @escaping Translate) { lock.withLock { _translate = translate } }
     var translateCalls: [(text: String, from: String, to: String)] { lock.withLock { _calls } }
-    /// From now on `feedTheirAudio` throws `error` (`notReady`: the board recognizer is dead).
+    /// From now on `feedTheirAudio` throws `error` (`notReady`: a recognizer, the board's or the home one, is dead).
     func killTheirRecognizer(with error: Error = EngineError.notReady) { lock.withLock { _feedError = error } }
     /// `start` throws `notReady` for these recognizer kinds.
     func failStart(for kinds: Set<RecognizerKind>) { lock.withLock { _failingKinds = Set(kinds.map(\.rawValue)) } }
@@ -394,6 +394,38 @@ struct ConversationControllerTests {
         rig.clock.advance(5)
         rig.mine("tôi vẫn nói được", final: true)
         #expect(await eventually { rig.sent(.subtitle).last == "[en]tôi vẫn nói được" })
+        rig.controller.shutdown()
+    }
+
+    /// The home recognizer dies mid-phrase (the engine reports it like any dead recognizer: `feedTheirAudio`
+    /// throws `notReady`): the same restart-once path runs, and the stale partial no longer counts as "I am
+    /// speaking", so the other person's phrases are not dropped behind it (P2, ARCHITECTURE §6)
+    @Test func myRecognizerDyingMidPhraseClearsMyPartialAndRestarts() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        rig.clock.advance(5)
+        rig.mine("tôi đang nó", final: false)
+        #expect(await eventually { rig.ui.myPartial == "tôi đang nó" })
+        rig.engine.killTheirRecognizer()
+        rig.boardAudio(seq: 1)
+        #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
+        #expect(rig.ui.myPartial == "")
+        rig.theirs("Can you hear me")
+        #expect(await eventually { await rig.spoken() == ["[vi]Can you hear me"] })
+        rig.controller.shutdown()
+    }
+
+    @Test func myPartialIsClearedWhenARecognizerDiesForGood() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        rig.engine.killTheirRecognizer()
+        rig.boardAudio(seq: 1)
+        #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
+        rig.mine("tôi đang nó", final: false)
+        #expect(await eventually { rig.ui.myPartial == "tôi đang nó" })
+        rig.boardAudio(seq: 2)
+        #expect(await eventually { rig.ui.session == .failed("en", reason: "recognizer stopped") })
+        #expect(rig.ui.myPartial == "")
         rig.controller.shutdown()
     }
 
