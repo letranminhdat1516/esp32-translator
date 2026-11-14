@@ -15,6 +15,13 @@
 #include "clock.h"
 #include "sleep_rule.h"
 
+/* Dev builds (menuconfig: Live Translator) never deep sleep, like on USB power */
+#if defined(CONFIG_TRANSLATOR_DEV_STAY_ON) && CONFIG_TRANSLATOR_DEV_STAY_ON
+#define CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED 1
+#else
+#define CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED 0
+#endif
+
 static const char *TAG = "main";
 
 /* Deep sleep on battery after 3 min without a link, or 30 min with only the iPhone notification link
@@ -217,7 +224,7 @@ void app_main(void)
                 /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
                  * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;
-                if (pmu_usb_powered()) {
+                if (pmu_usb_powered() || CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED) {
                     s_disconnected_since = esp_timer_get_time();
                     if (!usb_logged) {
                         ESP_LOGI(TAG, "on USB power: not sleeping while idle");

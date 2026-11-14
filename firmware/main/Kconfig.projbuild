@@ -1,0 +1,11 @@
+menu "Live Translator"
+
+config TRANSLATOR_DEV_STAY_ON
+    bool "Dev: keep the screen on and never deep sleep"
+    default n
+    help
+        For development at the desk: the 30 s screen-off timer and the deep-sleep rule are skipped, even on
+        battery. Locking (PWR x1) and the double-tap screen toggle still work. Leave it off for real use: the
+        AMOLED and the radio drain the battery in hours.
+
+endmenu

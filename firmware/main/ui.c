@@ -133,6 +133,10 @@ static void screen_timer_cb(lv_timer_t *t)
         set_screen(true);   /* keep Allow/Deny visible while a request is pending (on the Claude screen only) */
         return;
     }
+#if defined(CONFIG_TRANSLATOR_DEV_STAY_ON) && CONFIG_TRANSLATOR_DEV_STAY_ON
+    set_screen(true);   /* dev build: no idle timeout (lock and double-tap still turn it off above) */
+    return;
+#endif
     int64_t idle_ms = (now - s_last_activity_us) / 1000;
     uint32_t touch_idle_ms = lv_display_get_inactive_time(NULL);
     if (touch_idle_ms < idle_ms) {

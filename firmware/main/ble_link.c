@@ -6,7 +6,7 @@
  *   text    ...0003  write   : [flags u8][kind u8][UTF-8...]  flags bit0 = first chunk, bit1 = last chunk
  *                              kind 0 = subtitle (large), kind 1 = status line,
  *                              kind 2 = time "<unix seconds> <UTC offset minutes>" (ASCII, sent on connect),
- *                              kind 3 = language label, <= 32 bytes UTF-8, shown as "<status> · <label>" ("" clears)
+ *                              kind 3 = language label, <= 32 bytes UTF-8, shown alone on the status line while translating ("" clears)
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
