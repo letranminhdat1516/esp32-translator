@@ -349,6 +349,39 @@ enum PairingErrorMap {
         let e = error as NSError
         return failure(domain: e.domain, code: e.code)
     }
+
+    /// The board ignores taps for the first second a code is up (firmware PAIR_ARM_US), so a rejection sooner than
+    /// this after the protected read went out was not anyone's answer: the board refused the request itself (too
+    /// many requests, locked, another code up).
+    static let quickRefusal: TimeInterval = 1.0
+
+    /// `failure(_:)`, with a rejection that came `elapsed` seconds after the read was sent: quicker than
+    /// `quickRefusal` it is `.refusedByBoard`.
+    static func failure(_ error: Error, after elapsed: TimeInterval) -> PairingFailure {
+        let f = failure(error)
+        return f == .rejected && elapsed < quickRefusal ? .refusedByBoard : f
+    }
+}
+
+/// The pinned board's protected read, refused (its bond was lost), is read again automatically: after 15, 30 and
+/// 60 s, then not until the user taps "Thử lại" or a new link starts (`reset`). Each read is one pairing request
+/// and the board rate-limits them (firmware pairing.h), so endless retries would lock the owner out.
+struct AuthRetry {
+    static let delays: [TimeInterval] = [15, 30, 60]
+    private var used = 0
+
+    init() {}
+
+    /// The delay before the next automatic read; nil once they are used up.
+    mutating func nextDelay() -> TimeInterval? {
+        guard used < Self.delays.count else { return nil }
+        defer { used += 1 }
+        return Self.delays[used]
+    }
+
+    var exhausted: Bool { used >= Self.delays.count }
+
+    mutating func reset() { used = 0 }
 }
 
 /// Where the pinned board is kept (UserDefaults: an identifier CoreBluetooth gives this app only). The security

@@ -161,6 +161,9 @@ import Testing
         #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).name == "A")
         #expect(PairDisplay(.failed(.unverified)).bodyKey == "pair.bodyUnverified")
         #expect(PairDisplay(.failed(.declined)).bodyKey == "pair.bodyDeclined")
+        #expect(PairDisplay(.failed(.refusedByBoard)).bodyKey == "pair.bodyRefusedByBoard")
+        #expect(PairDisplay(.failed(.refusedByBoard)).failed)
+        #expect(Copy.t("pair.bodyRefusedByBoard").hasPrefix("Board đang từ chối ghép, thử lại sau ít phút"))
         #expect(PairDisplay(.confirming(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
         #expect(PairDisplay(.found(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
         #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).dialogHintKey == nil)
@@ -168,7 +171,7 @@ import Testing
         for state: PairingState in [.idle, .scanning, .found(name: "A", battery: nil), .confirming(name: "A", battery: nil),
                                     .paired(name: "A"), .failed(.rejected), .failed(.timeout), .failed(.lost),
                                     .failed(.bluetoothOff), .failed(.declined), .failed(.unverified),
-                                    .legacyConsent(name: "A", id: UUID(), gen: 0)] {
+                                    .failed(.refusedByBoard), .legacyConsent(name: "A", id: UUID(), gen: 0)] {
             let d = PairDisplay(state)
             for key in [d.kickerKey, d.dialKey, d.noteKey, d.bodyKey] + [d.dialogHintKey].compactMap({ $0 }) {
                 #expect(Copy.t(key) != key, "\(key)")

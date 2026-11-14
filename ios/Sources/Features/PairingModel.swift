@@ -34,6 +34,9 @@ enum PairingFailure: Hashable, Sendable {
     case bluetoothOff
     /// The user cancelled pinning an old-firmware board ("Huỷ").
     case declined
+    /// The board refused the request itself, at once (too many pairing requests, or it is locked or busy): try
+    /// again in a few minutes.
+    case refusedByBoard
     /// The pinned (secure) board no longer authenticates: it reports old firmware or lacks the protected
     /// characteristic. The link refused it and never downgrades the pin.
     case unverified

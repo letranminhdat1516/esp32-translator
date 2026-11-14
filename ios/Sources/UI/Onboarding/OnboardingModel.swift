@@ -147,6 +147,7 @@ struct PairDisplay: Hashable {
         case .bluetoothOff?: return "pair.bodyBluetoothOff"
         case .declined?: return "pair.bodyDeclined"
         case .unverified?: return "pair.bodyUnverified"
+        case .refusedByBoard?: return "pair.bodyRefusedByBoard"
         case nil: break
         }
         if paired { return "pair.bodyPaired" }
