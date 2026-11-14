@@ -45,6 +45,12 @@ final class AppRouter {
 
     private(set) var onboardingDone: Bool
     var onboardingStep: OnboardingStep = .welcome
+    /// The onboarding navigation stack under Welcome (the steps up to the current one), so the steps are pushed
+    /// screens with the system swipe back; popping sets `onboardingStep`.
+    var onboardingPath: [OnboardingStep] {
+        get { OnboardingStep.allCases.filter { $0 != .welcome && $0.rawValue <= onboardingStep.rawValue } }
+        set { onboardingStep = newValue.last ?? .welcome }
+    }
     var path: [Route] = []
     var sheet: AppSheet?
     var mode: MainMode = .board

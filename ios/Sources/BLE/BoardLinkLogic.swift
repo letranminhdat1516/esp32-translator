@@ -144,6 +144,9 @@ struct BoardPin {
     private(set) var pinned: UUID?
     /// The peripheral being connected or connected
     private var link: UUID?
+    /// A protected characteristic was read on the current link (an authenticated link on new firmware): the proof
+    /// a board must give before it is pinned
+    private(set) var proven = false
 
     init(pinned: UUID?) { self.pinned = pinned }
 
@@ -153,21 +156,57 @@ struct BoardPin {
     func mayConnect(_ id: UUID) -> Bool { pinned == nil || pinned == id }
 
     /// A connection to `id` starts
-    mutating func connecting(_ id: UUID) { link = id }
+    mutating func connecting(_ id: UUID) {
+        link = id
+        proven = false
+    }
 
-    /// The translator setup finished on the current link; the identifier to persist when it just became the pin
+    /// The protected read (`…0004`) succeeded on the current link
+    mutating func accessGranted() {
+        if link != nil { proven = true }
+    }
+
+    /// The translator setup finished on the current link; the identifier to persist when it just became the pin.
+    /// Nothing is pinned without `accessGranted` on this link.
     mutating func setupFinished() -> UUID? {
-        guard pinned == nil, let link else { return nil }
+        guard pinned == nil, proven, let link else { return nil }
         pinned = link
         return link
     }
 
-    mutating func linkGone() { link = nil }
+    mutating func linkGone() {
+        link = nil
+        proven = false
+    }
 
     /// Drops the pin (the caller disconnects and scans again)
     mutating func forget() {
         pinned = nil
         linkGone()
+    }
+}
+
+/// How a failed protected access maps to pairing (README "BLE pairing"). Errors are given by domain and code so
+/// this runs without CoreBluetooth: `CBATTErrorDomain` 5 / 15 / 12 (insufficient authentication / encryption /
+/// key size) mean the pairing was refused (Sai, Huỷ, or the board refused); `CBErrorDomain` 15 (encryption timed
+/// out) and 6 (connection timeout) a timeout; 14 (peer removed pairing information) a stale bond, which the user
+/// fixes by retrying; anything else counts as the link lost.
+enum PairingErrorMap {
+    static let attDomain = "CBATTErrorDomain"
+    static let cbDomain = "CBErrorDomain"
+
+    static func failure(domain: String, code: Int) -> PairingFailure {
+        switch (domain, code) {
+        case (attDomain, 5), (attDomain, 15), (attDomain, 12): .rejected
+        case (cbDomain, 15), (cbDomain, 6): .timeout
+        case (cbDomain, 14): .rejected
+        default: .lost
+        }
+    }
+
+    static func failure(_ error: Error) -> PairingFailure {
+        let e = error as NSError
+        return failure(domain: e.domain, code: e.code)
     }
 }
 

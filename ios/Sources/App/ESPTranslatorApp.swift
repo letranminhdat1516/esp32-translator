@@ -1,3 +1,4 @@
+import CoreBluetooth
 import SwiftUI
 import UIKit
 
@@ -15,10 +16,21 @@ struct ESPTranslatorApp: App {
     init() {
         let ui = UIState()
         let demo = DemoScreen.parse(CommandLine.arguments)
+        // The board link; its central is created once Bluetooth was answered (the Permissions screen asks)
+        let boardLink = ESPLink(startCentral: false)
+        let pairing = LinkPairingModel(retryLink: { boardLink.retryPairing() }, onStart: { boardLink.activate() })
         // Demo mode shows the canvas' version label
-        let services = demo == nil ? AppServices() : AppServices(appVersion: "0.9")
+        let services = demo == nil ? AppServices(pairing: pairing) : AppServices(appVersion: "0.9")
         self.demo = demo
         if let demo {
+            // "Cho phép" grants at once in demo mode
+            services.permissionActions = PermissionActions(request: { [weak services] kind in
+                switch kind {
+                case .microphone: services?.permissions.microphone = .granted
+                case .bluetooth: services?.permissions.bluetooth = .granted
+                case .speech: services?.permissions.speech = .granted
+                }
+            })
             let router = AppRouter(defaults: nil)
             let link = FakeBoardLink()
             controller = ConversationController(engine: FakeVoiceEngine(), board: link, packs: DemoData.packs,
@@ -30,7 +42,17 @@ struct ESPTranslatorApp: App {
             Diag.log("demo \(demo.rawValue): fonts \(DSFamily.allCases.map { "\($0.rawValue)=\(DSFonts.isRegistered($0))" }), "
                      + "grotesk weights \([400.0, 500, 600, 700].map { DSFonts.resolvedWeight(.grotesk, $0) })")
         } else {
-            let link = ESPLink()
+            let link = boardLink
+            // Pairing steps to the Pair screen, in order on the main queue
+            link.onPairingEvent = { event in
+                DispatchQueue.main.async { MainActor.assumeIsolated { pairing.handle(event) } }
+            }
+            if link.hasPinnedBoard { pairing.markPaired(name: PairingMachine.defaultName) }
+            LivePermissions.wire(services) { link.activate() }
+            link.onCentralUpdate = { [weak services] in
+                DispatchQueue.main.async { MainActor.assumeIsolated { services?.permissionActions.refresh() } }
+            }
+            if CBManager.authorization != .notDetermined { link.activate() }
             let glossary: GlossaryStore?
             do {
                 glossary = GlossaryStore(directory: try GlossaryStore.defaultDirectory())
@@ -63,9 +85,14 @@ struct ESPTranslatorApp: App {
         WindowGroup {
             RootView(ui: ui, router: router, services: services) {
                 ui.forgetBoard()
+                (services.pairing as? LinkPairingModel)?.reset()
                 router.restartPairing()
             }
-            .task { if demo == nil { await controller.start() } }
+            // The conversation (and its mic prompt) waits until the permissions were asked: the language step or
+            // a finished onboarding
+            .task(id: router.onboardingDone || router.onboardingStep == .language) {
+                if demo == nil, router.onboardingDone || router.onboardingStep == .language { await controller.start() }
+            }
         }
     }
 }

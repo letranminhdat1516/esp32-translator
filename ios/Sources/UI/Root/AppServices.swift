@@ -15,6 +15,8 @@ final class AppServices {
     @ObservationIgnored let partials: PartialModel
 
     var permissions = PermissionsSnapshot()
+    /// The system prompts behind "Cho phép" (the app wires them; demo mode grants at once).
+    @ObservationIgnored var permissionActions = PermissionActions()
     var historySessions: [HistorySession] = []
     var feedbackItems: [FeedbackItem] = []
     /// The Live Activity as it would show now (the in-app lock-screen preview).

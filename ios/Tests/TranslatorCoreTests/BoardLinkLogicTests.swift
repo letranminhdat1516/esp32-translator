@@ -244,6 +244,7 @@ private final class FakeChar {}
         var pin = BoardPin(pinned: nil)
         pin.connecting(board)
         #expect(pin.pinned == nil)                   // connected, not set up yet
+        pin.accessGranted()
         #expect(pin.setupFinished() == board)
         #expect(pin.pinned == board)
         #expect(pin.reconnect == .pinned(board))
@@ -265,6 +266,33 @@ private final class FakeChar {}
         #expect(pin.pinned == nil)
     }
 
+    /// Pairing by code: nothing is pinned until a protected read succeeded on this very link
+    @Test func noPinWithoutAnAuthenticatedRead() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        #expect(pin.setupFinished() == nil)
+        pin.accessGranted()
+        pin.linkGone()                               // the proof belongs to the link that gave it
+        pin.connecting(board)
+        #expect(!pin.proven)
+        #expect(pin.setupFinished() == nil)
+        pin.accessGranted()
+        #expect(pin.setupFinished() == board)
+        // Proof without a link is ignored
+        var lone = BoardPin(pinned: nil)
+        lone.accessGranted()
+        #expect(!lone.proven)
+    }
+
+    @Test func pairingErrorsMapToFailures() {
+        #expect(PairingErrorMap.failure(domain: "CBATTErrorDomain", code: 5) == .rejected)
+        #expect(PairingErrorMap.failure(domain: "CBATTErrorDomain", code: 15) == .rejected)
+        #expect(PairingErrorMap.failure(domain: "CBErrorDomain", code: 15) == .timeout)
+        #expect(PairingErrorMap.failure(domain: "CBErrorDomain", code: 14) == .rejected)
+        #expect(PairingErrorMap.failure(domain: "CBErrorDomain", code: 7) == .lost)
+        #expect(PairingErrorMap.failure(NSError(domain: "CBATTErrorDomain", code: 5)) == .rejected)
+    }
+
     @Test func forgettingClearsThePin() {
         var pin = BoardPin(pinned: board)
         pin.connecting(board)
@@ -274,6 +302,7 @@ private final class FakeChar {}
         #expect(pin.mayConnect(stranger))
         // The next board is pinned again on its setup
         pin.connecting(stranger)
+        pin.accessGranted()
         #expect(pin.setupFinished() == stranger)
     }
 
