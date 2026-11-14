@@ -151,6 +151,8 @@ struct ESPTranslatorApp: App {
             .onChange(of: scenePhase) { _, phase in
                 // Track C: pending history is written when the app leaves the foreground
                 if phase != .active { Task { await services.history.flush() } }
+                // A Live Activity refused while in the background starts now
+                if phase == .active { activityDriver.sceneBecameActive() }
             }
         }
     }
