@@ -176,7 +176,7 @@ void ui_set_level(int percent)
     if (percent != 0) {
         /* Faint speech: thin and dim; clear speech: thick and bright */
         lv_obj_set_style_arc_width(s_ring, 3 + percent / 12, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(60 + percent * 195 / 100), LV_PART_INDICATOR);
+        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(100 + percent * 155 / 100), LV_PART_INDICATOR);
     }
     unlock();
 }
