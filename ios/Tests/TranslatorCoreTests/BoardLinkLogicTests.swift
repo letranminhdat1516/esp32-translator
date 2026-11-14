@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// ESPLink's bookkeeping without CoreBluetooth (ios/Sources/BLE/BoardLinkLogic.swift); behaviour of
-// app/lib/board/ble_board_link.dart (queue, label resend, backoff) and its test app/test/board/ble_board_link_test.dart.
+// ESPLink's bookkeeping without CoreBluetooth (ios/Sources/BLE/BoardLinkLogic.swift): queue, label resend, backoff,
+// board pinning.
 
 /// Stands in for a CBCharacteristic: only its identity matters
 private final class FakeChar {}
@@ -239,66 +239,42 @@ private final class FakeChar {}
         #expect(!pin.mayConnect(stranger))
     }
 
-    @Test func theBoardIsPinnedOnlyOnceSetupAndAnEncryptedAccessSucceededOnTheSameLink() {
+    /// Trust on first use: the board whose translator setup finishes first is pinned
+    @Test func theFirstBoardIsPinnedOnceItsSetupFinished() {
         var pin = BoardPin(pinned: nil)
         pin.connecting(board)
-        #expect(pin.setupFinished() == nil)          // set up, but nothing proves the link is the bonded board yet
-        #expect(pin.pinned == nil)
-        #expect(pin.encryptedAccessSucceeded() == board)
-        #expect(pin.pinned == board)
-        #expect(pin.reconnect == .pinned(board))
-        // Already pinned: nothing more to persist
-        #expect(pin.setupFinished() == nil)
-        #expect(pin.encryptedAccessSucceeded() == nil)
-    }
-
-    @Test func theOrderOfSetupAndEncryptedAccessDoesNotMatter() {
-        var pin = BoardPin(pinned: nil)
-        pin.connecting(board)
-        #expect(pin.encryptedAccessSucceeded() == nil)
+        #expect(pin.pinned == nil)                   // connected, not set up yet
         #expect(pin.setupFinished() == board)
         #expect(pin.pinned == board)
+        #expect(pin.reconnect == .pinned(board))
+        #expect(!pin.mayConnect(stranger))
+        // Already pinned: nothing more to persist, also on the next link
+        #expect(pin.setupFinished() == nil)
+        pin.linkGone()
+        pin.connecting(board)
+        #expect(pin.setupFinished() == nil)
     }
 
-    /// Setup on one link and an encrypted access on another (a drop in between) do not pin
-    @Test func aDropResetsWhatTheLinkHasProven() {
+    /// A link that dropped before its setup finished pins nothing
+    @Test func setupWithoutALinkDoesNotPin() {
         var pin = BoardPin(pinned: nil)
+        #expect(pin.setupFinished() == nil)
         pin.connecting(board)
-        _ = pin.setupFinished()
         pin.linkGone()
-        #expect(pin.encryptedAccessSucceeded() == nil)   // no link
-        pin.connecting(stranger)
-        #expect(pin.encryptedAccessSucceeded() == nil)   // this link was not set up yet
+        #expect(pin.setupFinished() == nil)
         #expect(pin.pinned == nil)
     }
 
-    /// First connection: the relay forwards nothing from the board until an encrypted access succeeded on this link
-    @Test func claudeTrafficWaitsForTheEncryptedAccess() {
-        var pin = BoardPin(pinned: nil)
-        #expect(!pin.claudeTrusted)
-        pin.connecting(board)
-        _ = pin.setupFinished()
-        #expect(!pin.claudeTrusted)
-        _ = pin.encryptedAccessSucceeded()
-        #expect(pin.claudeTrusted)
-        pin.linkGone()
-        #expect(!pin.claudeTrusted)
-        // The next link of the pinned board proves itself again (the board's Claude service is encrypted)
-        pin.connecting(board)
-        #expect(!pin.claudeTrusted)
-        _ = pin.encryptedAccessSucceeded()
-        #expect(pin.claudeTrusted)
-    }
-
-    @Test func forgettingClearsThePinAndTheLinkTrust() {
+    @Test func forgettingClearsThePin() {
         var pin = BoardPin(pinned: board)
         pin.connecting(board)
-        _ = pin.encryptedAccessSucceeded()
         pin.forget()
         #expect(pin.pinned == nil)
         #expect(pin.reconnect == .discover)
-        #expect(!pin.claudeTrusted)
         #expect(pin.mayConnect(stranger))
+        // The next board is pinned again on its setup
+        pin.connecting(stranger)
+        #expect(pin.setupFinished() == stranger)
     }
 
     @Test func thePinIsKeptInUserDefaults() throws {

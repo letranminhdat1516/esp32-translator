@@ -1,8 +1,7 @@
 import Foundation
 
-// ESPLink's bookkeeping, apart from CoreBluetooth so it runs under `swift test` on the Mac. Behaviour of
-// app/lib/board/ble_board_link.dart: the generation-guarded text queue, the label resent on ready, the reconnect
-// backoff. ESPLink owns one of each and uses them on its BLE queue only.
+// ESPLink's bookkeeping, apart from CoreBluetooth so it runs under `swift test` on the Mac. The
+// generation-guarded text queue, the label resent on ready, the reconnect backoff. ESPLink owns one of each and uses them on its BLE queue only.
 
 /// Subtitle chunks not yet written to the text characteristic (`Target`, a CBCharacteristic in the app).
 /// A new text replaces the unsent one. Every new characteristic (connect, services reset) or loss of it bumps
@@ -130,11 +129,10 @@ struct BoardLabel {
 }
 
 /// Which board this phone talks to (P9 access control). The first board is trusted on first use: once its
-/// translator setup finished AND an encrypted access succeeded on the same link (the board's Claude characteristics
-/// need a bonded, encrypted link), its identifier is pinned. From then on only that board is reconnected, by
+/// translator setup finished on a link, its identifier is pinned. From then on only that board is reconnected, by
 /// identifier (`retrievePeripherals(withIdentifiers:)` + a pending connect); a device found by a scan that is not
-/// the pinned board is never connected, whatever it advertises. Claude traffic from the board is forwarded only on
-/// a link where the encrypted access succeeded. `forget` drops the pin (a new board) and scanning starts again.
+/// the pinned board is never connected, whatever it advertises. `forget` drops the pin (a new board) and scanning
+/// starts again.
 struct BoardPin {
     enum Reconnect: Equatable {
         /// Connect to this identifier only (and wait for it)
@@ -144,10 +142,8 @@ struct BoardPin {
     }
 
     private(set) var pinned: UUID?
-    /// The peripheral being connected or connected, and what its link has proven so far
+    /// The peripheral being connected or connected
     private var link: UUID?
-    private var setUp = false
-    private var encrypted = false
 
     init(pinned: UUID?) { self.pinned = pinned }
 
@@ -156,47 +152,22 @@ struct BoardPin {
     /// Whether a peripheral found by a scan (or already connected to the system) may be connected
     func mayConnect(_ id: UUID) -> Bool { pinned == nil || pinned == id }
 
-    /// A connection to `id` starts: nothing is proven on it yet
-    mutating func connecting(_ id: UUID) {
-        link = id
-        setUp = false
-        encrypted = false
-    }
+    /// A connection to `id` starts
+    mutating func connecting(_ id: UUID) { link = id }
 
     /// The translator setup finished on the current link; the identifier to persist when it just became the pin
     mutating func setupFinished() -> UUID? {
-        guard link != nil else { return nil }
-        setUp = true
-        return pinIfProven()
+        guard pinned == nil, let link else { return nil }
+        pinned = link
+        return link
     }
 
-    /// An encrypted characteristic access (the Claude answer subscription) succeeded on the current link; the
-    /// identifier to persist when it just became the pin
-    mutating func encryptedAccessSucceeded() -> UUID? {
-        guard link != nil else { return nil }
-        encrypted = true
-        return pinIfProven()
-    }
+    mutating func linkGone() { link = nil }
 
-    /// Board → relay traffic may be forwarded: an encrypted access succeeded on this link
-    var claudeTrusted: Bool { link != nil && encrypted }
-
-    mutating func linkGone() {
-        link = nil
-        setUp = false
-        encrypted = false
-    }
-
-    /// Drops the pin and the current link's trust (the caller disconnects and scans again)
+    /// Drops the pin (the caller disconnects and scans again)
     mutating func forget() {
         pinned = nil
         linkGone()
-    }
-
-    private mutating func pinIfProven() -> UUID? {
-        guard pinned == nil, setUp, encrypted, let link else { return nil }
-        pinned = link
-        return link
     }
 }
 

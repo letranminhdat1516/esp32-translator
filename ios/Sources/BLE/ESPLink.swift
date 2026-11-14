@@ -4,17 +4,15 @@ import os
 
 /// BLE link to the ESP32 board (protocol: see firmware/main/ble_link.c and Core/BoardProtocol.swift).
 /// CoreBluetooth callbacks run on a dedicated queue so audio packets never wait for the main thread.
-/// The board's Claude service is used only by the Claude relay (ClaudeRelayService): the translator never reads it.
 ///
 /// `BoardLink` (ARCHITECTURE R4): state/audio/control streams, the board info read from `…0005` on connect, the
 /// clock and the language label (kind 3) resent whenever the link becomes ready, the 20 s keepalive, a services
 /// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff
 /// (first rescan at once, then 0.5 s → 10 s).
-/// Board pinning (P9, `BoardPin`): the first board is pinned once its setup finished and an encrypted access (the
-/// Claude answer subscription) succeeded on that link; from then on only that identifier is reconnected
-/// (`retrievePeripherals(withIdentifiers:)` + a pending connect, which waits for the board indefinitely) and no
-/// other device is ever connected. Board → relay traffic is forwarded only once the encrypted access succeeded on
-/// the current link. `forgetBoard()` drops the pin and scans again.
+/// Board pinning (P9, `BoardPin`): trust on first use, the first board is pinned once its translator setup finished
+/// on a link; from then on only that identifier is reconnected (`retrievePeripherals(withIdentifiers:)` + a pending
+/// connect, which waits for the board indefinitely) and no other device is ever connected. `forgetBoard()` drops
+/// the pin and scans again.
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
 final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     typealias State = BoardState
@@ -25,27 +23,11 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     static let controlChar = CBUUID(string: BoardProtocol.controlUUID)
     static let infoChar = CBUUID(string: BoardProtocol.infoUUID)
 
-    static let claudeService = CBUUID(string: "A7C00010-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let claudeRequest = CBUUID(string: "A7C00011-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let claudeAnswer = CBUUID(string: "A7C00012-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-    static let claudeVoice = CBUUID(string: "A7C00013-3B2F-4C1E-9D8A-5F6E7D8C9B0A")
-
     /// Called on the BLE queue for every audio packet
     var onAudioPacket: (@Sendable (Data) -> Void)?
     var onStateChange: (@Sendable (State) -> Void)?
     /// Board mic state (off/on) when the user taps the on-screen button
     var onMicChange: (@Sendable (Bool) -> Void)?
-
-    /// Claude relay (all on the BLE queue): the write size once the Claude characteristics are found, nil when the
-    /// board link is gone; the answer subscription state; board inputs; board voice audio (ADPCM)
-    var onClaudeReady: (@Sendable (Int?) -> Void)?
-    var onClaudeSubscribed: (@Sendable (Bool) -> Void)?
-    var onClaudeInput: (@Sendable (Data) -> Void)?
-    var onClaudeVoice: (@Sendable (Data) -> Void)?
-    /// The board may have just given this link the translator role (the first translator write on a link, a write
-    /// after a silence the board takes for a gone app, or a control notification): the relay repeats its hello,
-    /// which the board takes only on the link holding that role
-    var onTranslatorActive: (@Sendable () -> Void)?
 
     // BoardLink streams (broadcast; sent on the BLE queue)
     private let stateEvents = Broadcast<BoardState>()
@@ -78,7 +60,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// The translator service being set up; callbacks for an older one are ignored (BLE queue)
     private var setup = SetupGuard<CBService>()
     /// Keepalive on the control characteristic while connected (BLE queue). The board stops streaming audio after
-    /// 60 s without any app write: a bonded iPhone keeps the link for notifications (ANCS) after the app is gone.
+    /// 60 s without any app write: a bonded iPhone may keep the link after the app is gone.
     private var keepalive: DispatchSourceTimer?
     /// Control byte the board takes as "the app is alive" (0...2 are mic states); see firmware/main/phone_idle.h
     static let keepaliveByte: UInt8 = 0xFF
@@ -87,18 +69,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// suspended, so the timer did not fire) sends a keepalive right away
     private var lastWrite = DispatchTime.now()
     private static let staleWrite: UInt64 = 15_000_000_000
-    /// A write after this much silence may have given the role back (the board drops it after 60 s: phone_idle.h)
-    private static let roleGap: UInt64 = 45_000_000_000
-    private var translatorWritten = false
 
-    private var claudeRequestChar: CBCharacteristic?
-    private var claudeAnswerChar: CBCharacteristic?
-    private var claudeVoiceChar: CBCharacteristic?
-    private var answerRetried = false
-    /// The relay's last setClaudeSubscribed (a delayed auth retry must not resubscribe after an unsubscribe)
-    private var claudeAnswerWanted = false
-
-    /// The pinned board and what the current link has proven (BLE queue); the pin is kept in `pinStore`
+    /// The pinned board and the current link (BLE queue); the pin is kept in `pinStore`
     private let pinStore: BoardPinStore
     private var pin: BoardPin
 
@@ -148,16 +120,6 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         }
     }
 
-    /// The board's Claude answers (and with them the relay role, after the hello). Encrypted: the board is bonded.
-    func setClaudeSubscribed(_ on: Bool) {
-        queue.async { [self] in
-            claudeAnswerWanted = on
-            guard let peripheral, let c = claudeAnswerChar else { return }
-            answerRetried = false
-            peripheral.setNotifyValue(on, for: c)
-        }
-    }
-
     /// Forgets the pinned board (the user has a new one) and looks for a board again. A connected board is
     /// dropped first; the rescan follows its disconnect.
     func forgetBoard() {
@@ -172,28 +134,12 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
                 return
             }
             central.cancelPeripheralConnection(old)
-            linkGone()   // nothing more from it reaches the relay, even before the disconnect arrives
+            linkGone()
             backoff.reset()
             if old.state == .connected { return }   // didDisconnectPeripheral rescans at once
             // A pending connect (the pinned board was away): no disconnect to wait for
             peripheral = nil
             if central.state == .poweredOn { startScan() }
-        }
-    }
-
-    func setClaudeVoice(_ on: Bool) {
-        queue.async { [self] in
-            guard let peripheral, let c = claudeVoiceChar else { return }
-            peripheral.setNotifyValue(on, for: c)
-        }
-    }
-
-    /// One relay chunk ([flags][payload]), with response so none is dropped or reordered. Not a translator write:
-    /// it neither keeps the translator role nor counts for the keepalive.
-    func writeClaude(_ chunk: Data) {
-        queue.async { [self] in
-            guard let peripheral, let c = claudeRequestChar else { return }
-            peripheral.writeValue(chunk, for: c, type: .withResponse)
         }
     }
 
@@ -213,14 +159,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// Every write to the board goes through here (BLE queue)
     private func write(_ peripheral: CBPeripheral, _ data: Data, for characteristic: CBCharacteristic,
                        type: CBCharacteristicWriteType) {
-        let now = DispatchTime.now()
-        let gap = now.uptimeNanoseconds &- lastWrite.uptimeNanoseconds
         peripheral.writeValue(data, for: characteristic, type: type)
-        lastWrite = now
-        if !translatorWritten || gap > Self.roleGap {
-            translatorWritten = true
-            onTranslatorActive?()
-        }
+        lastWrite = DispatchTime.now()
     }
 
     /// The translator characteristics are dead (drop, Bluetooth off, services reset) (BLE queue)
@@ -239,14 +179,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// The board link is gone (BLE queue)
     private func linkGone() {
         translatorGone()
-        translatorWritten = false
         pin.linkGone()
-        let hadClaude = claudeRequestChar != nil
-        claudeRequestChar = nil
-        claudeAnswerChar = nil
-        claudeVoiceChar = nil
-        claudeAnswerWanted = false
-        if hadClaude { onClaudeReady?(nil) }
     }
 
     /// The board notified something: if the app has not written for 15 s (it was suspended), prove it is alive
@@ -323,7 +256,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         setState(waiting ? .scanning : .connecting)
     }
 
-    /// The pin is proven (setup and encrypted access on one link): keep it (BLE queue)
+    /// The first board finished its setup and became the pin: keep it (BLE queue)
     private func keepPin(_ id: UUID?) {
         guard let id else { return }
         pinStore.save(id)
@@ -357,7 +290,7 @@ extension ESPLink: CBCentralManagerDelegate {
             return
         }
         if currentState == .scanning { setState(.connecting) }   // the pending connect to the pinned board
-        peripheral.discoverServices([Self.service, Self.claudeService])
+        peripheral.discoverServices([Self.service])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -376,36 +309,13 @@ extension ESPLink: CBCentralManagerDelegate {
 extension ESPLink: CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard peripheral === self.peripheral else { return }
-        for s in peripheral.services ?? [] {
-            switch s.uuid {
-            case Self.service:
-                setup.begin(s)
-                peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar],
-                                                   for: s)
-            case Self.claudeService where claudeRequestChar == nil:
-                // Once per connection: a translator services reset rediscovers with the relay's characteristics kept
-                peripheral.discoverCharacteristics([Self.claudeRequest, Self.claudeAnswer, Self.claudeVoice], for: s)
-            default:
-                break
-            }
+        for s in peripheral.services ?? [] where s.uuid == Self.service {
+            setup.begin(s)
+            peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar], for: s)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        if service.uuid == Self.claudeService {
-            for c in service.characteristics ?? [] {
-                switch c.uuid {
-                case Self.claudeRequest: claudeRequestChar = c
-                case Self.claudeAnswer: claudeAnswerChar = c
-                case Self.claudeVoice: claudeVoiceChar = c
-                default: break
-                }
-            }
-            if claudeRequestChar != nil && claudeAnswerChar != nil {
-                onClaudeReady?(peripheral.maximumWriteValueLength(for: .withoutResponse))
-            }
-            return
-        }
         // Only the service being set up: a discovery from before a services reset or a drop must not mark its dead
         // characteristics ready (Review Focus 1)
         guard service.uuid == Self.service, peripheral === self.peripheral, setup.isCurrent(service) else { return }
@@ -486,51 +396,10 @@ extension ESPLink: CBPeripheralDelegate {
         } else if characteristic.uuid == Self.controlChar, let state = value.first {
             onMicChange?(state != 0)
             controlEvents.send(.micChanged(state != 0))
-            onTranslatorActive?()   // the board notifies the control value when it gives the role back
-        } else if characteristic.uuid == Self.claudeAnswer {
-            // Only from a link that passed an encrypted access (P9): an unproven device never reaches the Mac
-            guard pin.claudeTrusted else {
-                Diag.log("ble: claude input dropped: no encrypted access on this link yet")
-                return
-            }
-            onClaudeInput?(value)
-        } else if characteristic.uuid == Self.claudeVoice {
-            guard pin.claudeTrusted else { return }
-            onClaudeVoice?(value)
         }
-    }
-
-    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) {
-        guard c.uuid == Self.claudeAnswer else { return }
-        if let error {
-            let ns = error as NSError
-            let auth = ns.domain == CBATTErrorDomain && (ns.code == CBATTError.insufficientAuthentication.rawValue
-                                                          || ns.code == CBATTError.insufficientEncryption.rawValue)
-            Diag.log("claude answers subscribe failed: \(error)")
-            if auth && !answerRetried {           // iOS pairs / re-encrypts, then the retry succeeds
-                answerRetried = true
-                queue.asyncAfter(deadline: .now() + 3) { [self] in
-                    guard self.peripheral === peripheral, peripheral.state == .connected, claudeAnswerWanted,
-                          claudeAnswerChar === c else {
-                        onClaudeSubscribed?(false)
-                        return
-                    }
-                    peripheral.setNotifyValue(true, for: c)
-                }
-                return
-            }
-            onClaudeSubscribed?(false)
-            return
-        }
-        // The answer CCCD write needs an encrypted link: it succeeding proves this link (and may pin the board)
-        if c.isNotifying, peripheral === self.peripheral, c === claudeAnswerChar {
-            keepPin(pin.encryptedAccessSucceeded())
-        }
-        onClaudeSubscribed?(c.isNotifying)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) {
-        if let error, c.uuid == Self.claudeRequest { Diag.log("claude relay write failed: \(error)") }
         if let error, c.uuid == Self.textChar {
             // Only the current link's queue: a stale write may fail after a services reset or a reconnect
             Diag.log("ble: text write failed: \(error)")

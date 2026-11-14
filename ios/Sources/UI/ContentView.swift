@@ -26,17 +26,14 @@ private struct Live {
 }
 
 struct ContentView: View {
-    let relay: RelayModel
     /// Filled by the conversation controller (fields and intents).
     let ui: UIState
-    @State private var showRelay = false
     @State private var confirmClear = false
     @State private var showLanguages = false
     @State private var showGlossary = false
 
-    @MainActor init(ui: UIState, relay: RelayModel) {
+    @MainActor init(ui: UIState) {
         self.ui = ui
-        self.relay = relay
     }
 
     /// `loading` until the controller has set the session.
@@ -51,7 +48,7 @@ struct ContentView: View {
     var body: some View {
         let live = live
         VStack(spacing: 0) {
-            Header(live: live, ui: ui, showRelay: $showRelay, confirmClear: $confirmClear,
+            Header(live: live, ui: ui, confirmClear: $confirmClear,
                    showLanguages: $showLanguages, showGlossary: $showGlossary)
             if ui.ttsVoiceMissing { TtsBanner(open: ui.openTtsSettings) }
             content(live)
@@ -59,7 +56,6 @@ struct ContentView: View {
         .foregroundStyle(Palette.text)
         .background(Palette.ground.ignoresSafeArea())
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showRelay) { RelayView(model: relay) }
         .sheet(isPresented: $showLanguages) { LanguageSheet(ui: ui) }
         .sheet(isPresented: $showGlossary) { GlossaryView(ui: ui) }
         // The trash sits next to the listen button: a stray tap must not wipe the conversation
@@ -117,7 +113,6 @@ private struct TtsBanner: View {
 private struct Header: View {
     let live: Live
     let ui: UIState
-    @Binding var showRelay: Bool
     @Binding var confirmClear: Bool
     @Binding var showLanguages: Bool
     @Binding var showGlossary: Bool
@@ -150,7 +145,6 @@ private struct Header: View {
                     if ui.session != nil {
                         Button(Copy.t("menu.glossary"), systemImage: "character.book.closed") { showGlossary = true }
                     }
-                    Button(Copy.t("menu.relay"), systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
                     // The phone only talks to the board it paired with first: a new board needs this
                     Button(Copy.t("menu.forgetBoard"), systemImage: "antenna.radiowaves.left.and.right.slash") {
                         ui.forgetBoard()
@@ -343,7 +337,6 @@ private struct ControlBar: View {
 /// The controller-driven screen without an engine, for the previews.
 private struct UIStatePreview: View {
     let ui: UIState
-    @State private var a = false
     @State private var b = false
     @State private var c = false
     @State private var d = false
@@ -354,7 +347,7 @@ private struct UIStatePreview: View {
                         theirPartial: ui.theirPartial, myPartial: ui.myPartial, label: ui.languageLabel,
                         chips: ui.chips)
         VStack(spacing: 0) {
-            Header(live: live, ui: ui, showRelay: $a, confirmClear: $b, showLanguages: $c, showGlossary: $d)
+            Header(live: live, ui: ui, confirmClear: $b, showLanguages: $c, showGlossary: $d)
             if ui.ttsVoiceMissing { TtsBanner(open: ui.openTtsSettings) }
             ConversationView(live: live)
             ControlBar(live: live, confirmClear: $b, startStop: ui.startStop, toggleBoardMic: ui.toggleBoardMic)
