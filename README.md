@@ -129,13 +129,36 @@ link), `pair:passkey`, `wait:1000`, then `pair:ok` / `pair:no`.
 | `…0002` audio | notify (authenticated) | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
 | `…0003` text | write / write-no-rsp (authenticated) | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect), 3 = language label |
 | `…0004` control | read / write / notify (authenticated) | 1 byte: 0 = board mic off, 1 = on; the app writes `0xFF` every 20 s as a keepalive, and the board stops streaming audio after 60 s without any app write |
-| `…0005` board info | read | `[protocol version u8][font sets u32 LE]`: which scripts the board can draw (latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16) |
+| `…0005` board info | read (open) | `[protocol version u8][font sets u32 LE]`: version 1 = font sets and label, 2 = same layout and pairing by code enforced; font sets = which scripts the board can draw (latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16) |
 
-**The iPhone app talks to one board only.** Trust on first use: the first board it finds is pinned once the
-translator setup (board info, clock, label, mic) has finished on that link. From then on the app reconnects only
-that board, by its CoreBluetooth identifier, and never connects another device advertising the board service.
-With a new board, turn the old one off and pick **Quên board** in the settings menu: the pin is cleared and the app
-looks for a board again.
+**The iPhone app talks to one board only.** From the moment a board is pinned the app reconnects only that board,
+by its CoreBluetooth identifier, and never connects another device advertising the board service. With a new
+board, turn the old one off and pick **Quên board** in the settings menu: the pin is cleared and the app looks for a
+board again.
+
+### BLE pairing (pinning)
+
+The pin is stored with a security level (`BoardPin`, `ios/Sources/BLE/BoardLinkLogic.swift`):
+
+- **secure**: the board's info reports version ≥ 2 (pairing by code enforced) and the protected read of control
+  `…0004` succeeded, which on such firmware means iOS paired with the 6-digit comparison.
+- **legacy**: the board cannot authenticate (board info < 2, unreadable, or no control characteristic: old
+  firmware lets anyone read) and the user said it is theirs. The Pair screen shows "Board này dùng firmware cũ nên
+  không xác thực được. Chỉ ghép nếu đây đúng là board của bạn." with **Vẫn ghép** / **Huỷ**; nothing is pinned
+  without **Vẫn ghép**, and **Huỷ** skips that board until **Thử lại**. A pin saved by an app version without
+  levels loads as legacy.
+
+On reconnect, a **secure** pin is refused (disconnected, never ready, "Board không còn xác thực được") when the board
+reports version < 2, lacks the control characteristic, or its read succeeds while it reports < 2; the pin is never
+downgraded. A **legacy** pin becomes secure as soon as the board reports ≥ 2 and its read succeeds (after a firmware
+update). Flashing old firmware onto a board pinned as secure therefore needs **Quên board** and a new pairing.
+
+**Limitation.** CoreBluetooth does not tell the app whether a link is encrypted or how it was paired. A peripheral
+that claims version 2 but lets the protected read through without asking for pairing looks the same to the app as
+a real board on an already bonded link, so it would be pinned as secure. The visible difference is that iOS shows no
+pairing dialog: the Pair screen says "iPhone phải hiện hộp thoại ghép kèm mã", and a board that never makes that
+dialog appear on a first pairing should not be trusted. The pin still stops any device that shows up after the real
+board was pinned.
 
 ## Getting started
 
@@ -313,7 +336,7 @@ Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one T
 Fixed in that review: ADPCM header index clamp, the four missing Swift fixture suites, a dead Vietnamese recognizer, zh-Hans locale mapping, board pinning ("Quên board"), and the glossary excluded from iCloud backup. Still open:
 
 - A dead Vietnamese recognizer is noticed only when board audio arrives (or at the next start or mic-on). Catching it with no board audio needs a new engine event in the `VoiceEngine` contract.
-- Board pinning is trust-on-first-use with no proof of identity: the pin stops a fake board that shows up after the real one is pinned, but not one present at the first connection. The real fix is a user-confirmed pairing (the board shows a code, the user confirms it on the phone, then a challenge-response with a key agreed at pairing), which needs firmware work.
+- Board pinning: pairing by code (numeric comparison) and security levels on the pin replaced trust on first use (see "BLE pairing (pinning)"). Still open: a peripheral that claims board info version 2 without enforcing encryption cannot be told apart by CoreBluetooth; only the missing iOS pairing dialog gives it away. A challenge-response with a key agreed at pairing would close it.
 - Switching to a language that needs a download leaves the old pair running: the board keeps getting subtitles in the old language while the screen asks to download the new one. Turn the mic off when entering `needsDownload` from a switch (R1, R5).
 - Small race between the generation check and `engine.speak` (`ConversationController.say`): one phrase from the old pair could still be spoken right after a switch. Pass the generation into the engine (R4).
 - The one-restart budget in `SessionMachine` never resets, so a second recognizer death hours later goes straight to `failed`. Reset it after a healthy period (P6).

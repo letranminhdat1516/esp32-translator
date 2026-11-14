@@ -9,17 +9,19 @@ import os
 /// clock and the language label (kind 3) resent whenever the link becomes ready, the 20 s keepalive, a services
 /// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff
 /// (first rescan at once, then 0.5 s → 10 s).
-/// Board pinning (P9, `BoardPin`): trust on first use, the first board is pinned once its translator setup finished
-/// on a link; from then on only that identifier is reconnected (`retrievePeripherals(withIdentifiers:)` + a pending
-/// connect, which waits for the board indefinitely) and no other device is ever connected. `forgetBoard()` drops
-/// the pin and scans again.
+/// Board pinning (P9, `BoardPin`): one board is pinned, with a security level; from then on only that identifier is
+/// reconnected (`retrievePeripherals(withIdentifiers:)` + a pending connect, which waits for the board indefinitely)
+/// and no other device is ever connected. `forgetBoard()` drops the pin and scans again.
 /// Pairing by code (ARCHITECTURE §4): after board info (readable without pairing) the first protected access is a
-/// read of control `…0004`. New firmware refuses it until the link is encrypted and authenticated, so iOS shows its
-/// pairing dialog with the board's 6 digits; the read succeeds once both sides confirmed. Old firmware asks for no
-/// pairing and the read just succeeds. Only then are notifications enabled, the setup finished and the board pinned
-/// (`BoardPin.accessGranted`). A refused read keeps the link and waits for `retryPairing()` (an unpinned board, the
-/// Pair screen) or reads again after `authRetryDelay` (the pinned board, whose bond was lost). `onPairingEvent`
-/// reports the steps to the Pair screen.
+/// read of control `…0004`. New firmware (board info version ≥ 2) refuses it until the link is encrypted and
+/// authenticated, so iOS shows its pairing dialog with the board's 6 digits; the read succeeds once both sides
+/// confirmed, and the board is pinned `.secure`. Old firmware (version < 2, or no control characteristic) asks for no
+/// pairing, so the read proves nothing: the link holds it and reports `.legacyBoard`; only `acceptLegacyBoard()`
+/// ("Vẫn ghép") pins it, as `.legacy`. A `.secure` pinned board that comes back as old firmware is refused
+/// (disconnected, never ready, `.authFailed(.unverified)`); a `.legacy` pin becomes `.secure` once the board proves
+/// it. Notifications are enabled only when `BoardPin` lets the setup finish. A refused read keeps the link and waits
+/// for `retryPairing()` (an unpinned board, the Pair screen) or reads again after `authRetryDelay` (the pinned board,
+/// whose bond was lost). `onPairingEvent` reports the steps to the Pair screen.
 /// The central is created by `activate()` (or at init with `startCentral`), since creating it asks for the Bluetooth
 /// permission: the Permissions screen asks first.
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
@@ -103,7 +105,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     init(startCentral: Bool = true) {
         let store = BoardPinStore()
         pinStore = store
-        pin = BoardPin(pinned: store.load())
+        pin = BoardPin(pinned: store.load())   // a pin saved without a level loads as legacy
         super.init()
         if startCentral { activate() }
     }
@@ -125,10 +127,37 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     func retryPairing() -> Bool {
         let awaiting = shared.withLock { $0.awaitingPairing }
         queue.async { [self] in
-            guard authRefused, let peripheral, peripheral.state == .connected else { return }
-            readProtected(peripheral)
+            // A board the user said "Huỷ" to may be found again
+            pin.clearDeclined()
+            if authRefused, let peripheral, peripheral.state == .connected {
+                readProtected(peripheral)
+                return
+            }
+            // Scanning without a pin: start the scan over so a board seen (and ignored) before is reported again
+            let idle = peripheral.map { $0.state == .disconnected } ?? true
+            if pin.pinned == nil, idle, let central, central.state == .poweredOn {
+                central.stopScan()
+                startScan()
+            }
         }
         return awaiting
+    }
+
+    /// The user's answer about an old-firmware board (`PairingLinkEvent.legacyBoard`): true ("Vẫn ghép") finishes the
+    /// setup and pins it as legacy; false ("Huỷ") drops it and ignores it until `retryPairing()` or `forgetBoard()`.
+    func answerLegacyBoard(accept: Bool) {
+        queue.async { [self] in
+            guard let peripheral, peripheral.state == .connected else { return }
+            if accept {
+                guard pin.acceptLegacy() else { return }
+                Diag.log("ble: old-firmware board accepted by the user")
+                completeSetup(peripheral)
+            } else {
+                guard pin.declineLegacy() != nil else { return }
+                Diag.log("ble: old-firmware board declined by the user")
+                central?.cancelPeripheralConnection(peripheral)   // didDisconnect rescans; this board is skipped
+            }
+        }
     }
 
     /// Sends text to the screen (`BoardProtocol.frameText`). A new message replaces an unsent one (the board resets
@@ -216,6 +245,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// The translator characteristics are dead (drop, Bluetooth off, services reset) (BLE queue)
     private func translatorGone() {
         stopKeepalive()
+        pin.setupRestarted()
         textCharacteristic = nil
         controlCharacteristic = nil
         infoCharacteristic = nil
@@ -295,7 +325,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
             }
             // The system no longer knows it (e.g. after a Bluetooth reset): scan, but only `id` is connected
         case .discover:
-            if let known = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
+            if let known = central.retrieveConnectedPeripherals(withServices: [Self.service])
+                .first(where: { pin.mayConnect($0.identifier) }) {
                 connect(known)
                 return
             }
@@ -315,11 +346,11 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         setState(waiting ? .scanning : .connecting)
     }
 
-    /// The first board finished its setup and became the pin: keep it (BLE queue)
-    private func keepPin(_ id: UUID?) {
-        guard let id else { return }
-        pinStore.save(id)
-        Diag.log("ble: board pinned")
+    /// The board became the pin, or its legacy pin became secure: keep it (BLE queue)
+    private func keepPin(_ made: PinnedBoard?) {
+        guard let made else { return }
+        pinStore.save(made)
+        Diag.log("ble: board pinned (\(made.security.rawValue))")
     }
 }
 
@@ -405,17 +436,42 @@ extension ESPLink: CBPeripheralDelegate {
         }
     }
 
-    /// Board info is known (nil: absent or unreadable): next the protected read (BLE queue)
+    /// Board info is known (nil: absent or unreadable): `BoardPin` decides on the protected read, consent or refusal
+    /// (BLE queue)
     private func boardInfoRead(_ peripheral: CBPeripheral, value: Data?) {
         infoCharacteristic = nil
         pendingInfo = value
-        guard controlCharacteristic != nil else {
-            // No protected characteristic to prove anything with (very old firmware): trust on first use as before
-            pin.accessGranted()
-            finishSetup(peripheral, boardInfo: value)
-            return
+        let version = value.flatMap(BoardProtocol.parseBoardInfo)?.protocolVersion ?? 0
+        apply(pin.boardInfo(version: version, hasControl: controlCharacteristic != nil), peripheral)
+    }
+
+    /// Carries out `BoardPin`'s decision for the current link (BLE queue)
+    private func apply(_ step: BoardPin.Step, _ peripheral: CBPeripheral) {
+        switch step {
+        case .readProtected:
+            readProtected(peripheral)
+        case .finish:
+            completeSetup(peripheral)
+        case .askConsent:
+            // Old firmware: nothing proves this is the user's board. Hold the link, nothing streams, ask the user
+            Diag.log("ble: board cannot authenticate (old firmware), asking the user")
+            onPairingEvent?(.legacyBoard)
+        case .refuse:
+            // The pinned secure board came back as old firmware (or something posing as it): never ready, never
+            // a downgraded pin. The disconnect rescans with the backoff.
+            Diag.log("ble: pinned board no longer authenticates, refused")
+            onPairingEvent?(.authFailed(.unverified))
+            central?.cancelPeripheralConnection(peripheral)
         }
-        readProtected(peripheral)
+    }
+
+    /// The link may stream: notifications, then clock, label, mic, ready (BLE queue)
+    private func completeSetup(_ peripheral: CBPeripheral) {
+        if let audioCharacteristic { peripheral.setNotifyValue(true, for: audioCharacteristic) }
+        if let controlCharacteristic { peripheral.setNotifyValue(true, for: controlCharacteristic) }
+        finishSetup(peripheral, boardInfo: pendingInfo)
+        pendingInfo = nil
+        onPairingEvent?(.authenticated)
     }
 
     /// The first protected access: read control `…0004`. New firmware makes iOS pair here (BLE queue)
@@ -450,12 +506,7 @@ extension ESPLink: CBPeripheralDelegate {
             return
         }
         Diag.log("ble: protected read ok")
-        pin.accessGranted()
-        if let audioCharacteristic { peripheral.setNotifyValue(true, for: audioCharacteristic) }
-        if let controlCharacteristic { peripheral.setNotifyValue(true, for: controlCharacteristic) }
-        finishSetup(peripheral, boardInfo: pendingInfo)
-        pendingInfo = nil
-        onPairingEvent?(.authenticated)
+        apply(pin.accessGranted(), peripheral)
     }
 
     private func setAuthRefused(_ refused: Bool) {

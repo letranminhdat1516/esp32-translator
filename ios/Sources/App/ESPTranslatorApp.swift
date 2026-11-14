@@ -18,7 +18,8 @@ struct ESPTranslatorApp: App {
         let demo = DemoScreen.parse(CommandLine.arguments)
         // The board link; its central is created once Bluetooth was answered (the Permissions screen asks)
         let boardLink = ESPLink(startCentral: false)
-        let pairing = LinkPairingModel(retryLink: { boardLink.retryPairing() }, onStart: { boardLink.activate() })
+        let pairing = LinkPairingModel(retryLink: { boardLink.retryPairing() }, onStart: { boardLink.activate() },
+                                       consent: { boardLink.answerLegacyBoard(accept: $0) })
         // Demo mode shows the canvas' version label
         let services = demo == nil ? AppServices(pairing: pairing) : AppServices(appVersion: "0.9")
         self.demo = demo

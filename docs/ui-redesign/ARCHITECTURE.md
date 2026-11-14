@@ -89,10 +89,17 @@ Replaces trust-on-first-use with **LE Secure Connections numeric comparison**:
 - iOS shows its own system dialog with the same 6 digits when the first protected characteristic is
   touched. The app's Pair screen (1.3) explains it ("So mã trên iPhone với mã trên board"). The design's
   4-digit mock becomes 6 digits shown by the board; the app shows no code of its own.
-- The app pins the peripheral only after an authenticated access succeeds (`BoardPin` proof = a successful
-  read of a protected characteristic), which is now real proof.
+- Board info (`…0005`, open) reports version 2 on firmware that enforces this (same 5-byte layout).
+- The app pins the peripheral as `.secure` only when board info says ≥ 2 and an authenticated access succeeded
+  (`BoardPin` proof = a successful read of control `…0004`). Old firmware (< 2, or no control characteristic)
+  proves nothing: the Pair screen asks ("Vẫn ghép" / "Huỷ", state `legacyConsent`) and only "Vẫn ghép" pins it,
+  as `.legacy`. A `.secure` pin that comes back reporting < 2 or without the control characteristic is refused
+  and never downgraded; a `.legacy` pin upgrades to `.secure` once the board proves it. Pins saved without a
+  level load as `.legacy`.
+- Limitation: CoreBluetooth cannot see whether the link is encrypted, so a peripheral claiming version 2 that lets
+  the read through unpaired would be pinned `.secure`; the only tell is that iOS shows no pairing dialog, which
+  the Pair screen calls out ("iPhone phải hiện hộp thoại ghép kèm mã").
 - Firmware is changed and host-tested and the simulator is updated, but it is **not flashed** (owner flashes).
-  The app must keep working with the current firmware: if no pairing is requested, the app pins as today.
 
 ## 5. Phone-only mode (2.3), temporary
 

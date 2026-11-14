@@ -21,10 +21,20 @@ struct PairView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 22)
             ScreenTitle(Copy.t("pair.title"), type: .title).padding(.top, 26)
-            Text(Copy.t(s.bodyKey)).ds(.paragraph)
-                .foregroundStyle(s.failed ? DS.Color.warnText : DS.Color.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 10)
+            if s.legacy {
+                // An old-firmware board: pinned only on "Vẫn ghép" (README "BLE pairing")
+                WarningBox(text: Copy.t(s.bodyKey)).padding(.top, 10)
+            } else {
+                Text(Copy.t(s.bodyKey)).ds(.paragraph)
+                    .foregroundStyle(s.failed ? DS.Color.warnText : DS.Color.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+            }
+            if let hint = s.dialogHintKey {
+                Text(Copy.t(hint)).ds(.caption).foregroundStyle(DS.Color.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            }
             RuledList { boardRow(s) }
                 .padding(.top, 18)
             Spacer(minLength: 16)
@@ -46,7 +56,7 @@ struct PairView: View {
             }
         } else {
             BoardDial(ring: s.paired ? .arc(fromDegrees: 0, sweepDegrees: 360, tint: .blue, inset: 6)
-                      : s.failed ? .arc(fromDegrees: 0, sweepDegrees: 360, tint: .warn, inset: 6)
+                      : s.failed || s.legacy ? .arc(fromDegrees: 0, sweepDegrees: 360, tint: .warn, inset: 6)
                       : .arc(fromDegrees: 200, sweepDegrees: 140, tint: .blue, inset: 6)) { dialFace(s) }
         }
     }
@@ -97,6 +107,11 @@ struct PairView: View {
     private func buttons(_ s: PairDisplay) -> some View {
         if s.paired {
             InstrumentButton(Copy.t("pair.continue")) { router.next() }
+        } else if s.legacy {
+            HStack(spacing: DS.Space.buttonGap) {
+                InstrumentButton(Copy.t("pair.cancelLegacy"), kind: .secondary) { pairing.declineLegacy() }
+                InstrumentButton(Copy.t("pair.acceptLegacy")) { pairing.acceptLegacy() }
+            }
         } else if s.failed {
             HStack(spacing: DS.Space.buttonGap) {
                 InstrumentButton(Copy.t("pair.usePhone"), kind: .secondary) { router.tryWithoutBoard() }
