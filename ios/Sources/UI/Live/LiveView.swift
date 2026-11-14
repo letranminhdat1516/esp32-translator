@@ -64,7 +64,7 @@ private struct LiveTranscript: View {
         TranscriptView(lines: lines, partials: partials, selectedID: $selectedID,
                        onReplay: { ui.replayLine($0) },
                        onEdit: { ui.editLine($0, $1) },
-                       onReport: { ui.reportLine($0) })
+                       onReport: { ui.reportWrong($0) })
     }
 }
 

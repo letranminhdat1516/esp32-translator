@@ -31,7 +31,9 @@ enum BoardLevelMeter {
     }
 }
 
-/// Maps recognizer results to ranges on the `SessionClock` (`UILine.audioRange`).
+/// Maps recognizer results to ranges on the `SessionClock` (`UILine.audioRange`), the clock the clip recorder
+/// (`RingAudioClipRecorder`) stamps its rings with on arrival, so `recorder.clip(line.audioRange, side:)` cuts the
+/// phrase out directly. Times are when audio arrived in the app, in seconds of `MonotonicSessionClock`.
 ///
 /// Their side: the board streams a phrase as a run of packets. A result's range ends when the last packet before it
 /// arrived and starts the result's audio length earlier (the recognizer's own result range); without a length, it

@@ -80,10 +80,6 @@ struct AudioRangesTests {
         #expect(r.theirs(at: 0.5, audio: 2) == 0...0.5)
     }
 
-    @Test func theSystemClockIsMonotonic() {
-        let a = SessionClock.system.now(), b = SessionClock.system.now()
-        #expect(b >= a)
-    }
 }
 
 struct LineEditTextTests {

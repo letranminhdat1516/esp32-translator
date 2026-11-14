@@ -45,6 +45,12 @@ final class AppRouter {
 
     private(set) var onboardingDone: Bool
     var onboardingStep: OnboardingStep = .welcome
+    /// The onboarding navigation stack under Welcome (the steps up to the current one), so the steps are pushed
+    /// screens with the system swipe back; popping sets `onboardingStep`.
+    var onboardingPath: [OnboardingStep] {
+        get { OnboardingStep.allCases.filter { $0 != .welcome && $0.rawValue <= onboardingStep.rawValue } }
+        set { onboardingStep = newValue.last ?? .welcome }
+    }
     var path: [Route] = []
     var sheet: AppSheet?
     var mode: MainMode = .board
@@ -121,10 +127,15 @@ final class AppRouter {
     /// "Dùng iPhone trong lúc chờ".
     func continueWithPhone() { boardLostDismissed = true }
 
-    /// "Kết nối board" from phone-only.
+    /// "Kết nối board" from phone-only: the Pair step (it activates the Bluetooth central and finds the pinned or a
+    /// new board). Not persisted: a relaunch opens the main screen again.
     func connectBoard() {
+        path.removeAll()
+        sheet = nil
         mode = .board
         boardLostDismissed = false
+        onboardingStep = .pair
+        onboardingDone = false
     }
 
     func push(_ route: Route) { path.append(route) }

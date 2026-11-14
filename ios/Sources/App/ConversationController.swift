@@ -46,8 +46,8 @@ final class ConversationController {
     private let defaults: UserDefaults
     private let boardText: BoardText
     private let now: () -> Date
-    /// The audio clock of `UILine.audioRange` (shared with the clip recorder)
-    private let clock: SessionClock
+    /// The audio clock of `UILine.audioRange`: the same clock the clip recorder stamps its rings with
+    private let clock: any SessionClock
     private let tuning: Tuning
 
     /// The session state and their-side generation (`SessionMachine.advance`).
@@ -106,13 +106,18 @@ final class ConversationController {
     /// Lines whose translation the user corrected: a late translation result no longer replaces it
     private var editedLines = Set<String>()
     private var inputMode: InputMode = .board
+    /// Track C hook: every decoded board PCM chunk while running (the "theirs" clip ring of `AudioClipRecorder`).
+    var onTheirPCM: (([Int16], Int) -> Void)?
+    /// Whose voice the phone's mic carries now (`.theirs` in phone-only, `.mine` otherwise and while "Giữ để nói" is
+    /// held): the app points the mic clip tap (`MicPCMTap`) at that ring.
+    var onMicSide: ((Side) -> Void)?
 
     /// `packs` are every bundled pack, the home language (`LanguageCatalog.homeCode`) included. `glossary` nil: no
     /// glossary (the editor reports "Không lưu được").
     /// `level`/`partials` nil: the controller makes its own (the app passes the ones `AppServices` hands the views).
     init(engine: any VoiceEngine, board: any BoardLink, packs: [LanguagePack], glossary: GlossaryStore?,
          defaults: UserDefaults = .standard, boardText: BoardText = BoardText(), ui: UIState,
-         level: LevelModel? = nil, partials: PartialModel? = nil, clock: SessionClock = .system,
+         level: LevelModel? = nil, partials: PartialModel? = nil, clock: any SessionClock = MonotonicSessionClock(),
          now: @escaping () -> Date = { Date() }, tuning: Tuning = Tuning()) {
         self.engine = engine
         self.board = board
@@ -234,6 +239,7 @@ final class ConversationController {
         ui.glossaryUpdate = { [weak self] id, text in try self?.glossaryUpdate(id, text) }
         ui.glossaryDelete = { [weak self] id in try self?.glossaryDelete(id) }
         bindLiveIntents()
+        ui.glossaryAddFixed = { [weak self] text, fixed in try self?.glossaryAdd(text, fixed: fixed) }   // Track C
     }
 
     /// Saved only when the machine took the pick (a pick while loading, checking, downloading, preparing or
@@ -298,6 +304,7 @@ final class ConversationController {
         case .downloading:
             downloadMissing()
         case .preparing(let code, let restarts):
+            ui.packStatus[code] = .installed   // nothing missing any more (track A: the language list)
             prepare(code, restarts: restarts)
         case .running(let code, let restarts):
             running(code, restarts: restarts)
@@ -325,6 +332,24 @@ final class ConversationController {
         ui.ttsVoiceMissing = !caps.vietnameseVoice
         let saved = defaults.string(forKey: Self.pickKey) ?? Self.defaultPick
         apply(.catalogReady(saved: saved, offered: Set(ui.offeredPacks.map(\.code))))
+        refreshPackStatus()
+    }
+
+    /// The language list's "Đã tải" / "Tải": what each offered language still misses (the Vietnamese voice aside).
+    /// Track A (onboarding language step); the picked language's download shows over this.
+    private func refreshPackStatus() {
+        let codes = ui.offeredPacks.map(\.code), engine = self.engine, generation = session.generation
+        oneOff { [weak self] in
+            for code in codes {
+                let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: generation)
+                guard let missing = try? await engine.missing(pair: pair) else { continue }
+                guard let self else { return }
+                let blocking = missing.filter { $0.kind != .ttsVoice }
+                if ui.packStatus[code] != .installed {
+                    ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
+                }
+            }
+        }
     }
 
     private func applyCapabilities(_ caps: Capabilities) {
@@ -623,6 +648,7 @@ final class ConversationController {
         let pcm = decoder.decode(packet)
         if !pcm.isEmpty { boardSignal(pcm) }
         guard !pcm.isEmpty, engineStarted, case .running = session.state else { return }
+        onTheirPCM?(pcm, tuning.boardSampleRate)   // Track C hook
         let e = epoch
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
@@ -657,7 +683,7 @@ final class ConversationController {
             return
         }
         guard msg.text.count > 1 else { return }
-        let range = ranges.theirs(at: clock.now(), audio: msg.audio)
+        let range = ranges.theirs(at: clock.now, audio: msg.audio)
         if let min = packs[code]?.minConfidence, let confidence = msg.confidence, confidence < min {
             unclear(msg.text, range: range)
             return
@@ -789,7 +815,7 @@ final class ConversationController {
         setMyPartial(turn.partial)
         if !turn.partial.isEmpty || change.final != nil { myLastSpeech = t }
         let range: ClosedRange<TimeInterval>? = msg.text.isEmpty ? nil
-            : ranges.mine(turn: turn.id, at: clock.now(), audio: Double(max(0, msg.endMs - msg.startMs)) / 1000)
+            : ranges.mine(turn: turn.id, at: clock.now, audio: Double(max(0, msg.endMs - msg.startMs)) / 1000)
         let id = "m-\(turn.id)"
         if let index = ui.lines.lastIndex(where: { $0.id == id }) {
             if ui.lines[index].source != turn.text {
@@ -839,7 +865,7 @@ final class ConversationController {
     /// One decoded board packet: the dial's level (throttled by `LevelModel`, never `ui`) and the audio clock of
     /// their phrase.
     private func boardSignal(_ pcm: [Int16]) {
-        let t = clock.now()
+        let t = clock.now
         ranges.boardPacket(at: t, seconds: Double(pcm.count) / Double(tuning.boardSampleRate))
         level.push(BoardLevelMeter.level(pcm), at: now())
         lastLevelPacket = t
@@ -849,7 +875,7 @@ final class ConversationController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard let self else { return }
-                if clock.now() - lastLevelPacket >= BoardLevelMeter.silenceAfter {
+                if clock.now - lastLevelPacket >= BoardLevelMeter.silenceAfter {
                     level.push(0, at: now())
                     level.flush(at: now())
                     levelDecay = nil
@@ -895,6 +921,7 @@ final class ConversationController {
         inputMode = mode
         ui.phoneOnly = on
         if !on { ui.talkHeld = false }
+        onMicSide?(on ? .theirs : .mine)
         enqueueRouting { try await $0.setInputMode(mode) }
     }
 
@@ -903,6 +930,7 @@ final class ConversationController {
         guard inputMode == .phoneOnly, held != ui.talkHeld else { return }
         ui.talkHeld = held
         if held && !ui.listening { note(.userStart) }
+        onMicSide?(held ? .mine : .theirs)
         enqueueRouting { try await $0.setTalkHeld(held) }
     }
 
@@ -950,6 +978,24 @@ final class ConversationController {
             await previous?.value
             await work(board)
         }
+    }
+}
+
+// MARK: Track C: glossary term with a fixed translation
+
+extension ConversationController {
+    /// Adds a term whose translation into the current language is fixed (`Term.fixed[code]`); an empty `fixed`
+    /// keeps the term as it is, like `glossaryAdd(_:)`.
+    fileprivate func glossaryAdd(_ text: String, fixed: String) throws {
+        let value = fixed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, let code = ui.languageCode ?? activeCode else { return try glossaryAdd(text) }
+        let store = try writableGlossary()
+        let map = [code: value]
+        try Self.validated { () throws(GlossaryError) in
+            _ = try GlossaryStore.validate(id: "", text: text, fixed: map, among: glossaryTerms, ignoring: nil)
+        }
+        ui.glossaryError = nil
+        saveGlossary { () throws(GlossaryError) in try await store.add(text: text, fixed: map) }
     }
 }
 

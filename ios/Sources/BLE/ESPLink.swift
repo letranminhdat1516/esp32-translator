@@ -13,6 +13,15 @@ import os
 /// on a link; from then on only that identifier is reconnected (`retrievePeripherals(withIdentifiers:)` + a pending
 /// connect, which waits for the board indefinitely) and no other device is ever connected. `forgetBoard()` drops
 /// the pin and scans again.
+/// Pairing by code (ARCHITECTURE §4): after board info (readable without pairing) the first protected access is a
+/// read of control `…0004`. New firmware refuses it until the link is encrypted and authenticated, so iOS shows its
+/// pairing dialog with the board's 6 digits; the read succeeds once both sides confirmed. Old firmware asks for no
+/// pairing and the read just succeeds. Only then are notifications enabled, the setup finished and the board pinned
+/// (`BoardPin.accessGranted`). A refused read keeps the link and waits for `retryPairing()` (an unpinned board, the
+/// Pair screen) or reads again after `authRetryDelay` (the pinned board, whose bond was lost). `onPairingEvent`
+/// reports the steps to the Pair screen.
+/// The central is created by `activate()` (or at init with `startCentral`), since creating it asks for the Bluetooth
+/// permission: the Permissions screen asks first.
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
 final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     typealias State = BoardState
@@ -28,6 +37,10 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     var onStateChange: (@Sendable (State) -> Void)?
     /// Board mic state (off/on) when the user taps the on-screen button
     var onMicChange: (@Sendable (Bool) -> Void)?
+    /// Pairing steps for the Pair screen (BLE queue). Set before `activate()`.
+    var onPairingEvent: (@Sendable (PairingLinkEvent) -> Void)?
+    /// The central's state changed (the Bluetooth permission was answered, Bluetooth toggled) (BLE queue)
+    var onCentralUpdate: (@Sendable () -> Void)?
 
     // BoardLink streams (broadcast; sent on the BLE queue)
     private let stateEvents = Broadcast<BoardState>()
@@ -35,7 +48,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private let controlEvents = Broadcast<BoardControl>()
     /// `currentState` and `info`, read from any thread
     private let shared = OSAllocatedUnfairLock(initialState: (state: BoardState.off,
-                                                              info: BoardLabel.info(from: nil)))
+                                                              info: BoardLabel.info(from: nil),
+                                                              awaitingPairing: false))
 
     var state: AsyncStream<BoardState> { stateEvents.stream() }
     var audio: AsyncStream<Data> { audioEvents.stream() }
@@ -44,12 +58,23 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     var info: BoardInfo { shared.withLock { $0.info } }
 
     private let queue = DispatchQueue(label: "esp.ble", qos: .userInteractive)
-    private var central: CBCentralManager!
+    /// Nil until `activate()` (BLE queue)
+    private var central: CBCentralManager?
     private var peripheral: CBPeripheral?
     private var textCharacteristic: CBCharacteristic?
     private var controlCharacteristic: CBCharacteristic?
     /// The board-info characteristic while its value is being read during setup
     private var infoCharacteristic: CBCharacteristic?
+    private var audioCharacteristic: CBCharacteristic?
+    /// The board info read during setup, kept until the protected read succeeded
+    private var pendingInfo: Data?
+    /// The protected read of control `…0004` is out (BLE queue)
+    private var authReading = false
+    /// The protected read was refused on this link; waiting for a retry (BLE queue)
+    private var authRefused = false
+    private var authRetry: DispatchWorkItem?
+    /// The pinned board's read is retried after this long when refused (the board rate-limits pairing requests)
+    static let authRetryDelay: TimeInterval = 15
     /// Subtitle chunks not yet written, tied to the current text characteristic (BLE queue)
     private var textQueue = BoardWriteQueue<CBCharacteristic>()
     /// The language label to resend on ready (BLE queue)
@@ -74,12 +99,36 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private let pinStore: BoardPinStore
     private var pin: BoardPin
 
-    override init() {
+    /// `startCentral: false` waits for `activate()`: creating the central asks for the Bluetooth permission
+    init(startCentral: Bool = true) {
         let store = BoardPinStore()
         pinStore = store
         pin = BoardPin(pinned: store.load())
         super.init()
-        central = CBCentralManager(delegate: self, queue: queue)
+        if startCentral { activate() }
+    }
+
+    /// Creates the central (once): iOS asks for the Bluetooth permission now if it was never answered
+    func activate() {
+        queue.async { [self] in
+            guard central == nil else { return }
+            central = CBCentralManager(delegate: self, queue: queue)
+        }
+    }
+
+    /// Whether a board was pinned (paired) before
+    var hasPinnedBoard: Bool { pinStore.load() != nil }
+
+    /// "Thử lại" on the Pair screen: reads the protected characteristic again when the link is still up after a
+    /// refusal. True when it did (the screen waits for the code again); false when the link is scanning.
+    @discardableResult
+    func retryPairing() -> Bool {
+        let awaiting = shared.withLock { $0.awaitingPairing }
+        queue.async { [self] in
+            guard authRefused, let peripheral, peripheral.state == .connected else { return }
+            readProtected(peripheral)
+        }
+        return awaiting
     }
 
     /// Sends text to the screen (`BoardProtocol.frameText`). A new message replaces an unsent one (the board resets
@@ -129,6 +178,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
             pin.forget()
             retry?.cancel()
             retry = nil
+            guard let central else { return }
             guard let old = peripheral else {
                 if central.state == .poweredOn { startScan() }
                 return
@@ -169,6 +219,12 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         textCharacteristic = nil
         controlCharacteristic = nil
         infoCharacteristic = nil
+        audioCharacteristic = nil
+        pendingInfo = nil
+        authReading = false
+        setAuthRefused(false)
+        authRetry?.cancel()
+        authRetry = nil
         textQueue.detach()
         setup.reset()
         // The next board may be older firmware: no label and Latin-only until its board info is read
@@ -218,7 +274,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         Diag.log("ble: rescan in \(delay) s")
         setState(.scanning)
         let work = DispatchWorkItem { [weak self] in
-            guard let self, central.state == .poweredOn else { return }
+            guard let self, central?.state == .poweredOn else { return }
             startScan()
         }
         retry = work
@@ -228,6 +284,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private func startScan() {
         retry?.cancel()
         retry = nil
+        guard let central else { return }
+        onPairingEvent?(.scanning)
         switch pin.reconnect {
         case .pinned(let id):
             // The pinned board only, by identifier: the connect stays pending until the board is back
@@ -248,6 +306,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
 
     /// `waiting`: a pending connect to the pinned board, which may be away (the screen keeps "looking for the board")
     private func connect(_ p: CBPeripheral, waiting: Bool = false) {
+        guard let central else { return }
         central.stopScan()
         peripheral = p
         p.delegate = self
@@ -266,6 +325,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
 
 extension ESPLink: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        onCentralUpdate?()
         if central.state == .poweredOn {
             backoff.reset()
             startScan()
@@ -274,6 +334,7 @@ extension ESPLink: CBCentralManagerDelegate {
             retry = nil
             linkGone()
             setState(.off)
+            if central.state != .unknown && central.state != .resetting { onPairingEvent?(.bluetoothOff) }
         }
     }
 
@@ -290,6 +351,7 @@ extension ESPLink: CBCentralManagerDelegate {
             return
         }
         if currentState == .scanning { setState(.connecting) }   // the pending connect to the pinned board
+        onPairingEvent?(.connected(name: peripheral.name ?? PairingMachine.defaultName))
         peripheral.discoverServices([Self.service])
     }
 
@@ -301,7 +363,9 @@ extension ESPLink: CBCentralManagerDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         // A peripheral given up on (forgetBoard) is not the link any more
         guard peripheral === self.peripheral else { return }
+        if let error { Diag.log("ble: disconnected: \(error)") }
         linkGone()
+        onPairingEvent?(.linkLost)
         scheduleRescan()
     }
 }
@@ -320,13 +384,12 @@ extension ESPLink: CBPeripheralDelegate {
         // characteristics ready (Review Focus 1)
         guard service.uuid == Self.service, peripheral === self.peripheral, setup.isCurrent(service) else { return }
         var info: CBCharacteristic?
+        // Notifications wait for the protected read: on new firmware a CCCD write would need the pairing too
         for c in service.characteristics ?? [] {
             switch c.uuid {
-            case Self.audioChar: peripheral.setNotifyValue(true, for: c)
+            case Self.audioChar: audioCharacteristic = c
             case Self.textChar: textCharacteristic = c
-            case Self.controlChar:
-                controlCharacteristic = c
-                peripheral.setNotifyValue(true, for: c)
+            case Self.controlChar: controlCharacteristic = c
             case Self.infoChar: info = c
             default: break
             }
@@ -338,13 +401,70 @@ extension ESPLink: CBPeripheralDelegate {
             infoCharacteristic = info
             peripheral.readValue(for: info)
         } else {
-            finishSetup(peripheral, boardInfo: nil)
+            boardInfoRead(peripheral, value: nil)
         }
+    }
+
+    /// Board info is known (nil: absent or unreadable): next the protected read (BLE queue)
+    private func boardInfoRead(_ peripheral: CBPeripheral, value: Data?) {
+        infoCharacteristic = nil
+        pendingInfo = value
+        guard controlCharacteristic != nil else {
+            // No protected characteristic to prove anything with (very old firmware): trust on first use as before
+            pin.accessGranted()
+            finishSetup(peripheral, boardInfo: value)
+            return
+        }
+        readProtected(peripheral)
+    }
+
+    /// The first protected access: read control `…0004`. New firmware makes iOS pair here (BLE queue)
+    private func readProtected(_ peripheral: CBPeripheral) {
+        guard let controlCharacteristic, !authReading else { return }
+        authRetry?.cancel()
+        authRetry = nil
+        authReading = true
+        setAuthRefused(false)
+        onPairingEvent?(.authenticating)
+        peripheral.readValue(for: controlCharacteristic)
+    }
+
+    /// The protected read answered (BLE queue)
+    private func protectedReadDone(_ peripheral: CBPeripheral, error: Error?) {
+        authReading = false
+        if let error {
+            let failure = PairingErrorMap.failure(error)
+            Diag.log("ble: protected read refused (\(failure)): \(error)")
+            setAuthRefused(true)
+            onPairingEvent?(.authFailed(failure))
+            // The pinned board lost its bond: ask again later (the board rate-limits requests); an unpinned one
+            // waits for "Thử lại" on the Pair screen
+            if pin.pinned != nil {
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, authRefused, let p = self.peripheral, p.state == .connected else { return }
+                    readProtected(p)
+                }
+                authRetry = work
+                queue.asyncAfter(deadline: .now() + Self.authRetryDelay, execute: work)
+            }
+            return
+        }
+        Diag.log("ble: protected read ok")
+        pin.accessGranted()
+        if let audioCharacteristic { peripheral.setNotifyValue(true, for: audioCharacteristic) }
+        if let controlCharacteristic { peripheral.setNotifyValue(true, for: controlCharacteristic) }
+        finishSetup(peripheral, boardInfo: pendingInfo)
+        pendingInfo = nil
+        onPairingEvent?(.authenticated)
+    }
+
+    private func setAuthRefused(_ refused: Bool) {
+        authRefused = refused
+        shared.withLock { $0.awaitingPairing = refused }
     }
 
     /// Board info known (nil: absent or unreadable): clock, label, mic, keepalive, then ready (BLE queue)
     private func finishSetup(_ peripheral: CBPeripheral, boardInfo value: Data?) {
-        infoCharacteristic = nil
         let boardInfo = BoardLabel.info(from: value)
         shared.withLock { $0.info = boardInfo }
         label.boardInfo(parsed: value.flatMap(BoardProtocol.parseBoardInfo) != nil)
@@ -385,7 +505,12 @@ extension ESPLink: CBPeripheralDelegate {
             // Only the read of the current setup (a services reset may have replaced it)
             guard characteristic === infoCharacteristic else { return }
             if let error { Diag.log("ble: board info read failed: \(error)") }
-            finishSetup(peripheral, boardInfo: error == nil ? characteristic.value : nil)
+            boardInfoRead(peripheral, value: error == nil ? characteristic.value : nil)
+            return
+        }
+        if characteristic.uuid == Self.controlChar, authReading, characteristic === controlCharacteristic {
+            // The answer to the protected read, not a notification (notifications are enabled only after it)
+            protectedReadDone(peripheral, error: error)
             return
         }
         keepaliveIfStale(peripheral)
@@ -405,6 +530,10 @@ extension ESPLink: CBPeripheralDelegate {
             Diag.log("ble: text write failed: \(error)")
             textQueue.writeFailed(on: c)
         }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) {
+        if let error { Diag.log("ble: notify on \(c.uuid) failed: \(error)") }
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {

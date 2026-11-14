@@ -16,6 +16,7 @@ struct RootView: View {
             .onChange(of: ui.board, initial: true) { _, state in router.noteBoard(state) }
             // Phone-only follows the screen shown (ARCHITECTURE §5): the engine moves the iPhone mic to them
             .onChange(of: router.mainScreen(board: ui.board) == .phoneOnly, initial: true) { _, on in ui.setPhoneOnly(on) }
+            .feedbackReporting(ui)   // Track C: "Báo dịch sai" sheet
             .sheet(item: $router.sheet) { sheet in
                 switch sheet {
                 case .language:
@@ -43,11 +44,23 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
+    /// Welcome at the root, the steps pushed (swipe back works with the bar hidden: `SwipeBack.swift`).
     private var onboarding: some View {
-        switch router.onboardingStep {
+        NavigationStack(path: $router.onboardingPath) {
+            onboardingScreen(.welcome)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: OnboardingStep.self) { step in
+                    onboardingScreen(step).toolbar(.hidden, for: .navigationBar)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func onboardingScreen(_ step: OnboardingStep) -> some View {
+        switch step {
         case .welcome: WelcomeView(router: router)
-        case .permissions: PermissionsView(router: router, permissions: services.permissions)
+        case .permissions:
+            PermissionsView(router: router, permissions: services.permissions, actions: services.permissionActions)
         case .pair: PairView(router: router, pairing: services.pairing)
         case .language: LanguageView(ui: ui, router: router, mode: .onboarding)
         }
@@ -68,13 +81,13 @@ struct RootView: View {
         case .settings:
             SettingsView(ui: ui, router: router, appVersion: services.appVersion, forget: forgetBoard)
         case .history:
-            HistoryView(router: router, sessions: services.historySessions, now: services.now())
+            HistoryView(router: router, services: services, saving: ui.saveHistory)
         case let .historyDetail(id):
-            HistoryDetailView(router: router, session: services.historySessions.first { $0.id == id })
+            HistoryDetailView(router: router, services: services, sessionID: id)
         case .glossary:
             GlossaryView(ui: ui, router: router, draft: services.glossaryDraft)
         case .sharing:
-            SharingView(ui: ui, router: router, items: services.feedbackItems)
+            SharingView(ui: ui, router: router, services: services)
         case .language:
             LanguageView(ui: ui, router: router, mode: .pushed)
         }

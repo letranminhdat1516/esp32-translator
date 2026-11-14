@@ -100,7 +100,7 @@ enum DemoData {
         services.glossaryDraft = glossaryDraft
         services.permissions = PermissionsSnapshot(microphone: .granted, bluetooth: .notDetermined, speech: .notDetermined)
         if let pairing = services.pairing as? FakePairingModel {
-            pairing.state = .confirming(name: "ESP-Translator", battery: 88, code: "4729")
+            pairing.state = .confirming(name: "ESP-Translator", battery: 88)
         }
         services.level.push(0.9, at: .distantFuture)
 
@@ -145,5 +145,8 @@ enum DemoData {
             if let i = ui.lines.firstIndex(where: { $0.id == line.id }) { ui.lines[i].target = text }
         }
         ui.holdToTalk = { ui.talkHeld = $0 }
+        ui.glossaryAddFixed = { text, fixed in
+            ui.glossaryTerms.append(Term(id: UUID().uuidString, text: text, fixed: [ui.languageCode ?? "en": fixed]))
+        }
     }
 }

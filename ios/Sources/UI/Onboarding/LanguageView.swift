@@ -40,13 +40,17 @@ struct LanguageView: View {
 
 }
 
-/// The ruled language list (code, name, status) and the online opt-in below it.
+/// The ruled language list (code, name, status) and the online opt-in below it: the offered packs with their
+/// install state (the controller's pack check, the picked language's download), then the bundled languages this
+/// device cannot do, greyed out as "Chưa hỗ trợ".
 struct LanguageRows: View {
     let ui: UIState
 
     var body: some View {
         RuledList {
-            ForEach(ui.offeredPacks, id: \.code) { pack in row(pack) }
+            ForEach(ui.offeredPacks, id: \.code) { pack in row(code: pack.code, label: pack.label) }
+            ForEach(LanguageRowStatus.unsupported(names: ui.languageNames, offered: ui.offeredPacks.map(\.code)),
+                    id: \.code) { item in row(code: item.code, label: item.label, unsupported: true) }
         }
         if !ui.onlineCandidates.isEmpty { OnlineOptIn(ui: ui).padding(.top, 18) }
     }
@@ -56,29 +60,29 @@ struct LanguageRows: View {
     }
 
     @ViewBuilder
-    private func row(_ pack: LanguagePack) -> some View {
-        let st = status(pack.code)
-        let selected = pack.code == ui.languageCode && st != .unsupported
+    private func row(code: String, label: String, unsupported: Bool = false) -> some View {
+        let st = unsupported ? .unsupported : status(code)
+        let selected = code == ui.languageCode && st != .unsupported
         let padding: CGFloat = switch st {
         case .notDownloaded: 10
         default: 14
         }
         Button {
-            if st != .unsupported { ui.pickLanguage(pack.code) }
+            if st != .unsupported { ui.pickLanguage(code) }
         } label: {
             TableRow(verticalPadding: padding, fill: selected ? DS.Color.ink : nil, horizontalBleed: 12) {
                 HStack(spacing: 10) {
-                    MonoCell(pack.code.uppercased(), type: .monoCode, color: selected ? DS.Color.stone : DS.Color.ink)
+                    MonoCell(code.uppercased(), type: .monoCode, color: selected ? DS.Color.stone : DS.Color.ink)
                         .tableColumn(40)
                     HStack(spacing: 6) {
-                        Text(pack.label).ds(selected ? .rowTitle : .rowName)
-                        if ui.onlineCodes.contains(pack.code) {
+                        Text(label).ds(selected ? .rowTitle : .rowName)
+                        if ui.onlineCodes.contains(code) {
                             Text(StatusChip.online.text).ds(.monoTime)
                                 .accessibilityLabel(StatusChip.online.accessibilityText)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    trailing(st, selected: selected, code: pack.code)
+                    trailing(st, selected: selected, code: code)
                 }
                 .foregroundStyle(selected ? DS.Color.stone : st == .unsupported ? DS.Color.muted : DS.Color.ink)
             }

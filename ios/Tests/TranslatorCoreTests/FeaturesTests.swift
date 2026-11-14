@@ -76,13 +76,12 @@ import Testing
 
     @Test func pairingFake() {
         let p = FakePairingModel()
-        p.startScan()
+        p.start()
         #expect(p.state == .scanning)
-        p.state = .confirming(name: "ESP-Translator", battery: 88, code: "123456")
-        p.confirm()
-        #expect(p.state == .paired(name: "ESP-Translator"))
-        p.reject()
-        #expect(p.state == .idle)
+        p.state = .failed(.rejected)
+        p.retry()
+        #expect(p.state == .scanning)
+        #expect(p.retries == 1)
     }
 
     @Test func activityStateIsTrimmedAndSmall() throws {
@@ -102,10 +101,16 @@ import Testing
         var p = PermissionsSnapshot(microphone: .granted)
         #expect(p.next == .bluetooth)
         #expect(!p.canContinue)
+        #expect(p.primary == .waiting)
         p.bluetooth = .denied
         p.speech = .granted
         #expect(p.next == nil)
+        // A refusal blocks "Tiếp tục"; the button opens Settings instead
+        #expect(!p.canContinue)
+        #expect(p.primary == .openSettings)
+        p.bluetooth = .granted
         #expect(p.canContinue)
+        #expect(p.primary == .continueOn)
     }
 
     @Test func languageRowStatus() {

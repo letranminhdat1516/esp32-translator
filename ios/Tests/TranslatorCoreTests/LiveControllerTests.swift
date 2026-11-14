@@ -87,14 +87,14 @@ struct LiveControllerTests {
     @Test func linesCarryAudioRangesOnTheSessionClock() async throws {
         let rig = try await Rig()
         #expect(await rig.startRunning())
-        let t0 = SessionClock.system.now()
+        let t0 = MonotonicSessionClock().now
         rig.boardAudio(seq: 0)
         rig.boardAudio(seq: 1)
         #expect(await eventually { await rig.fake.fed.count == 2 })
         rig.fake.emitTheirs(TheirsMsg(text: "Hello there", confidence: 0.9, generation: 0, audio: 0.5))
         #expect(await eventually { rig.ui.lines.contains { !$0.mine } })
         let theirs = try #require(rig.ui.lines.first { !$0.mine }?.audioRange)
-        #expect(theirs.upperBound >= t0 && theirs.upperBound <= SessionClock.system.now())
+        #expect(theirs.upperBound >= t0 && theirs.upperBound <= MonotonicSessionClock().now)
         #expect(abs(theirs.upperBound - theirs.lowerBound - 0.5) < 1e-6)
 
         rig.clock.advance(5)
@@ -190,16 +190,6 @@ struct LiveControllerTests {
         #expect(rig.ui.lines.first { $0.mine }?.target == "one")
     }
 
-    @Test func reportGoesToTheHook() async throws {
-        let ui = UIState()
-        var reported: [String] = []
-        ui.reportLine = { reported.append($0.id) }
-        ui.reportLine(UILine(id: "t-1", mine: false, source: "a", target: "b", at: Date()))
-        #expect(reported == ["t-1"])
-        // The default does nothing
-        UIState().reportLine(UILine(id: "x", mine: true, source: "", target: "", at: Date()))
-    }
-
     @Test func phoneOnlyRoutesTheEngineAndHoldToTalkStartsTheConversation() async throws {
         let rig = try await Rig()
         #expect(await rig.startRunning())
@@ -208,8 +198,11 @@ struct LiveControllerTests {
         rig.ui.holdToTalk(true)
         #expect(!rig.ui.talkHeld)
 
+        var sides: [Side] = []
+        rig.controller.onMicSide = { sides.append($0) }
         rig.ui.setPhoneOnly(true)
         #expect(rig.ui.phoneOnly)
+        #expect(sides == [.theirs], "the mic clip tap follows the iPhone mic to their ring")
         #expect(await eventually { await rig.fake.inputModes == [.phoneOnly] })
         rig.ui.setPhoneOnly(true)   // repeated: nothing more
 
@@ -227,6 +220,7 @@ struct LiveControllerTests {
         rig.ui.holdToTalk(true)
         rig.ui.setPhoneOnly(false)
         #expect(!rig.ui.talkHeld, "leaving phone-only drops the hold")
+        #expect(sides == [.theirs, .mine, .theirs, .mine, .mine])
         #expect(await eventually { await rig.fake.inputModes == [.phoneOnly, .board] })
     }
 }

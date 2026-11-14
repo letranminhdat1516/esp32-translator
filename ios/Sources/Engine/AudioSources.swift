@@ -58,6 +58,10 @@ private struct WearerLevelReset: @unchecked Sendable {
 /// `onFinalize` when they pause (`VoiceGate.Config.finalizeAfter`, possibly more than once per opening, always
 /// before the close) and `onSpeechEnd` when the gate closes (all on the audio thread).
 final class MicSource {
+    /// Sees every converted mic buffer before the gate (Track C: `MicPCMTap` fills the "mine" clip ring, memory
+    /// only). Set once at launch; called on the audio thread.
+    nonisolated(unsafe) static var tap: ((AVAudioPCMBuffer) -> Void)?
+
     private let engine = AVAudioEngine()
     private let converter: BufferConverter
     /// nil: every buffer passes (the other person on the iPhone mic, "Giữ để nói")
@@ -114,6 +118,7 @@ final class MicSource {
     /// does ios/Tools/vi-harness, which runs this exact path on recorded files)
     func handle(_ buffer: AVAudioPCMBuffer) {
         guard let converted = converter.convert(buffer) else { return }
+        Self.tap?(converted)
         guard let gate else {
             if !gateOpen {
                 gateOpen = true

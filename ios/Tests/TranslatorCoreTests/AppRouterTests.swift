@@ -55,6 +55,17 @@ import Testing
         #expect(r.mainScreen(board: .ready) == .live)
     }
 
+    @Test func connectBoardFromPhoneOnlyOpensPair() {
+        let defaults = UserDefaults(suiteName: "AppRouterTests.connect.\(UUID().uuidString)")!
+        let r = AppRouter(defaults: defaults)
+        r.tryWithoutBoard()
+        r.connectBoard()
+        #expect(!r.onboardingDone)
+        #expect(r.onboardingStep == .pair)
+        #expect(r.mode == .board)
+        #expect(defaults.bool(forKey: AppRouter.onboardingKey), "a relaunch opens the main screen again")
+    }
+
     @Test func mainScreenFollowsTheBoard() {
         #expect(MainScreen.resolve(mode: .board, board: .off, wasReady: false, lostDismissed: false) == .live)
         #expect(MainScreen.resolve(mode: .board, board: .ready, wasReady: true, lostDismissed: false) == .live)
