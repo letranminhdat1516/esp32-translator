@@ -10,6 +10,9 @@ struct SharingView: View {
     let services: AppServices
     @State private var player = ClipPlayer()
     @State private var export: ExportFile?
+    /// The export the share sheet is showing, and whether it reported it was shared
+    @State private var sharing: FeedbackExport?
+    @State private var shared = false
     @State private var exporting = false
     @State private var confirmClear = false
     @State private var error: String?
@@ -63,8 +66,12 @@ struct SharingView: View {
         }
         .task { await services.refresh() }
         .onDisappear { player.stop() }
-        .sheet(item: $export) { file in
-            ActivitySheet(items: [file.url]).ignoresSafeArea()
+        .sheet(item: $export, onDismiss: finishShare) { file in
+            ActivitySheet(items: [file.url]) { completed in
+                shared = completed
+                export = nil   // the activity view dismisses itself; the sheet goes with it
+            }
+            .ignoresSafeArea()
         }
         .confirmationDialog(Copy.t("sharing.clearTitle"), isPresented: $confirmClear, titleVisibility: .visible) {
             if sentCount > 0 {
@@ -86,12 +93,24 @@ struct SharingView: View {
         exporting = true
         Task {
             defer { exporting = false }
-            guard let folder = await services.exportFeedback() else {
+            guard let built = await services.exportFeedback() else {
                 error = Copy.t("sharing.exportFailed")
                 return
             }
-            export = ExportFile(url: ExportFile.zipped(folder) ?? folder)
+            sharing = built
+            shared = false
+            export = ExportFile(url: ExportFile.zipped(built.folder) ?? built.folder)
         }
+    }
+
+    /// The share sheet closed: the items are sent only when it reported a completed share; a cancel (or a swipe
+    /// down) removes the export.
+    private func finishShare() {
+        guard let built = sharing else { return }
+        sharing = nil
+        let completed = shared
+        shared = false
+        Task { await services.finishExport(built, completed: completed) }
     }
 
     private func play(_ item: FeedbackItem) {
@@ -182,11 +201,14 @@ struct ExportFile: Identifiable {
     }
 }
 
-/// `UIActivityViewController` (AirDrop, Mail, Files…).
+/// `UIActivityViewController` (AirDrop, Mail, Files…); `onComplete` gets whether an activity completed.
 struct ActivitySheet: UIViewControllerRepresentable {
     let items: [Any]
+    var onComplete: (Bool) -> Void = { _ in }
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.completionWithItemsHandler = { _, completed, _, _ in onComplete(completed) }
+        return vc
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

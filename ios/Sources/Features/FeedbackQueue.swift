@@ -68,6 +68,12 @@ struct FeedbackExportItem: Codable, Hashable, Sendable {
     var correctedTranslation: String? = nil
 }
 
+/// A built export folder and the items in it; they are marked sent only once the share sheet reports it was shared.
+struct FeedbackExport: Hashable, Sendable {
+    var folder: URL
+    var itemIDs: [String]
+}
+
 /// The local queue of reports; export builds `feedback-<date>/` with `items.json` and the WAVs for the share sheet.
 protocol FeedbackQueueing: Sendable {
     func items() async -> [FeedbackItem]
@@ -78,14 +84,20 @@ protocol FeedbackQueueing: Sendable {
     func removeAll() async
     /// Removes the items already exported, their clips and every export folder ("Xoá dữ liệu đã gửi").
     func removeSent() async
-    /// The folder to share, or nil when nothing is selected. Marks the exported items sent.
-    func exportBundle() async throws -> URL?
+    /// Builds the folder to share, or nil when nothing is selected. Marks nothing sent (see `markSent`).
+    func exportBundle() async throws -> FeedbackExport?
+    /// The share sheet reported the export was shared: its items are sent.
+    func markSent(_ export: FeedbackExport) async
+    /// The share was cancelled: the export folder (and its zip) goes, nothing is marked sent.
+    func discardExport(_ export: FeedbackExport) async
     /// The queued clip of `id`, for playback.
     func clipURL(_ id: String) async -> URL?
 }
 
 extension FeedbackQueueing {
     func removeSent() async {}
+    func markSent(_ export: FeedbackExport) async {}
+    func discardExport(_ export: FeedbackExport) async {}
     func clipURL(_ id: String) async -> URL? { nil }
 }
 
@@ -114,7 +126,7 @@ actor InMemoryFeedbackQueue: FeedbackQueueing {
 
     func removeAll() async { list.removeAll() }
     func removeSent() async { list.removeAll { $0.sentAt != nil } }
-    func exportBundle() async throws -> URL? { nil }
+    func exportBundle() async throws -> FeedbackExport? { nil }
 
     /// How many items an export would send (the "Gửi n câu" button).
     static func selectedCount(_ items: [FeedbackItem]) -> Int { FeedbackItem.selectedCount(items) }
@@ -201,7 +213,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    func exportBundle() async throws -> URL? {
+    func exportBundle() async throws -> FeedbackExport? {
         let chosen = list.filter(\.selected)
         guard !chosen.isEmpty else { return nil }
         let now = clock()
@@ -233,10 +245,23 @@ actor FileFeedbackQueue: FeedbackQueueing {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(entries).write(to: folder.appendingPathComponent("items.json"), options: .atomic)
-        let ids = Set(chosen.map(\.id))
+        return FeedbackExport(folder: folder, itemIDs: chosen.map(\.id))
+    }
+
+    func markSent(_ export: FeedbackExport) async {
+        let ids = Set(export.itemIDs), now = clock()
         for i in list.indices where ids.contains(list[i].id) { list[i].sentAt = now }
         save()
-        return folder
+    }
+
+    func discardExport(_ export: FeedbackExport) async {
+        let fm = FileManager.default
+        // Only folders this queue built (and the zip made beside one)
+        guard export.folder.deletingLastPathComponent().standardizedFileURL == exportsDirectory.standardizedFileURL
+        else { return }
+        try? fm.removeItem(at: export.folder)
+        try? fm.removeItem(at: export.folder.deletingLastPathComponent()
+            .appendingPathComponent(export.folder.lastPathComponent + ".zip"))
     }
 
     // MARK: Internals

@@ -191,16 +191,25 @@ extension AppServices {
         feedbackItems = await feedback.items()
     }
 
-    /// Builds the export folder of the selected items; nil when none is selected or the export failed.
-    func exportFeedback() async -> URL? {
+    /// Builds the export folder of the selected items; nil when none is selected or the export failed. Nothing is
+    /// marked sent until `finishExport` reports the share sheet completed.
+    func exportFeedback() async -> FeedbackExport? {
         do {
-            let url = try await feedback.exportBundle()
-            feedbackItems = await feedback.items()
-            return url
+            return try await feedback.exportBundle()
         } catch {
             Diag.log("feedback: export failed: \(error)")
             return nil
         }
+    }
+
+    /// The share sheet closed: shared (`completed`) marks the items sent; cancelled removes the export.
+    func finishExport(_ export: FeedbackExport, completed: Bool) async {
+        if completed {
+            await feedback.markSent(export)
+        } else {
+            await feedback.discardExport(export)
+        }
+        feedbackItems = await feedback.items()
     }
 
     func removeSentFeedback() async {

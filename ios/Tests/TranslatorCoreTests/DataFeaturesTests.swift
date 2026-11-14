@@ -329,7 +329,7 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.clipURL("a") != nil)
         #expect(await FileFeedbackQueue(directory: dir).items().first?.correctedTranslation == "better a")
 
-        let folder = try #require(try await q.exportBundle())
+        let folder = try #require(try await q.exportBundle()).folder
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let entries = try decoder.decode([FeedbackExportItem].self, from: Data(contentsOf: folder.appendingPathComponent("items.json")))
@@ -367,8 +367,10 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.clipURL("a") != nil)
         #expect(await q.clipURL("d") == nil)
 
-        let folder = try #require(try await q.exportBundle())
+        let export = try #require(try await q.exportBundle())
+        let folder = export.folder
         #expect(folder.lastPathComponent == "feedback-20261115-094107")
+        #expect(export.itemIDs == ["a", "c", "d"])
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
         #expect(names == ["01.wav", "02.wav", "items.json"])
         #expect(try Data(contentsOf: folder.appendingPathComponent("01.wav")) == clipA)
@@ -383,6 +385,8 @@ private final class ManualClock: @unchecked Sendable {
         #expect(entries[1].durationSeconds == 0.5)
         #expect(isExcludedFromBackup(dir))
 
+        #expect(await q.items().allSatisfy { $0.sentAt == nil }, "building the export sends nothing")
+        await q.markSent(export)
         let items = await q.items()
         #expect(items.filter { $0.sentAt != nil }.map(\.id) == ["a", "c", "d"])
         // Persisted
@@ -403,7 +407,9 @@ private final class ManualClock: @unchecked Sendable {
         let clip = WAV.encode([1, 2, 3], sampleRate: 16_000)
         await q.add(Self.item("a"), clip: clip)
         await q.add(Self.item("b", selected: false), clip: clip)
-        let folder = try #require(try await q.exportBundle())
+        let export = try #require(try await q.exportBundle())
+        let folder = export.folder
+        await q.markSent(export)
         let clipA = try #require(await q.clipURL("a"))
         await q.removeSent()
         #expect(await q.items().map(\.id) == ["b"])
@@ -414,6 +420,27 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.items().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
         #expect(await FileFeedbackQueue(directory: dir).items().isEmpty)
+    }
+
+    /// The share sheet was cancelled: nothing is sent and the export (folder and zip) is gone.
+    @Test func cancelledShareSendsNothingAndCleansUp() async throws {
+        let dir = tempDir()
+        let q = FileFeedbackQueue(directory: dir)
+        await q.add(Self.item("a"), clip: WAV.encode([1, 2, 3], sampleRate: 16_000))
+        let export = try #require(try await q.exportBundle())
+        let zip = export.folder.deletingLastPathComponent().appendingPathComponent(export.folder.lastPathComponent + ".zip")
+        try Data("zip".utf8).write(to: zip)
+        let services = await AppServices(feedback: q, appVersion: "t")
+        await services.finishExport(export, completed: false)
+        #expect(await q.items().allSatisfy { $0.sentAt == nil })
+        #expect(!FileManager.default.fileExists(atPath: export.folder.path))
+        #expect(!FileManager.default.fileExists(atPath: zip.path))
+        #expect(await q.clipURL("a") != nil, "the queued clip stays")
+        // Shared: sent
+        let again = try #require(try await q.exportBundle())
+        await services.finishExport(again, completed: true)
+        #expect(await q.items().first?.sentAt != nil)
+        #expect(await services.feedbackItems.first?.sentAt != nil)
     }
 
     @Test func corruptQueueStartsEmpty() async throws {
