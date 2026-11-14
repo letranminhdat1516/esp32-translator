@@ -561,7 +561,7 @@
       "online": true
     },
     {
-      "name": "the Note 9 case: Whisper first, online last, no on-device",
+      "name": "no on-device recognizer: Whisper first, online last",
       "caps": {
         "recognizers": {
           "en": [

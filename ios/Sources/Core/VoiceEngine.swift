@@ -24,7 +24,7 @@ enum AudioRoute: String, Codable, CaseIterable, Sendable {
     case headset, phoneMic
 }
 
-/// `finalText` is the "final" kind (Dart name, kept for the shared fixtures).
+/// `finalText` is the "final" kind (the name the shared fixtures use).
 enum MineKind: String, Codable, CaseIterable, Sendable {
     case partial, finalText
 }
@@ -117,7 +117,7 @@ struct DownloadMsg: Codable, Hashable, Sendable {
 /// `start` → `.notReady`, `downloadItem` → `.downloadFailed`); other errors are passed through unchanged.
 ///
 /// Events are broadcast: every access to an event property returns a new `AsyncStream` that receives every event
-/// sent after that access (like the Dart broadcast streams).
+/// sent after that access.
 ///
 /// Subscribing inside a Task is a race: in `Task { for await x in engine.ttsStart { … } }` the property is read only
 /// when the Task first runs, so events sent before that are lost. Call `events()` first (it subscribes to every stream
@@ -126,7 +126,7 @@ protocol VoiceEngine: AnyObject, Sendable {
     /// Fast, no downloads; called at launch and after any download. `home` is the user's language ("vi").
     func capabilities(home: String) async throws -> Capabilities
     func missing(pair: PairMsg) async throws -> [MissingMsg]
-    /// The `download` call (Dart name: the `download` event takes the plain name). Progress arrives on `download`.
+    /// The download call (the `download` event takes the plain name). Progress arrives on `download`.
     func downloadItem(_ item: MissingMsg) async throws
     /// Idempotent. `recognizerX` is a `RecognizerKind` raw value for the other language.
     func start(pair: PairMsg, recognizerX: String, hints: [String]) async throws

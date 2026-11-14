@@ -27,37 +27,27 @@ Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 
 
 ## Buttons and lock screen
 
-| Input | Unlocked | Locked |
+The board has two screens: the translator and the lock screen.
+
+| Input | Unlocked (translator) | Locked |
 |---|---|---|
 | PWR ×1 | Lock | Lock face for 5 s (never unlocks) |
-| PWR ×2 | Translator mode | Unlock → Translator mode |
-| PWR ×3 (4 or more presses count as ×3) | Claude mode | Unlock → Claude mode |
-| PWR hold 3 s | Power off (battery) / screen off (USB; on the Claude or picker screen a tap wakes it) | same |
-| BOOT ×1 | Translator mode | Unlock → Translator mode |
+| PWR ×2 (×3 does the same) | — | Unlock → translator |
+| PWR hold 3 s | Power off (battery) / screen off (USB) | same |
+| BOOT | — | Unlock → translator; also wakes the board from deep sleep |
 | Tap ×1 | normal UI | Lock face for 5 s: logo, clock, battery (`NN%`, `NN% · charging`, or `USB power` without a battery), a bouncing arrow and "Vuốt lên để mở khoá" |
-| Swipe up (on the visible lock face) | — | Unlock (back to the mode in use before locking): the face slides up and fades out |
-| Tap ×2 | Translator: screen off / on | Unlock (back to the mode in use before locking) |
-| Tap the top of the Claude screen (status / project / title) | Session picker | — |
+| Swipe up (on the visible lock face) | — | Unlock: the face slides up and fades out |
+| Tap ×2 | Screen off / on | Unlock (on the visible lock face) |
 
 A swipe only counts when it starts on the lock face while it is shown (at least 60 px up, more up than
 sideways); on the dark panel it at most does what a tap does (shows the face), so a swipe on the dark panel alone cannot unlock it.
 
-A notification from the Claude iPhone app takes the screen over any mode, even when locked (see iPhone notifications). PWR ×1 then only closes it (the lock stays as it was); BOOT and PWR ×2/×3 close it and switch as usual. A Claude request from the Mac always wins over it.
-
 Presses count as one series while each follows the previous release within about 0.5 s.
-Locked means the panel is off and touch only answers the lock gestures (except while a request is
-shown: then no tap or swipe does anything; PWR ×1 puts the request away and shows the lock face); translation and Claude notifications keep running. A Claude
-permission request lights the panel and shows Allow/Deny (taps in the first 700 ms are ignored); once it is
-answered or cancelled the board goes dark and stays locked. A request you leave on screen (PWR ×1, BOOT,
-PWR ×2) stays pending: unlocking with a swipe up or a double tap brings it back on top, and PWR ×3 shows
-it on the Claude screen, each time with Allow/Deny ignoring taps for the first 700 ms again.
-The clock is set by the iPhone app and by the Mac daemon each time they connect, and again when the phone's
-or the Mac's clock or time zone changes (`--:--` until then). Update the firmware and the iOS app together:
-older firmware shows the app's time message (`"<seconds> <offset>"`) as a subtitle.
-The session picker (tap the top of the Claude screen: status, project or title; not while a request, its
-result or the voice overlay is shown) lists up to 6 Claude Code sessions from the Mac, "needs you" first, then the most
-recent: a red dot needs you, yellow is working, green is idle, grey has ended (ended sessions leave after
-10 min). "· new" marks a session that finished while another one was focused. Tap a row to focus it.
+Locked means the panel is off and touch only answers the lock gestures; translation keeps running.
+The clock is set only by the iPhone app (text kind 2), each time it connects and again when the phone's clock or
+time zone changes (`--:--` until then).
+While translating, the status line shows only the language label; the level ring around the screen brightens and
+thickens with the voice.
 The lock face shows the Live Translator mark (`assets/translator-mark.svg`: two half rings, blue for you and light for
 them, around a small flame), drawn by `tools/gen_logo.py` (needs Pillow). `python3 tools/gen_logo.py` regenerates
 `firmware/main/logo_img.c/.h` (RGB565) and the iOS app icon (`ios/Sources/Assets.xcassets`); `--preview out.png`
@@ -70,9 +60,7 @@ renders the board logo back.
 | Board | Energy VAD (adaptive noise floor, 300 ms pre-roll, 800 ms hangover) | Silence is never transmitted: no radio time, no recognition work on the phone |
 | Board | Screen off after 30 s without speech, subtitles or touch; a tap only wakes it | AMOLED power scales with lit pixels and brightness |
 | Board | Lock (PWR ×1): panel off, the 5 s lock face is a static logo | No lit pixels, clock timer paused while locked |
-| Board | The microphone and the voice characteristic are used only while a voice capture records (at most 30 s); the translator stream to the iPhone pauses during a capture | No extra radio or codec work when you are not speaking to Claude |
-| Board | Deep sleep after 3 min without an iPhone link (the translator app or iPhone notifications); touch screen or BOOT wakes it. On battery, an iPhone link that only carries notifications (translator app closed, no Mac) keeps the board awake for at most 30 min after the later of the link coming up and the last Claude notice; then it sleeps anyway and notices that arrive meanwhile are missed (the iPhone keeps them). On USB it never sleeps | Near-zero drain when you walk away |
-| Board | iPhone notifications: no polling, work only when the iPhone reports a notification; only the Claude app's are fetched; with the translator app closed the iPhone link relaxes to 180–210 ms (latency 4), but only 10 s after connecting and never on the Mac link | A notification costs a few radio packets; the link costs little while only notifications use it |
+| Board | Deep sleep on battery 3 min after the translator app's link goes away (or after boot without one); touch screen or BOOT wakes it. Never while linked, on USB power, or with the dev stay-on option (`CONFIG_TRANSLATOR_DEV_STAY_ON`) | Near-zero drain when you walk away |
 | Board | CPU 160 MHz with DFS down to 80 MHz, BLE modem sleep, 30–45 ms connection interval | Fewer radio and CPU wake-ups |
 | iPhone | Own-voice gate on the AirPods mic (`VoiceGate`): opens only on voiced frames well above the background and near your learned voice level | The Vietnamese recognizer runs only while *you* talk, not while the café does (gate: about 0.05 % of one core) |
 | iPhone | Runs with the screen locked (`audio` + `bluetooth-central` background modes) | Keep the phone in your pocket, just wear the AirPods |
@@ -109,51 +97,35 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 
 | Path | Contents |
 |---|---|
-| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `claude_ui.c`, `question_ui.c` + `question.c` (question pages), `voice_ui.c` + `voice.c` (voice capture), `lock_ui.c`, `phone_ui.c` + `ancs_client.c` + `ancs.c` (iPhone notifications, ANCS), `picker_ui.c` + `sessions.c` (session picker), `shell.c` + `modes.c` (modes, lock, buttons), `clock.c` |
-| `relay/` | Swift package `ClaudeRelay`, shared by the daemon and the iPhone app: relay frames, mutual HMAC handshake, pairing code (QR URL), Tailscale address check, WebSocket server and client |
+| `firmware/` | ESP-IDF 5.5 firmware: `ble_link.c` (GATT server), `audio_in.c` (2 mics → ADPCM), `ui.c` (translator screen), `lock_ui.c` (lock face), `shell.c` + `modes.c` (lock and buttons), `clock.c`, `pmu.c`; host tests in `firmware/test/` |
 | `sim/` | Desktop simulator of the board screen: the real `ui.c`, `lock_ui.c` and `modes.c` on LVGL + SDL2, with keys that fake the iPhone, the mic and a voice |
-| `tools/` | `gen_logo.py`: draws the Live Translator mark into the lock-face logo (`firmware/main/logo_img.c`) and the iOS app icon |
-| `mac/` | Swift package: `claude-board` daemon (Unix socket, CoreBluetooth, on-device dictation, tmux typing, Tailscale relay listener) and `claude-board-hook` (Claude Code hook), the `cb` launcher (Claude Code inside tmux), plus install scripts |
-| `shared/` | The single source of language-specific data and of the logic contract, used by both phone apps: `languages/*.json` (language packs, see `shared/languages/README.md`), `board_glyphs/*.txt` (code points of the board's CJK / Hangul / Thai fonts), `copy/vi.json` (UI copy), `fixtures/` (test vectors both cores must pass, `shared/fixtures/README.md`; `fixtures/terms/` is the term-accuracy corpus) |
 | `ios/` | The iPhone app (Swift, SwiftUI). The Xcode project is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen). `Sources/Core` is the pure logic (`swift test`); `Tools/term-harness` and `Tools/vi-harness` are the measurement harnesses |
-| `android/` | The Android app (React Native 0.88, Hermes, New Architecture, TypeScript; Kotlin engine in `android/android/`). `src/core` is the same pure logic as `ios/Sources/Core`, in TypeScript; `tool/` has the device scripts, `scripts/` the Node ones. Details in `android/README.md` |
-| `app/` | The Flutter app: frozen reference implementation, read-only, **deleted in P2.9**. Do not build on it |
+| `shared/` | Language data and the logic contract the iPhone app is tested against: `languages/*.json` (language packs, see `shared/languages/README.md`), `board_glyphs/*.txt` (code points of the board's CJK / Hangul / Thai fonts, also read by the firmware font tools), `copy/vi.json` (UI copy), `fixtures/` (test vectors, `shared/fixtures/README.md`; `fixtures/terms/` is the term-accuracy corpus) |
+| `tools/` | `gen_logo.py`: draws the Live Translator mark into the lock-face logo (`firmware/main/logo_img.c`) and the iOS app icon; `fake_iphone.py`: a Mac stand-in for the iPhone over BLE |
 | `fonts/` | Be Vietnam Pro SemiBold (OFL), converted to 22 px / 36 px LVGL bitmap fonts with full Vietnamese diacritics |
 
 ## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
 
+The board has this one service; it never asks for encryption (it still accepts no-prompt pairing if the phone
+starts it, and deletes a stale bond when a link fails its integrity check).
+
 | Characteristic | Properties | Payload |
 |---|---|---|
 | `…0002` audio | notify | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
-| `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect) |
-| `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on |
-| `…0010` Claude service | (service) | Claude companion mode, see below. Requires a bonded, encrypted link |
-| `…0011` Claude request | write (with response), encrypted | Mac → board: `[kind u8][id u32 LE][UTF-8, at most 400 bytes]`, split into BLE writes `[flags u8][chunk]` (flags bit0 = first, bit1 = last). Kinds: 0 permission (id = request; `project\ntool\nsummary[\nrule]`, the rule line means Always allow is offered), 1 finished (fresh id; `project\nlast line`, focused session only), 2 cancel (id = request; also cancels a whole question set), 3 time (id 0; `"<unix seconds> <UTC offset minutes>"`, sent on connect), 4 session row (id = session handle, never 0; `<state> <since> <updated> <flags>\nproject\nlast line`; state `n` needs you / `w` working / `i` idle / `e` ended, times in Unix seconds, flags bit0 = focused, bit1 = unseen "new"), 5 session removed (id = handle), 6 sessions clear (id 0, first message of every full sync), 7 question page (id = request, shared by all pages; `<index> <count> <multi> <nopt>\nproject\nheader\nquestion\n(label\ndesc) × nopt`, up to 4 pages and 4 options), 8 voice (id = the board's voice id; `<p\|f\|x\|k>\ntext`: `p` live transcript, `f` final transcript (exactly what Send types, at most 300 bytes, empty = nothing heard), `x` error, `k` done; the Mac only sends them for the current capture). 9 link hello (id 0; text `mac` or `relay`, sent once right after the answer subscription is confirmed: the board uses it to tell the Mac from the iPhone relay; ignored everywhere else, and an older firmware just logs an unknown kind). Session flags (kind 4) also have bit2 = voice (the session runs in a `cb` tmux pane the Mac can type into). See `firmware/main/claude_proto.h` |
-| `…0012` Claude answer | notify, encrypted | Board → Mac, at most 10 bytes: `[id u32 LE][1\|2\|3]` allow / deny / always allow; `[id u32 LE][0x10][n u8][mask × n]` question answers (bit i of mask q = option i of question q); `[0 u32][0x20][mode u8]` board mode (0 other, 1 Claude screen, 2 picker); `[0 u32][0x21][handle u32 LE]` focus this session; `[voice u32][0x30][purpose u8][target u32 LE]` voice capture start (voice id never 0, chosen by the board; purpose low nibble 0 = command, target = session handle; 1 = Other answer, target = request id, question index in the high nibble; 2 = deny with reason, target = request id); `[voice u32][0x31]` audio complete, `[voice u32][0x32]` cancel, `[voice u32][0x33]` send the final transcript. Bit 7 of a question mask = the spoken Other answer |
-| `…0013` Claude voice | notify, encrypted | Board → Mac, only during a voice capture: the board mic as `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono, like `…0002`. The board offers voice only once the Mac has subscribed and the ATT MTU is at least 168, so a full frame fits in one notification |
+| `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect), 3 = language label |
+| `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on; the app writes `0xFF` every 20 s as a keepalive, and the board stops streaming audio after 60 s without any app write |
+| `…0005` board info | read | `[protocol version u8][font sets u32 LE]`: which scripts the board can draw (latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16) |
 
-On the iPhone's link the board is also a GATT client of Apple's Notification Center Service (ANCS,
-`7905F431-B5CE-4E99-A40F-4B1E122D00D0`): it subscribes to Notification Source and Data Source and writes Get
-Notification Attributes / Perform Notification Action to the Control Point (`firmware/main/ancs.h`). The scan response
-solicits ANCS (name shortened to "ESP-Transla" there; the GAP name stays "ESP-Translator"). The board's own GATT table
-is unchanged, except that the iPhone app now also writes `0xFF` to the control characteristic every 20 s as a
-heartbeat (0..2 are the mic states): the board leaves the iPhone audio role after 60 s without any write from the
-app, because a bonded iPhone keeps the link up for notifications after the app is gone.
-
-**The iPhone app talks to one board only.** The first board it finds is pinned once its setup is done and the
-encrypted Claude answer subscription succeeded on that link (the board is bonded). From then on the app reconnects
-only that board, by its CoreBluetooth identifier, and never connects another device advertising the board service;
-until the encrypted subscription succeeds on a link, nothing the board sends on the Claude service reaches the relay.
+**The iPhone app talks to one board only.** Trust on first use: the first board it finds is pinned once the
+translator setup (board info, clock, label, mic) has finished on that link. From then on the app reconnects only
+that board, by its CoreBluetooth identifier, and never connects another device advertising the board service.
 With a new board, turn the old one off and pick **Quên board** in the settings menu: the pin is cleared and the app
-looks for a board again. A phone with no Mac paired for the relay never makes the encrypted subscription, so it keeps
-finding the first board by scan without pinning it.
+looks for a board again.
 
 ## Getting started
 
-> **Update the iOS app, the Mac daemon and the board firmware together.** They depend on each other's
-> heartbeat and link hello: the board drops the iPhone translator role after 60 s without the app's 20 s
-> heartbeat, and tells the Mac from the iPhone relay by the hello (kind 9) each side sends on connect. Mixing
-> an older app, daemon or firmware with a newer one breaks the translator role or the relay.
+> **Update the iOS app and the board firmware together.** The board drops the app's audio role after 60 s
+> without the app's 20 s keepalive, and older firmware shows the time and label messages as subtitles.
 
 ### Firmware
 
@@ -188,7 +160,7 @@ The mouse is the finger (double-click = double tap, drag up on the lock face = s
 `C` iPhone connect/disconnect, `M` board mic, `T` next sample subtitle, `V` fake voice (level ring),
 `K` lock (PWR ×1), `U` unlock (PWR ×2), `F` tap the lock screen, `P` screenshot (`board-N.bmp`).
 Scripted, without a window: `sim/build/board-sim --headless --do "connect;mic:on;text:Hello!;level:80;shot:out.bmp"`
-(all commands are listed at the top of `sim/sim.c`). BLE, audio, the PMU and the Claude screens are faked.
+(all commands are listed at the top of `sim/sim.c`). BLE, audio and the PMU are faked.
 
 ### iPhone app preview (no iPhone, no Simulator)
 
@@ -201,7 +173,7 @@ Mac pull-down there; on the iPhone it is the round button.)
 
 Requires Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) and an iPhone on iOS 26. No Simulator is used.
 
-1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`. `project.yml` bundles `shared/languages`, `shared/board_glyphs` and `shared/copy` as resources, so the app reads the same data as the Android one.
+1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`. `project.yml` bundles `shared/languages`, `shared/board_glyphs` and `shared/copy` as resources.
 2. Under Signing & Capabilities, set your own **Team** and a unique **Bundle Identifier**.
 3. Connect the iPhone, enable Developer Mode, then Run.
 4. On first launch, download the translation and recognition models and allow microphone access. After that it works offline.
@@ -216,54 +188,21 @@ cd ios && xcodegen generate && xcodebuild -scheme ESPTranslator -configuration R
 
 For an installable Release build, drop `CODE_SIGNING_ALLOWED=NO` and set your Team, or use Product > Archive in Xcode.
 
-### Android app (React Native)
-
-Package `vn.cicca.livetranslator`, Android 10+ (minSdk 29). The full reference is `android/README.md`. Needs JDK 17, the Android SDK (platform-tools, build-tools 35.0.0, NDK 28.2.13676358, CMake) and Node >= 22.11 (no yarn, no watchman).
-
-```sh
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17
-export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
-export PATH="$ANDROID_HOME/platform-tools:$PATH"
-echo "sdk.dir=$ANDROID_HOME" > android/android/local.properties   # git-ignored
-
-cd android
-npm ci                      # exactly what package-lock.json says
-npm test                    # Jest: the TypeScript core against shared/fixtures (runs `sync-shared --check` first)
-npx tsc --noEmit            # type check
-```
-
-Run it on the Samsung Galaxy Note 9 (SM-N960F, Android 10, serial `271c1de1761c7ece`) with USB debugging on and the phone listed by `adb devices`. Never use an emulator.
-
-```sh
-cd android
-npx react-native start &                                        # Metro: note its PID and stop it when done
-npx react-native run-android --deviceId 271c1de1761c7ece
-adb -s 271c1de1761c7ece exec-out screencap -p > shot.png
-```
-
-- **Engine tests on the phone** (Whisper, ML Kit, TTS, VoiceGate): `android/tool/device_test.sh [Class[#method]]`, with `SERIAL=...` when several devices are connected and `WHISPER_MODEL=/path/ggml-base-q5_1.bin` to push the model. Unlike Gradle's `connectedAndroidTest` it does not uninstall the app, so the pushed model and clips survive.
-- **EngineProbe** (`android/src/dev/EngineProbe.tsx`): a dev screen showing the Kotlin engine's capabilities, downloads and live events. It is reachable only in development builds (`__DEV__`) through the small "dev" button of `App.tsx`, and is not in a release bundle.
-- **Whisper model**: `ggml-base-q5_1.bin` (59,707,625 bytes, SHA-256 `422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898`), downloaded on first use and checked before loading.
-- **Release build**: `cd android/android && ./gradlew assembleRelease` gives `app/build/outputs/apk/release/app-release.apk` (`./gradlew bundleRelease` for an AAB). It is signed with the debug keystore for now; replace `signingConfigs` before publishing.
-
 ### Shared data: languages, UI copy, fixtures
-
-Both apps read `shared/` and must agree on it. The Android app copies it into `android/src/shared-generated/` (Metro cannot read outside its root); the generated files are committed.
 
 **Add a language pack**
 
-1. Copy the closest `shared/languages/<code>.json`. The schema is in `shared/fixtures/README.md` (sections `model.json` and `rules.json`); notes on the shipped packs are in `shared/languages/README.md`. Use a catalog code (`zh-Hans`, not `zh`). No locale literal belongs anywhere else in the code except the native engines' mapping tables.
+1. Copy the closest `shared/languages/<code>.json`. The schema is in `shared/fixtures/README.md` (sections `model.json` and `rules.json`); notes on the shipped packs are in `shared/languages/README.md`. Use a catalog code (`zh-Hans`, not `zh`). No locale literal belongs anywhere else in the code except the engine's mapping tables.
 2. Add its term corpus `shared/fixtures/terms/<code>.tsv` (format and scoring rule: `shared/fixtures/terms/README.md`).
 3. Extend the fixtures that list packs: `shared/fixtures/model.json` (`shippedPacks`) and `shared/fixtures/language_catalog.json`, plus cases in `rules.json` if the pack has rules.
-4. `cd android && npm run sync-shared` (regenerates `src/shared-generated/`; `npm test` fails while it is stale).
-5. Run the three suites: `cd ios && swift test`; `cd android && npm test`; `cd ios/Tools/term-harness && swift test`.
-6. Run the term harness for the new language on each platform (next section). `--write-packs` stores the best placeholder shape in the pack as `applePlaceholder` / `androidPlaceholder`.
+4. Run the suites: `cd ios && swift test`; `cd ios/Tools/term-harness && swift test`.
+5. Run the term harness for the new language (next section). `--write-packs` stores the best placeholder shape in the pack as `applePlaceholder`.
 
-**Edit UI copy**: all user-visible text is Vietnamese and lives in `shared/copy/vi.json`, read by both apps (bundled through `ios/project.yml`, checked by `android/__tests__/ui/copy.test.ts`). Edit it, run `cd android && npm run sync-shared` if the Android copy test reports a difference, then run both suites.
+**Edit UI copy**: all user-visible text is Vietnamese and lives in `shared/copy/vi.json` (bundled through `ios/project.yml`). `CopyTests` checks that every key the Swift UI uses exists and every key in the file is used.
 
 ### Term harness and Vietnamese WER harness
 
-Term accuracy (R10: names, brands and glossary entries survive translation in at least 95 % of outputs) is measured per language, platform and placeholder shape. The corpus, the scoring rule and the case files are described in `shared/fixtures/terms/README.md`.
+Term accuracy (R10: names, brands and glossary entries survive translation in at least 95 % of outputs) is measured per language and placeholder shape. The corpus, the scoring rule and the case files are described in `shared/fixtures/terms/README.md`.
 
 ```sh
 # Apple Translation, on the Mac (install the language pairs in System Settings > General > Language & Region > Translation Languages)
@@ -271,14 +210,7 @@ cd ios/Tools/term-harness
 swift test
 swift run term-harness --fake                         # smoke test, no translator
 swift run term-harness [--lang en,ja] [--out results.md] [--write-packs]
-
-# ML Kit, on the Note 9 (the TypeScript core masks and scores on the Mac, the phone only translates)
-cd android
-node scripts/term-harness.mjs --translator fake       # smoke test, no phone
-SERIAL=271c1de1761c7ece tool/term_harness.sh [--lang en,ja] [--write-packs]
 ```
-
-The Android run writes its table to `android/android/app/build/term-harness/results.md`. Missing ML Kit models are downloaded (network needed once).
 
 Vietnamese recognition WER (own-voice gate and Apple `DictationTranscriber`), on the Mac with the iOS 26 frameworks:
 
@@ -287,11 +219,11 @@ cd ios/Tools/vi-harness && ./build.sh                  # builds vi-harness and v
 RT=1 ./vi-harness <new|legacy|none|oracle> out.tsv events.jsonl files...
 ```
 
-The options (`GATE_*` environment variables, the `.region` files of the oracle gate) are described at the top of `ios/Tools/vi-harness/main.swift`. Whisper WER on Android is measured on the Note 9 with `android/tool/device_test.sh WhisperTest`.
+The options (`GATE_*` environment variables, the `.region` files of the oracle gate) are described at the top of `ios/Tools/vi-harness/main.swift`.
 
 ## Measurements (R15)
 
-R15: repeatable measurement per language and per engine. Vietnamese on Apple must stay within +/-0.6 points of the first table. Everything here uses synthetic audio (TTS voices) and a synthetic corpus: real speech will score worse, and the before/after differences are what count.
+R15: repeatable measurement per language. Vietnamese on Apple must stay within +/-0.6 points of the first table. Everything here uses synthetic audio (TTS voices) and a synthetic corpus: real speech will score worse, and the before/after differences are what count.
 
 ### Vietnamese recognition, Apple
 
@@ -309,286 +241,63 @@ Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one T
 
 (Run to run, the same audio varies by about ±0.6 points; one syllable is 0.3.)
 
-### Term accuracy per language, platform and placeholder shape (R10)
+### Term accuracy per language and placeholder shape (R10)
 
-*To be filled by the device pass (P2.3/P2.4).* Each cell is "accuracy % - lost placeholders" over both directions (84 lines per language), as printed by the harness; the best shape per language is the one `--write-packs` stores. R10 target: at least 95 %.
+*To be filled by the device pass.* Each cell is "accuracy % - lost placeholders" over both directions (84 lines per language), as printed by the harness; the best shape per language is the one `--write-packs` stores. R10 target: at least 95 %.
 
-| Language | Platform | `Zorvik{n}` | `[[{n}]]` | `TERM{n}` | `⟦{n}⟧` | `__{n}__` | Best shape |
-|---|---|---:|---:|---:|---:|---:|---|
-| en | Apple | | | | | | |
-| en | Android (ML Kit) | | | | | | |
-| fr | Apple | | | | | | |
-| fr | Android (ML Kit) | | | | | | |
-| de | Apple | | | | | | |
-| de | Android (ML Kit) | | | | | | |
-| es | Apple | | | | | | |
-| es | Android (ML Kit) | | | | | | |
-| ja | Apple | | | | | | |
-| ja | Android (ML Kit) | | | | | | |
-| ko | Apple | | | | | | |
-| ko | Android (ML Kit) | | | | | | |
-| zh-Hans | Apple | | | | | | |
-| zh-Hans | Android (ML Kit) | | | | | | |
-| th | Apple | | | | | | |
-| th | Android (ML Kit) | | | | | | |
+| Language | `Zorvik{n}` | `[[{n}]]` | `TERM{n}` | `⟦{n}⟧` | `__{n}__` | Best shape |
+|---|---:|---:|---:|---:|---:|---|
+| en | | | | | | |
+| fr | | | | | | |
+| de | | | | | | |
+| es | | | | | | |
+| ja | | | | | | |
+| ko | | | | | | |
+| zh-Hans | | | | | | |
+| th | | | | | | |
 
-### Recognizer WER per language and engine
+### Recognizer WER per language
 
-*To be filled by the device pass (P2.3/P2.4).* Word error rate (character error rate for ja, zh-Hans and th) on the synthetic sentence set.
+*To be filled by the device pass.* Word error rate (character error rate for ja, zh-Hans and th) of Apple's on-device recognizer on the synthetic sentence set.
 
-| Language | Apple on device | Android Whisper `base-q5_1` |
-|---|---:|---:|
-| vi | see the Vietnamese table above | |
-| en | | |
-| fr | | |
-| de | | |
-| es | | |
-| ja | | |
-| ko | | |
-| zh-Hans | | |
-| th | | |
-
-## Claude companion mode
-
-The board doubles as a physical approval button for Claude Code running on your Mac. When Claude asks for permission to run a tool, the board chimes and shows the tool and its command. Press Allow or Deny on the board (plus Always allow when offered, see below). When the focused session finishes a turn, the board plays a done chime and a "<project> · <last line>" toast; other sessions finish silently and show up as "Claude · N new" on the Claude screen and "· new" in the picker. After you answer (or the request is cancelled, times out or the Mac disconnects), the board returns to the screen you were on (or goes dark again if it was locked).
-
-Open the Claude screen with **PWR ×3** (a triple press); **BOOT** or PWR ×2 goes back to the translator. A permission request takes over the screen in any mode, even when the board is locked. If you lock the board or switch away while a request is shown, it stays pending and comes back when you unlock or open the Claude screen (PWR ×3). While locked, PWR ×1 only shows the lock face and never unlocks; a swipe up on the visible face or a double tap unlocks, and PWR ×2 / ×3 unlock straight to the Translator / Claude screen. The Mac gives up on a request after 90 s and cancels it on the board; if that cancel is lost, the board drops the request itself after 100 s ("Timed out").
-
-```sh
-bash mac/install.sh     # builds, installs to ~/.claude-board/bin, starts a launchd agent, adds Claude Code hooks
-bash mac/uninstall.sh   # removes the agent, binaries and only the claude-board hook entries
-```
-
-The installer backs up `~/.claude/settings.json` (`settings.json.bak.<timestamp>`) before editing it. It adds these hooks: `PermissionRequest` (synchronous: waits for the board, 100 s timeout) and, in the background (`async`), `Stop`, `Notification` (all types), `UserPromptSubmit`, `SessionStart` and `SessionEnd`. The hook passes `$TMUX_PANE` / `$TMUX` (and, inside tmux, its process ancestry, so the daemon can later check that the pane still runs that session) on to the daemon. The installer also installs `cb` (see Voice commands). Verified on Claude Code 2.1.289 (see `docs/superpowers/notes/2026-10-04-hook-spike.md`).
-
-**Sessions.** The Claude screen shows the focused session: project, state with elapsed time ("Working · 12m"),
-and the last line of Claude's reply; the title reads "Claude · N new" while other sessions have finished unseen.
-A session is working after you submit a prompt, needs you on a permission request (or a permission / elicitation
-notification), and is idle after a turn ends, on start, or on `idle_prompt`; `SessionEnd` ends it. Sessions that
-never send `SessionEnd` (a crashed or killed terminal, or an interrupted turn, which sends no `Stop`) end on
-their own after 2 h without events and leave the list 10 minutes later, like any ended session; when the focused
-session leaves, the most recently updated remaining session becomes the focused one. Session updates reach the board only while it shows the Claude screen
-or the picker (battery); requests, cancels and the focused session's "done" arrive in any mode.
-
-**Questions.** When Claude asks a multiple-choice question (`AskUserQuestion`), the board shows one page per
-question ("1/2 · project", header, question). Single choice: tap an option (radio), then Next. Several choices:
-tick the boxes. Long-press an option to read its description; scroll the option list or question text when it
-does not fit. Next / Send stay disabled until the page is answered; Send on the last page answers every question
-at once, and Claude receives the chosen labels (several joined with ", "). Questions with more than 4
-questions or 4 options stay in the terminal. While the Mac's voice link is up, every page ends with an "Other (speak)" row for a spoken free-text answer (see Voice commands).
-
-**Always allow.** When Claude Code suggests a permission rule (an `addRules` suggestion) for the request, a
-third button "Always allow" applies that rule (shown as "Rule: …"), so the same kind of call is not asked again.
-Other suggestion types (e.g. `addDirectories`, `setMode`) do not get the button. Only allow rules are offered: an `addRules` suggestion whose
-`behavior` is `deny` or `ask` (anything but `allow` or absent) never gets the button.
-
-**Voice commands.** Say a command to Claude Code from the board. Start Claude with `cb` instead of `claude`
-(same arguments); voice only ever types into a `cb` pane.
-
-- `cb [claude arguments]` outside tmux runs Claude in a tmux session named `<folder name>-<6 hex of a hash of the full path>`
-  (characters other than letters, digits, `_` and `-` become `_`), so two folders with the same name never share a session. If that
-  session is already running, `cb` attaches to it (arguments are ignored, with a note). It refuses to attach to a
-  session of that name that was not started by `cb`. Inside tmux it runs Claude in the current pane instead and marks
-  that pane (the mark is cleared when Claude exits). Either way the pane gets the option `@claude_board=1`.
-  Remote Control and everything else work as usual. Needs `tmux` (`brew install tmux`).
-- `mac/install.sh` copies `cb` to `~/.claude-board/bin` and links it as `~/.local/bin/cb` when that folder exists
-  (an existing `cb` there is left alone; otherwise it prints how to add the folder to `PATH`). `mac/uninstall.sh`
-  removes the link only if it points to this install.
-
-On the Claude screen tap **Speak**, say the command and stop talking. Recording ends 1.5 s after you stop, 5 s
-after the tap if you said nothing (the board then shows "Didn't catch that"), when you tap Stop, or after 30 s.
-The words appear live as you speak (the end of the sentence stays in view). Then the board shows exactly what will
-be typed: **Send** types it into the session's tmux pane and presses Enter once, **Say again** records again,
-**Cancel** drops it. Taps in the first 700 ms of each step are ignored. Transcription is Vietnamese by default
-(`VoiceConfig.localeIdentifier` in `mac/Sources/ClaudeBoardCore/VoiceHub.swift`) and runs on the Mac with the
-Speech framework's on-device dictation (`SpeechAnalyzer` + `DictationTranscriber`; the model downloads once). The
-Mac's own microphone is not used: the audio comes from the board. A capture that sits unconfirmed for 120 s
-times out ("Timed out — say it again").
-
-Speak is hidden while the Mac voice link is down or a request is on screen, and greyed out with "Open with cb for
-voice" when the focused session has no `cb` pane.
-
-Before anything is typed (when you tap Speak, and again when you tap Send) the Mac checks that
-- the pane exists, has not exited, and carries the `@claude_board` mark set by `cb`;
-- the pane's process is the session's own: it is in the process chain the hook recorded, so the pane has not been
-  taken over by another program;
-- Claude is in the terminal foreground (not suspended with Ctrl-Z, which would leave a shell prompt that runs the
-  text), and no other program it started holds the terminal (an editor opened with Ctrl-G, for example);
-- the pane is not in a synchronized-panes window (`send-keys` would reach unverified panes), and not in copy mode;
-- the session has not ended, and (at Send) is not waiting for an answer to a permission request or question in the
-  terminal, because the text would answer it.
-
-Otherwise the board says why ("Open with cb for voice", "The terminal is in copy mode — nothing sent", ...) and
-nothing is typed. The text is cleaned before the board shows it, so what you read is exactly what is typed: control
-characters and line separators become spaces, invisible format characters (zero-width spaces, BOM, soft hyphen...)
-are removed, curly quotes become plain ones, whitespace collapses, leading `!`, `/` and `#` are stripped (Claude
-Code's bash, slash-command and memory modes), and the text is cut to 300 bytes. The typing step refuses any text
-that differs from that cleaned form. It uses `tmux send-keys -l` (literal) and one Enter, and is never retried (if
-tmux times out the board warns that the text may have been typed).
-
-- **Other (speak)**: on a question page the last row, "Other (speak)", records a spoken free-text answer. Say it and
-  tap **Use**; the row then shows your words, selected (tap it to toggle it like an option; long-press to say it
-  again), and Send on the last page answers as usual. Claude receives the spoken text as the answer.
-- **Deny + why**: a permission request has a "Deny + why" button next to Allow / Deny. Say the reason and tap Send:
-  the request is denied and Claude reads "The user denied this on the board and said: <reason>". Both appear only
-  while the Mac voice link is up, and are cancelled if the request is answered in the terminal or times out.
-
-**Speech permission.** The daemon asks macOS for Speech Recognition the first time it starts (its embedded
-Info.plist carries the reason): allow it. If you denied it, the board says "Allow Speech Recognition for
-claude-board in System Settings"; enable `claude-board` in System Settings → Privacy & Security → Speech Recognition.
-Voice needs macOS 26 on the Mac. The daemon log says `voice ready (vi_VN)` or why voice is unavailable. To try
-dictation without the board: `say -v Linh -o /tmp/vi.aiff "Xin chào" && ~/.claude-board/bin/claude-board --transcribe /tmp/vi.aiff`.
-Voice was added to the Claude service, so a board with older firmware has no Speak (the daemon logs "board has no
-voice characteristic"). After flashing, the board tells bonded Macs that its Claude service changed (GATT Service
-Changed) and the daemon rediscovers it, so no re-pairing is needed.
-
-**Bluetooth permission.** The daemon carries an embedded Info.plist (bundle id `dev.cicca.claude-board`) so macOS can ask for Bluetooth access while it runs under launchd. On first launch macOS shows a Bluetooth permission prompt for `claude-board`: allow it. Because the binary is ad-hoc signed, macOS may ask again (Bluetooth, and possibly Speech Recognition) after you rebuild and reinstall. If the prompt reappears after rebuilding or reinstalling the daemon, allow it again; if you denied it, enable `claude-board` in System Settings → Privacy & Security → Bluetooth.
-
-**First-time pairing.** The board's Claude service requires a bonded, encrypted link. The first time the daemon connects, macOS shows a Bluetooth pairing prompt. Accept it once.
-
-**Re-pairing.** If the board is reflashed or its NVS is erased, the old bond is invalid. Run `defaults delete dev.cicca.claude-board boardIdentifier`, remove the board in macOS System Settings > Bluetooth, then restart the daemon and accept the pairing prompt again.
-
-**Safety rules**
-- Nothing is ever auto-approved. Only an explicit Allow / Always allow tap approves a request, and only a Send tap answers a question; taps in the first 700 ms after anything appears, and taps on a dark panel, never count.
-- Voice text is typed, stored as an answer or used as a deny reason only after an explicit Send / Use tap on the transcript shown, and typed only into a tmux pane the Mac verified for that session (see Voice commands).
-- An iPhone notification's action runs only from an explicit tap on its button on the board (armed, lit panel, the notification on screen); nothing is done on the iPhone automatically, and only the Claude app's notifications are ever shown.
-- If the daemon is not running, the board is off or not connected, or the request times out, the hook prints nothing and exits 0, so Claude Code shows its normal terminal prompt.
-
-Voice commands were verified on hardware on 2026-10-05 with Claude Code 2.1.289: a spoken command typed into a `cb` pane, an empty capture, Other (speak) and Deny + why.
-
-Daemon log: `~/.claude-board/daemon.log`.
-
-## Away from the Mac (iPhone relay)
-
-When the Mac is out of Bluetooth range, the Claude screen reads "Claude · via iPhone" and everything keeps working through the translator app on the iPhone: permission requests, questions, sessions and voice. When the Mac is back in range, the board and the daemon switch back to the direct link by themselves.
-
-**Setup (once).**
-1. Install Tailscale on the Mac and on the iPhone and sign both in to the same tailnet.
-2. Run `bash mac/install.sh`, or `~/.claude-board/bin/claude-board --pair` if Tailscale came later. It creates the relay secret and prints a QR code in the terminal (exit 2 and a hint if the Mac has no Tailscale address).
-3. In the iPhone app: **Claude relay** → **Pair with Mac** → scan the code (allow the camera and local network prompts).
-4. If the macOS firewall is on, allow incoming connections for `claude-board`.
-
-The relay screen then reads "Relay ready" while the app is connected. **Forget this Mac** there removes the pairing from the iPhone.
-
-**How it works.**
-- The board prefers the Mac: its Claude link goes to the Mac when the Mac is connected, otherwise to the iPhone relay. Each side says which one it is with the link hello (kind 9, `mac` / `relay`). Which role is active decides the "via iPhone" label.
-- The daemon likewise prefers the direct BLE path and uses the relay only when direct is down. While the relay is active it keeps using it until direct reconnects (the board prefers direct too, so a board that reports its mode over the relay has lost the Mac link first).
-- The iPhone never answers anything. It passes the board's bytes to the Mac and the Mac's bytes to the board unchanged (chunked like the Mac does), so every id check and every Allow / Deny / Send tap rules apply exactly as on the direct link. Nothing is ever auto-approved.
-- Voice: the board's voice audio goes to the iPhone, which transcribes it on device (`DictationTranscriber` vi-VN, same options as the Mac's) and sends only text to the Mac. The transcript is shown on the board, and typed only after Send, as with the direct link. If the Vietnamese model is missing, the board shows why ("Open Live Translator once to install the Vietnamese speech model"). This uses the board's audio, not the iPhone or AirPods microphone, so it does not start a translator conversation (see "Conversation on / off").
-- A request that is on the board at the moment the path changes falls through to the terminal, as on any disconnect. Sessions are resynced and the clock is resent on the new path.
-- Battery: the app keeps one WebSocket open only while it is paired and the board's Claude service is connected. A WebSocket ping every 60 s; failed connections retry with backoff (5 s doubling to 5 min) and once at each network change. No other polling.
-
-**Relay protocol.** One WebSocket (binary messages only, at most 2048 bytes) at `ws://<Mac Tailscale address>:47821/relay`, carried inside Tailscale's WireGuard tunnel. The first byte is the frame type, integers are little-endian, text is UTF-8. A malformed frame, an unknown type or a frame from the wrong sender closes the connection. The board's own bytes travel unchanged inside `toBoard` / `fromBoard`.
-
-| Type | Name | From | Body | Limits |
-|---|---|---|---|---|
-| `0x01` | toBoard | Mac | one board message `[kind][id u32][text]` | 5…405 bytes |
-| `0x02` | fromBoard | iPhone | one answer-characteristic notification, as the board sent it | 5…10 bytes |
-| `0x03` | boardLink | iPhone | `[up u8]`: the iPhone holds the board's relay role | 1 byte |
-| `0x04` | voiceStatus | iPhone | `[0]` ready, or `[1][reason]` | reason 1…200 bytes |
-| `0x10` | voiceBegin | Mac | `[session u32]`: transcribe the board's current capture | session ≠ 0 |
-| `0x11` | voiceFinish | Mac | `[session u32]`: end it and send the final transcript | session ≠ 0 |
-| `0x12` | voiceCancel | Mac | `[session u32]`: drop it | session ≠ 0 |
-| `0x13` | transcript | iPhone | `[session u32][final u8][text]` | text ≤ 1000 bytes |
-| `0x14` | voiceFailed | iPhone | `[session u32][reason]` | reason 1…200 bytes |
-| `0x20` | challenge | Mac | `[version u8 = 1][nonceS 32]` | 33 bytes |
-| `0x21` | auth | iPhone | `[nonceC 32][proof 32]` | 64 bytes |
-| `0x22` | welcome | Mac | `[proof 32]` | 32 bytes |
-
-Handshake (mutual HMAC-SHA256; the secret never crosses the network): the Mac sends `challenge` with a fresh nonceS; the iPhone answers `auth` with a fresh nonceC and `HMAC(secret, "cbrelay1 client" ‖ nonceS ‖ nonceC)`; the Mac checks it in constant time and replies `welcome` with `HMAC(secret, "cbrelay1 server" ‖ nonceS ‖ nonceC)`, which the iPhone checks, so each side proves it holds the secret. Fresh nonces stop replays, the two labels stop reflection. The handshake must finish within 10 s. One relay is connected at a time (a newer authenticated one replaces the old). The pairing code is `claudeboard://relay?v=1&h=<Tailscale address>&p=47821&s=<secret, base64url>`.
-
-**Security.**
-- The daemon listens only on the Mac's Tailscale address (100.64.0.0/10 or fd7a:115c:a1e0::/48, on a `utun` interface), never on Wi-Fi / LAN, loopback or the internet, and only accepts peers with a Tailscale address. It re-checks the address when the network changes; with no Tailscale address the relay is off.
-- Brute force: 5 failed handshakes from one remote address within a minute lock that address out for a minute. At most 4 unauthenticated connections are held at once (2 per remote address).
-- The secret is 32 random bytes in `~/.claude-board/relay.secret`, mode 0600 in a 0700 directory, owned by you. The daemon refuses a file that is a symlink, someone else's or readable by others (the relay stays off; it is never silently replaced). On the iPhone it is in the Keychain (this device only, after first unlock). It is never printed as text and appears only inside the QR code, so do not share a screenshot of it.
-- Rotate with `claude-board --pair --new-secret`, then restart the daemon (`launchctl kickstart -k gui/$(id -u)/dev.cicca.claude-board`) and scan the new code. `mac/uninstall.sh` deletes the secret.
-- The channel's confidentiality and integrity after the handshake rely on Tailscale (WireGuard); the relay itself does not add encryption on top of the WebSocket.
-
-**Limits.**
-- The iPhone app must be running (it already runs in the background for the translator). With a free developer account the app must be reinstalled every 7 days.
-- Voice through the relay uses the iPhone's Vietnamese speech model.
-- A switch between the direct link and the relay makes a pending request fall back to the terminal.
-- Update the firmware, the daemon and the app together: the firmware needs the Mac's `mac` hello, which only the new daemon sends.
-
-Daemon log: `iPhone relay listening on 100.x… port 47821 (Tailscale only)`, `relay: iPhone authenticated`, `relay: board link up on the iPhone`, `BOARD PATH SWITCHED: direct -> relay`. Board monitor: `Claude link up: via the iPhone relay`.
-
-## iPhone notifications (Claude app)
-
-The board shows notifications from the Claude iPhone app (App Identifier `com.anthropic.claude`, confirmed on the
-iPhone's app list): a short rising chime (none for silent notifications), then "iPhone · Claude" with the title,
-subtitle and message, over any mode and even when the board is locked (the panel lights while it is shown). It
-closes after 20 s (60 s when it has action buttons), when you tap **Close**, when you remove it on the iPhone, with
-any board button (PWR ×1 only closes it; the lock stays as it was), or when a Claude request from the Mac arrives:
-Mac requests always win, and while one is up an iPhone notification is not shown at all (the iPhone keeps it). One
-notification at a time: a newer one replaces the one shown.
-
-**Privacy.** Only `com.anthropic.claude` notifications are fetched and shown. For every other app the board reads
-only the app identifier, to discard it: nothing from them is displayed, stored or logged. Leaving the screen
-forgets the notification's text.
-
-**Actions.** When iOS offers the notification's own actions, the board shows them as buttons (negative left,
-positive right, with the iPhone's labels) and performs the action on the iPhone only when you tap one: the button
-must be armed (700 ms after the notice appears or changes, or the panel lights), the panel lit, the link up and the
-notification still on screen. The positive action needs an unlocked board: while locked, tapping it only shows
-"Unlock to confirm" (the negative action and Close still work). The board then says "Done" or "Not done". **Close** only closes the board's screen;
-the notification stays on the iPhone. Whether the Claude app's notifications carry actions has not been observed on
-the iPhone yet; without them only Close is shown.
-
-**Setup (once).** Open the translator app with the board on: iOS asks to pair with "ESP-Translator" (tap
-**Pair**), and may ask to share notifications with it (allow). Answer both prompts right away: while the "share
-notifications" prompt waits, the board's notification request waits too, and if it is left for about 30 s the link
-drops once; the board then skips iPhone notifications for that iPhone until it restarts (log: `ancs: skipped for this
-boot after a timeout`). Update the iOS app and the firmware together. In Settings → Bluetooth → (i) next to ESP-Translator,
-**Share System Notifications** must stay on. If you decline pairing the translator still works; there are just no
-notifications. For the message text while the iPhone is locked, set Settings → Notifications → Claude → Show
-Previews to **Always** (otherwise the notice has no text).
-
-**Without the translator app.** A bonded iPhone is asked to encrypt right at connect (once per connection), so
-notifications can resume after the app is closed or the board restarts. The board counts the notification link as
-connected only when both ANCS subscriptions are on; with the app closed it relaxes the link pace after 10 s (never
-on the Mac link) and, on battery, stays awake at most 30 min without the app or a Claude notice (see Power). A
-restored link waits silently for the app: the translator screen does not claim the iPhone is connected. Whether iOS
-reconnects the board by itself with the app closed has not been verified on hardware yet; if it does not, open the
-translator app once or tap ESP-Translator in Settings → Bluetooth.
-
-**Re-pairing.** If the board is reflashed with erased NVS, or iOS shows a pairing error: Settings → Bluetooth →
-ESP-Translator → Forget This Device, then open the translator app and pair again.
-
-Update the iOS app and the firmware together: the app's 20 s heartbeat is what keeps the board's iPhone audio role
-alive (an older app is dropped after 60 s of silence).
-
-Details and the on-device test plan: `docs/superpowers/notes/2026-10-05-ancs-discovery.md` (the hardware rows are
-still pending).
+| Language | Apple on device |
+|---|---:|
+| vi | see the Vietnamese table above |
+| en | |
+| fr | |
+| de | |
+| es | |
+| ja | |
+| ko | |
+| zh-Hans | |
+| th | |
 
 ## Tuning
 
 | Setting | File | Default | Effect |
 |---|---|---|---|
-| `echoHold` | `ios/Sources/App/ConversationEngine.swift` | 1 s | How long board-mic results are ignored after you stop speaking. Raise it if the board still picks up your voice |
-| `turnGap` | same | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
+| `turnGap` | `ios/Sources/App/TurnAssembler.swift` | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
 | `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
 | `rate` | `ios/Sources/Engine/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
 | `idleTimeout` | `ios/Sources/App/ConversationActivity.swift` | 10 min | Silence after which the app releases the AirPods mic and other apps' audio returns to full volume |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |
 | `VAD_HANGOVER_FRAMES` | same | 40 (800 ms) | Lower = faster phrase end, but long pauses split sentences |
 | `SCREEN_OFF_AFTER_MS` | `firmware/main/ui.c` | 30 s | Screen timeout |
-| `SLEEP_AFTER_DISCONNECT_US` | `firmware/main/main.c` | 3 min | Deep sleep timeout without an iPhone |
+| `SLEEP_RULE_IDLE_US` | `firmware/main/sleep_rule.h` | 3 min | Deep sleep timeout on battery without the translator app |
 
 ## Known limitations
 
-- iPhone notifications: one at a time (a newer one replaces the one shown); text only in the fonts' character set (other characters are dropped); notifications already on the iPhone when the board connects are not shown; notices that arrive while the board is in deep sleep are missed.
 - Using the AirPods microphone switches the AirPods to the call (HFP) profile. Speech output stays clear, but it is not music quality: during a conversation a video in another app also plays in call quality (ducked) until the conversation ends.
 - The ESP32-S3 has BLE only (no Bluetooth Classic), so it cannot stream audio to the AirPods directly. The iPhone handles that leg.
-- The iPhone relay needs Tailscale on both devices and the iPhone app running.
 - My side is always Vietnamese; the other language is picked from the packs in `shared/languages/`. Languages are offered only when the phone has a recognizer and offline translation both ways for them.
-- The multi-language flow is not yet proven on devices (the Note 9 and the iPhone parity runs are the next step); the native brand spellings in the ja/ko/th packs have not been reviewed by native speakers.
+- The multi-language flow is not yet proven on the iPhone; the native brand spellings in the ja/ko/th packs have not been reviewed by native speakers.
 
 ## Not done / next (iOS code review, 2026-11-14)
 
 Fixed in that review: ADPCM header index clamp, the four missing Swift fixture suites, a dead Vietnamese recognizer, zh-Hans locale mapping, board pinning ("Quên board"), and the glossary excluded from iCloud backup. Still open:
 
 - A dead Vietnamese recognizer is noticed only when board audio arrives (or at the next start or mic-on). Catching it with no board audio needs a new engine event in the `VoiceEngine` contract.
-- Board pinning is trust-on-first-use, and "encrypted" is inferred from the board's own GATT behavior (the `…0012` subscribe succeeding), which a fake peripheral can imitate. The pin stops a fake that shows up after the real board is pinned, but not one present at the first pairing. The real fix is a user-confirmed pairing: the board shows a code, the user confirms it on the phone, and a challenge-response with the shared secret follows. That needs firmware work. A phone that never pairs a Mac for the relay never subscribes to the encrypted `…0012` characteristic, so it never pins the board. Fixing that needs a firmware characteristic that can only be read over an encrypted link.
+- Board pinning is trust-on-first-use with no proof of identity: the pin stops a fake board that shows up after the real one is pinned, but not one present at the first connection. The real fix is a user-confirmed pairing (the board shows a code, the user confirms it on the phone, then a challenge-response with a key agreed at pairing), which needs firmware work.
 - Switching to a language that needs a download leaves the old pair running: the board keeps getting subtitles in the old language while the screen asks to download the new one. Turn the mic off when entering `needsDownload` from a switch (R1, R5).
 - Small race between the generation check and `engine.speak` (`ConversationController.say`): one phrase from the old pair could still be spoken right after a switch. Pass the generation into the engine (R4).
 - The one-restart budget in `SessionMachine` never resets, so a second recognizer death hours later goes straight to `failed`. Reset it after a healthy period (P6).
@@ -597,7 +306,7 @@ Fixed in that review: ADPCM header index clamp, the four missing Swift fixture s
 - Per-buffer diagnostics on the audio path (`LiveTranscriber`: string keys, a lock and an RMS per buffer, a log line per result) while nothing reads the counters any more. Board audio is also decoded on the main actor.
 - `Speaker` prints spoken text to stdout. Gate it behind debug builds.
 - A glossary that was set aside after corruption, or that went read-only, is never shown to the user (`recoveredFromCorruption` is unused).
-- Leftovers: `BoardVoiceTranscriber` hard-codes `vi-VN` (R16); the mic usage text in `Info.plist` says "translate into English"; the relay UI is English only.
+- Leftover: the mic usage text in `Info.plist` says "translate into English".
 - Pack regexes are only checked for compiling. There is no adversarial-string time-bound test (ARCHITECTURE §7).
 - The app builds in Swift language mode 5 with a fair amount of `@unchecked Sendable`. Move to Swift 6 mode.
 
