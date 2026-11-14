@@ -8,6 +8,7 @@ struct BoardLostView: View {
     /// The clock for "12 giây trước" (demo mode pins it); read every second.
     let now: () -> Date
     var forget: () -> Void
+    @State private var confirmForget = false
 
     var body: some View {
         InstrumentScreen {
@@ -45,9 +46,12 @@ struct BoardLostView: View {
             Spacer(minLength: 16)
             VStack(spacing: DS.Space.buttonGap) {
                 InstrumentButton(Copy.t("lost.usePhone")) { router.continueWithPhone() }
-                InstrumentButton(Copy.t("lost.forget"), kind: .destructive, height: DS.Size.buttonLow, action: forget)
+                InstrumentButton(Copy.t("lost.forget"), kind: .destructive, height: DS.Size.buttonLow) {
+                    confirmForget = true
+                }
             }
         }
+        .forgetBoardConfirmation(isPresented: $confirmForget, forget: forget)
     }
 
     private func fact(_ key: String, _ value: String) -> some View {
