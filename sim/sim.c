@@ -1,6 +1,6 @@
 /*
  * Board simulator: the real translator and lock screens (firmware/main/ui.c, lock_ui.c, modes.c) in a round
- * 466x466 window on the Mac. Everything else on the board (BLE, audio, PMU, Claude screens) is faked here.
+ * 466x466 window on the Mac. Everything else on the board (BLE, audio, PMU) is faked here.
  *
  *   board-sim                         window; the mouse is the finger, keys below drive the fake iPhone
  *   board-sim --do "a;b;..."          runs the commands first, then stays interactive
@@ -15,7 +15,7 @@
  *   status:<utf8>            status line
  *   toast:<utf8>             status line for 2 s
  *   label:<utf8>             language label after the status ("<status> · <label>"; empty clears)
- *   level:<0..100>           level ring (0 hides it)                       V (fake voice on/off)
+ *   level:<0..100>           level ring (0 hides it)                       V (fake speech on/off)
  *   lock / unlock / face     PWR x1 / PWR x2 / tap on the lock screen      K / U / F
  *   sleep                    the deep-sleep message
  *   wait:<ms>                keep rendering
@@ -50,7 +50,7 @@ static rec_lang_t s_rec = REC_NONE;
 static bool s_connected;
 static int s_brightness = 100;
 static lv_obj_t *s_dark;
-static bool s_voice;
+static bool s_speech;
 static int s_sample;
 static int s_shots;
 /* Scripted finger (tap / dtap / drag), next to the SDL mouse */
@@ -123,11 +123,6 @@ bool pmu_battery(pmu_battery_t *out)
     *out = (pmu_battery_t){.present = true, .usb_power = false, .charging = false, .percent = 76};
     return true;
 }
-
-void claude_ui_set_touch_enabled(bool on) { (void)on; }
-void phone_ui_set_touch_enabled(bool on) { (void)on; }
-bool claude_ui_pending(void) { return false; }
-bool voice_ui_active_locked(void) { return false; }
 
 static void apply_screen(void)
 {
@@ -334,11 +329,11 @@ static void run_script(const char *script)
     free(copy);
 }
 
-/* ---- keys and the fake voice ---- */
+/* ---- keys and the fake speech ---- */
 
-static void voice_cb(lv_timer_t *t)
+static void speech_cb(lv_timer_t *t)
 {
-    if (!s_voice) {
+    if (!s_speech) {
         return;
     }
     /* Syllables: a fast wobble inside a slow swell, with short pauses */
@@ -369,11 +364,11 @@ static void keys_cb(lv_timer_t *t)
             run(cmd);
             break;
         case SDL_SCANCODE_V:
-            s_voice = !s_voice;
-            if (!s_voice) {
+            s_speech = !s_speech;
+            if (!s_speech) {
                 ui_set_level(0);
             }
-            printf("fake voice %s\n", s_voice ? "on" : "off");
+            printf("fake speech %s\n", s_speech ? "on" : "off");
             break;
         case SDL_SCANCODE_K: run(strcpy(cmd, "lock")); break;
         case SDL_SCANCODE_U: run(strcpy(cmd, "unlock")); break;
@@ -494,11 +489,11 @@ int main(int argc, char **argv)
         return 0;
     }
     puts("Board simulator. Mouse = finger (double-click = double tap, drag up on the lock face = swipe).\n"
-         "  C connect/disconnect iPhone   M board mic   T next subtitle   V fake voice (level ring)\n"
+         "  C connect/disconnect iPhone   M board mic   T next subtitle   V fake speech (level ring)\n"
          "  K lock (PWR x1)   U unlock (PWR x2)   F tap on the lock screen   P screenshot (board-N.bmp)\n"
          "The panel goes dark after 30 s without activity, like the board: click to wake.");
     lv_timer_create(keys_cb, 30, NULL);
-    lv_timer_create(voice_cb, 60, NULL);
+    lv_timer_create(speech_cb, 60, NULL);
     for (;;) {
         uint32_t idle = lv_timer_handler();
         usleep((idle > 10 ? 10 : idle) * 1000);

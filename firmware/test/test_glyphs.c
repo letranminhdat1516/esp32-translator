@@ -5,7 +5,7 @@
 #include "board_info.h"
 #include "glyphs.h"
 
-/* The static glyph_ok ancs.c had before A1 (font_vi_22/36 -r list) */
+/* The static glyph_ok the firmware had before A1 (font_vi_22/36 -r list) */
 static bool old_glyph_ok(uint32_t c)
 {
     return (c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff) || c == 0x102 || c == 0x103 || c == 0x110 ||

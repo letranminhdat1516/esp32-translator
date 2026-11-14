@@ -1,5 +1,5 @@
 /*
- * BLE GATT server cho app iPhone.
+ * BLE GATT server for the iPhone translator app.
  *
  * Service  A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A
  *   audio   ...0002  notify  : [seq u16][predictor i16][index u8][ADPCM...] (16 kHz mono)
@@ -10,8 +10,8 @@
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
- * On the iPhone's link the board is also a GATT client of Apple's Notification Center Service (ancs_client.c):
- * ANCS needs an encrypted, bonded link, so the board asks for encryption (one-time pairing prompt on the iPhone).
+ * Nothing here needs encryption and the board never asks for it. If a phone starts pairing anyway (or still holds a
+ * bond from older firmware), Just Works bonding is accepted and kept in NVS; a stale bond is dropped on a MIC failure.
  */
 #include <string.h>
 
@@ -35,52 +35,19 @@ void ble_store_config_init(void);
 #include "app.h"
 #include "font_store.h"
 #include "glyphs.h"
-#include "claude_proto.h"
-#include "claude_link.h"
-#include "ancs.h"
 #include "clock.h"
-#include "link_pace.h"
 #include "phone_idle.h"
 
 static const char *TAG = "ble";
 
-/* sdkconfig is generated once from sdkconfig.defaults and never refreshed: an old one silently keeps one
- * BLE connection, RAM-only bonds and a 4 KB host task stack. Fail the build instead of shipping a board that
- * cannot host the Mac. */
-#if !defined(CONFIG_BT_NIMBLE_MAX_CONNECTIONS) || CONFIG_BT_NIMBLE_MAX_CONNECTIONS < 2 || !defined(CONFIG_BT_NIMBLE_NVS_PERSIST)
-#error "Stale sdkconfig: delete firmware/sdkconfig and rebuild"
-#endif
-#if !defined(CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE) || CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE < 6144
-#error "Stale sdkconfig (NimBLE host task stack < 6144): delete firmware/sdkconfig and rebuild"
-#endif
-#if !defined(CONFIG_BT_NIMBLE_MAX_CCCDS) || CONFIG_BT_NIMBLE_MAX_CCCDS < 16
-#error "Stale sdkconfig (NimBLE CCCDs < 16): delete firmware/sdkconfig and rebuild"
-#endif
-#if !defined(CONFIG_BT_NIMBLE_GATT_CLIENT)
-#error "Stale sdkconfig (no NimBLE GATT client for iPhone notifications): delete firmware/sdkconfig and rebuild"
-#endif
-
 #define SVC_UUID(last) BLE_UUID128_INIT(0x0a, 0x9b, 0x8c, 0x7d, 0x6e, 0x5f, 0x8a, 0x9d, \
                                         0x1e, 0x4c, 0x2f, 0x3b, (last), 0x00, 0xc0, 0xa7)
-
-_Static_assert(CLAUDE_CONN_NONE == BLE_HS_CONN_HANDLE_NONE, "claude_link.h must use NimBLE's no-connection value");
-_Static_assert(CLAUDE_LINK_PEERS >= CONFIG_BT_NIMBLE_MAX_CONNECTIONS, "claude_link.h needs a slot per connection");
 
 static const ble_uuid128_t s_svc_uuid = SVC_UUID(0x01);
 static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 static const ble_uuid128_t s_info_uuid = SVC_UUID(0x05);   /* read: [BOARD_INFO_VERSION][font_sets u32 LE] */
-
-/* Claude companion service. Requests: [flags u8][kind u8][id u32 LE][UTF-8], flags as the text chr, from the Mac or
- * the iPhone relay, after its hello (kind 9); before that only the hello is taken.
- * Answers (notify): answers, board mode, focus and voice inputs, at most CLAUDE_INPUT_MAX bytes (claude_proto.h).
- * Voice (notify): the board mic as IMA ADPCM, same packets as the iPhone audio, only during a voice capture.
- * Answers and voice go to the active Claude link (claude_link.h: the Mac, else the relay). */
-static const ble_uuid128_t s_claude_svc_uuid = SVC_UUID(0x10);
-static const ble_uuid128_t s_claude_req_uuid = SVC_UUID(0x11);
-static const ble_uuid128_t s_claude_ans_uuid = SVC_UUID(0x12);
-static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 
 #define TEXT_FLAG_FIRST 0x01
 #define TEXT_FLAG_LAST  0x02
@@ -89,197 +56,46 @@ static const ble_uuid128_t s_claude_voice_uuid = SVC_UUID(0x13);
 #define TEXT_KIND_TIME   2
 #define TEXT_KIND_LABEL  3
 #define TEXT_MAX         1024
-/* One Claude request write: the Mac chunks to ATT MTU - 3, but a long (prepared) write can carry up to 512 */
-#define CLAUDE_WRITE_MAX 512
 
 static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
 static uint16_t s_ctrl_handle;
 static uint16_t s_info_handle;
 
-static uint16_t s_claude_req_handle;
-static uint16_t s_claude_ans_handle;
-static uint16_t s_claude_voice_handle;
-/* One 20 ms ADPCM frame per notification: 5 header + 160 data bytes + 3 ATT */
-#define VOICE_MIN_MTU 168
-/* Claude link roles per connection (claude_link.h): the Mac or the iPhone relay, from their hello. Host task only. */
-static claude_links_t s_links;
-static claude_link_state_t s_link_state = { .active = CLAUDE_CONN_NONE };
-/* One reassembly buffer per link slot: the Mac and the relay may both be writing (hellos) */
-static claude_rx_t s_claude_rx[CLAUDE_LINK_PEERS];
-/* Snapshots of s_link_state for the audio and LVGL tasks */
-static volatile uint16_t s_claude_conn = BLE_HS_CONN_HANDLE_NONE;
-static volatile bool s_claude_voice;
-static volatile bool s_claude_relayed;
-static volatile uint16_t s_claude_mtu;
-
-/* Links: the iPhone (translator audio; also the Claude relay when the app relays) and the Mac (Claude, direct) */
+/* The iPhone link that holds the translator audio role */
 static volatile uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
-/* A bonded iPhone whose audio CCCD NimBLE restored from the bond when the link encrypted: the translator app may
- * or may not be open (iOS keeps the link for ANCS without it). NimBLE only reports a CCCD write that changes the
- * stored flags (ble_gatts.c ble_gatts_subscribe_event), and the restore has already set them: when the app then
- * writes its own CCCD (setNotifyValue(true), every connect) nothing is reported. So the link waits here and
+/* A bonded iPhone whose audio CCCD NimBLE restored from the bond when the link encrypted (a bond made by older
+ * firmware, or by a phone that paired on its own): the translator app may or may not be open. NimBLE only reports
+ * a CCCD write that changes the stored flags (ble_gatts.c ble_gatts_subscribe_event), and the restore has already
+ * set them: when the app then writes its own CCCD (setNotifyValue(true), every connect) nothing is reported. So the link waits here and
  * becomes the iPhone audio link on the app's first write to the text or control characteristic (ESPLink writes
  * the time and the mic state on every connect). */
 static volatile uint16_t s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
-static int64_t s_audio_pending_since_us;   /* when it became the waiting link (link_pace.h settle window) */
 /* Last app write (text, control or keepalive) on s_phone_conn, and the host-task timer that checks it: an iPhone
- * that keeps the bonded link for ANCS after the app was swiped away must not keep the board streaming audio */
+ * that keeps the link after the app was swiped away must not keep the board streaming audio */
 static int64_t s_phone_last_write_us;
 static struct ble_npl_callout s_phone_idle_timer;
-/* Per connection (iPhone and Mac side by side): when it came up (link_pace.h settle window), and whether the board
- * already asked it for encryption: at most one pairing prompt per connection, also when the user declined it and
- * the app's role comes and goes */
-static struct link_slot {
-    uint16_t conn;
-    int64_t up_us;
-    bool enc_asked;
-} s_slots[CONFIG_BT_NIMBLE_MAX_CONNECTIONS];
 static int s_connections;
 static uint8_t s_own_addr_type;
-/* The link carrying iPhone notifications (ancs_client.c), or none */
-static volatile uint16_t s_ancs_conn = BLE_HS_CONN_HANDLE_NONE;
-static const ble_uuid128_t s_ancs_sol_uuid = BLE_UUID128_INIT(ANCS_UUID_SVC);
-/* A pace change refused because another parameter update was still running (e.g. ANCS ready while the fast update
- * of the connect is in flight): sent again once that update completes (BLE_GAP_EVENT_CONN_UPDATE) */
+/* A pace change refused because another parameter update was still running: sent again once that update
+ * completes (BLE_GAP_EVENT_CONN_UPDATE) */
 static uint16_t s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
-static bool s_pace_retry_fast;
-/* Host-task timer: the relaxed pace waits for the end of the settle window (link_pace.h) */
-static struct ble_npl_callout s_pace_timer;
-
-static struct link_slot *slot_of(uint16_t conn)
-{
-    for (size_t i = 0; i < sizeof(s_slots) / sizeof(s_slots[0]); i++) {
-        if (s_slots[i].conn == conn) {
-            return &s_slots[i];
-        }
-    }
-    return NULL;
-}
 
 static char s_text_buf[TEXT_MAX + 1];
 static size_t s_text_len;
 
 static void start_advertising(void);
 
-/* ANCS (iPhone notifications) is only served over an encrypted link: ask for it. Unbonded: iOS shows its pairing
- * prompt once; bonded: the link re-encrypts silently. */
-static void request_encryption(uint16_t conn)
+/* A connection interval that fits real-time audio: 30-45 ms (two 20 ms packets per event) */
+static void set_fast_pace(uint16_t conn)
 {
-    struct ble_gap_conn_desc desc;
-    struct link_slot *slot = slot_of(conn);
-    if (slot == NULL || slot->enc_asked || ble_gap_conn_find(conn, &desc) != 0 || desc.sec_state.encrypted) {
-        return;
-    }
-    int rc = ble_gap_security_initiate(conn);
-    if (rc == 0 || rc == BLE_HS_EALREADY) {
-        slot->enc_asked = true;   /* asked, or a pairing already runs: no second prompt on this link */
-    }
-    ESP_LOGI(TAG, "link %d: asking for encryption (rc %d)", conn, rc);
-}
-
-/* Fast while audio may stream (30-45 ms, as before). Relaxed while only ANCS uses the iPhone link: 180-210 ms,
- * latency 4 (the board may sleep through 4 events: a notification waits at most ~1 s), within Apple's rules
- * (interval max x (latency + 1) <= 2 s, x 3 < supervision timeout 5 s). */
-static void set_pace(uint16_t conn, bool fast)
-{
-    struct ble_gap_upd_params p = fast ? (struct ble_gap_upd_params){ .itvl_min = 24, .itvl_max = 36, .latency = 0,
-                                                                      .supervision_timeout = 400 }
-                                       : (struct ble_gap_upd_params){ .itvl_min = 144, .itvl_max = 168, .latency = 4,
-                                                                      .supervision_timeout = 500 };
+    struct ble_gap_upd_params p = { .itvl_min = 24, .itvl_max = 36, .latency = 0, .supervision_timeout = 400 };
     int rc = ble_gap_update_params(conn, &p);
-    ESP_LOGI(TAG, "link %d: %s pace (rc %d)", conn, fast ? "fast" : "relaxed", rc);
+    ESP_LOGI(TAG, "link %d: fast pace (rc %d)", conn, rc);
     if (rc == BLE_HS_EALREADY) {
         s_pace_retry_conn = conn;
-        s_pace_retry_fast = fast;
     } else if (conn == s_pace_retry_conn) {
         s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;   /* this request supersedes the waiting one */
-    }
-}
-
-/* The peer of conn has a bond with the board (its keys are stored). Needs the peer's identity address at connect:
- * NimBLE loads the bonded IRKs into the controller's resolving list, so an iPhone's RPA resolves. If it did not,
- * this is false and encryption waits for the translator app (or iOS encrypts the bonded link itself). */
-static bool peer_bonded(uint16_t conn)
-{
-    static struct ble_store_value_sec value;   /* host task: off the stack */
-    struct ble_gap_conn_desc desc;
-    if (ble_gap_conn_find(conn, &desc) != 0) {
-        return false;
-    }
-    struct ble_store_key_sec key = { 0 };
-    key.peer_addr = desc.peer_id_addr;
-    return ble_store_read_peer_sec(&key, &value) == 0;
-}
-
-/* The relaxed pace for the ANCS link, if it carries ANCS alone: not the translator app's audio link, never the active
- * Claude link, and only once the settle window after its connect (or after it became the waiting audio link) is
- * over; until then the pace timer comes back here. */
-static void relax_if_ancs_only(void)
-{
-    uint16_t conn = s_ancs_conn;
-    if (conn == BLE_HS_CONN_HANDLE_NONE || conn == s_phone_conn || conn == s_claude_conn) {
-        return;
-    }
-    struct link_slot *slot = slot_of(conn);
-    int64_t from = slot != NULL ? slot->up_us : 0;
-    if (conn == s_audio_pending_conn && s_audio_pending_since_us > from) {
-        from = s_audio_pending_since_us;
-    }
-    uint32_t wait_ms = link_pace_relax_wait_ms(from, esp_timer_get_time());
-    if (wait_ms != 0) {
-        ble_npl_callout_reset(&s_pace_timer, ble_npl_time_ms_to_ticks32(wait_ms));
-        return;
-    }
-    set_pace(conn, false);   /* the translator app is not streaming on this link */
-}
-
-static void on_pace_timer(struct ble_npl_event *ev)
-{
-    (void)ev;
-    relax_if_ancs_only();
-}
-
-void ble_link_ancs_link(uint16_t conn, bool up)
-{
-    s_ancs_conn = up ? conn : BLE_HS_CONN_HANDLE_NONE;
-    if (up) {
-        relax_if_ancs_only();
-    } else {
-        ble_npl_callout_stop(&s_pace_timer);
-    }
-}
-
-/* Recomputes the active Claude link after any change and tells the app, in order (claude_link_events) */
-static void apply_links(void)
-{
-    claude_link_state_t was = s_link_state;
-    claude_link_state_t now = claude_links_state(&s_links, VOICE_MIN_MTU);
-    s_link_state = now;
-    s_claude_conn = now.active;
-    s_claude_voice = now.voice;
-    s_claude_relayed = now.relayed;
-    s_claude_mtu = now.mtu;
-    claude_link_ev_t ev[3];
-    size_t n = claude_link_events(was, now, ev);
-    for (size_t i = 0; i < n; i++) {
-        switch (ev[i]) {
-        case CLAUDE_LINK_EV_DOWN:
-            ESP_LOGI(TAG, "Claude link down (%s)", was.relayed ? "iPhone relay" : "Mac");
-            app_on_claude_link(false);   /* also ends voice (main.c) */
-            break;
-        case CLAUDE_LINK_EV_UP:
-            ESP_LOGI(TAG, "Claude link up: %s (link %d, MTU %u)", now.relayed ? "via the iPhone relay" : "the Mac",
-                     now.active, now.mtu);
-            app_on_claude_link(true);
-            break;
-        case CLAUDE_LINK_EV_VOICE_ON:
-            app_on_claude_voice_link(true);
-            break;
-        case CLAUDE_LINK_EV_VOICE_OFF:
-            app_on_claude_voice_link(false);
-            break;
-        }
     }
 }
 
@@ -287,7 +103,6 @@ static void apply_links(void)
 static void set_audio_pending(uint16_t conn)
 {
     s_audio_pending_conn = conn;
-    s_audio_pending_since_us = esp_timer_get_time();
 }
 
 /* The translator app subscribed to audio on conn: it becomes the iPhone audio link */
@@ -309,36 +124,25 @@ static void phone_audio_on(uint16_t conn)
     ESP_LOGI(TAG, "iPhone audio on");
     ESP_LOGI(TAG, "internal DMA free %u, largest block %u", (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
-    /* Audio needs the fast pace: ask again when the link runs slower than 45 ms (relaxed for ANCS, or a retry NimBLE
-     * dropped: an update that times out is freed without an event) or a relaxed request still waits for a retry */
+    /* Audio needs the fast pace: ask again when the link runs slower than 45 ms (the phone chose a slower one, or a
+     * retry NimBLE dropped: an update that times out is freed without an event) */
     struct ble_gap_conn_desc desc;
-    if ((ble_gap_conn_find(conn, &desc) == 0 && desc.conn_itvl > 36) ||
-        (conn == s_pace_retry_conn && !s_pace_retry_fast)) {
-        set_pace(conn, true);
+    if (ble_gap_conn_find(conn, &desc) == 0 && desc.conn_itvl > 36) {
+        set_fast_pace(conn);
     }
     app_on_connection_changed(true);
-    claude_links_phone(&s_links, conn);   /* a relay hello said before the promotion is granted now */
-    apply_links();
-    request_encryption(conn);   /* the translator app: ANCS needs it */
 }
 
-/* The iPhone audio role ends (unsubscribe, disconnect, silent app): stop streaming. A link that stays up and
- * carries ANCS goes to the relaxed pace (link_up false: the link is already gone). */
-static void phone_audio_off(bool link_up)
+/* The iPhone audio role ends (unsubscribe, disconnect, silent app): stop streaming */
+static void phone_audio_off(void)
 {
     s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
-    /* First: the relay goes with the translator role, and the pace check below skips the active Claude link */
-    claude_links_phone(&s_links, BLE_HS_CONN_HANDLE_NONE);
-    apply_links();
-    if (link_up) {
-        relax_if_ancs_only();   /* ANCS alone does not need the audio pace */
-    }
     ble_npl_callout_stop(&s_phone_idle_timer);
     app_on_connection_changed(false);
 }
 
 /* Host task (NimBLE callout): the app has not written for PHONE_IDLE_TIMEOUT_US? Then it is gone (swiped away,
- * crashed) while iOS keeps the link for ANCS: leave the role like an audio unsubscribe, keep the link, and wait for
+ * crashed) while iOS keeps the link: leave the role like an audio unsubscribe, keep the link, and wait for
  * the app on it again (a later write promotes it, as on a restored link) */
 static void on_phone_idle_check(struct ble_npl_event *ev)
 {
@@ -353,8 +157,8 @@ static void on_phone_idle_check(struct ble_npl_event *ev)
         return;
     }
     ESP_LOGI(TAG, "iPhone app silent for %d s — audio off", (int)(PHONE_IDLE_TIMEOUT_US / 1000000));
-    set_audio_pending(conn);   /* first: the relaxed pace then waits the settle window (a mic tap may wake the app) */
-    phone_audio_off(true);
+    set_audio_pending(conn);   /* a mic tap or the app's next write takes the role back */
+    phone_audio_off();
 }
 
 /* Board mic tapped while the iPhone link waits (app silent or not seen yet): host task, posted by
@@ -479,40 +283,6 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
         translator_write_from(conn_handle);
         handle_text_write(buf, len);
         return 0;
-    } else if (attr_handle == s_claude_req_handle && ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR) {
-        int slot = claude_links_slot(&s_links, conn_handle);
-        if (slot < 0 || !claude_links_may_write(&s_links, conn_handle)) {
-            return BLE_ATT_ERR_WRITE_NOT_PERMITTED;   /* subscribe to the answer characteristic first */
-        }
-        /* Static, not on the (6 KB) host task stack: access callbacks only run in the NimBLE host task */
-        static uint8_t claude_buf[CLAUDE_WRITE_MAX];
-        if (ble_hs_mbuf_to_flat(ctxt->om, claude_buf, sizeof(claude_buf), &len) != 0) {
-            return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-        }
-        static claude_msg_t msg;
-        if (!claude_rx_feed(&s_claude_rx[slot], claude_buf, len, &msg)) {
-            return 0;
-        }
-        if (msg.kind == CLAUDE_LINK) {
-            int hello = claude_parse_hello(&msg);
-            claude_role_t role = hello == CLAUDE_HELLO_MAC     ? CLAUDE_ROLE_MAC
-                                 : hello == CLAUDE_HELLO_RELAY ? CLAUDE_ROLE_RELAY
-                                                               : CLAUDE_ROLE_NONE;
-            if (claude_links_hello(&s_links, conn_handle, role)) {
-                ESP_LOGI(TAG, "link %d: Claude hello \"%.8s\"", conn_handle, msg.text);
-            } else {
-                /* Kept when it may be granted later (claude_link.h): a relay before the promotion of its link */
-                ESP_LOGW(TAG, "link %d: Claude hello \"%.8s\" refused", conn_handle, msg.text);
-            }
-            apply_links();
-            return 0;
-        }
-        if (conn_handle != s_link_state.active) {
-            ESP_LOGW(TAG, "link %d: Claude message kind %d from an inactive link dropped", conn_handle, msg.kind);
-            return 0;
-        }
-        app_on_claude_message(&msg);
-        return 0;
     }
     return BLE_ATT_ERR_UNLIKELY;
 }
@@ -549,31 +319,6 @@ static const struct ble_gatt_svc_def s_services[] = {
             { 0 },
         },
     },
-    {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = &s_claude_svc_uuid.u,
-        .characteristics = (struct ble_gatt_chr_def[]) {
-            {
-                .uuid = &s_claude_req_uuid.u,
-                .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC,   /* encrypted, bonded link only */
-                .val_handle = &s_claude_req_handle,
-            },
-            {
-                .uuid = &s_claude_ans_uuid.u,
-                .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,   /* CCCD write needs encryption */
-                .val_handle = &s_claude_ans_handle,
-            },
-            {
-                .uuid = &s_claude_voice_uuid.u,
-                .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,   /* only while recording */
-                .val_handle = &s_claude_voice_handle,
-            },
-            { 0 },
-        },
-    },
     { 0 },
 };
 
@@ -587,24 +332,12 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         }
         s_connections++;
         ESP_LOGI(TAG, "connected (%d link%s)", s_connections, s_connections > 1 ? "s" : "");
-        {
-            struct link_slot *slot = slot_of(BLE_HS_CONN_HANDLE_NONE);
-            if (slot != NULL) {
-                *slot = (struct link_slot){ .conn = event->connect.conn_handle, .up_us = esp_timer_get_time() };
-            }
-        }
         /* 2M PHY + a connection interval that fits real-time audio (30 ms: two 20 ms packets per event) */
         ble_gap_set_prefered_le_phy(event->connect.conn_handle, BLE_GAP_LE_PHY_2M_MASK,
                                     BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_CODED_ANY);
-        set_pace(event->connect.conn_handle, true);
-        if (peer_bonded(event->connect.conn_handle)) {
-            /* A bonded iPhone may connect without the translator app (iOS holding the link for ANCS): encrypt
-             * now so notifications start; silent for a bonded peer (also harmless for the Mac). This is the one
-             * request of this connection (request_encryption): the app's subscribe later does not ask again. */
-            request_encryption(event->connect.conn_handle);
-        }
+        set_fast_pace(event->connect.conn_handle);
         if (s_connections < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            start_advertising();   /* keep the second slot open (iPhone + Mac) */
+            start_advertising();   /* keep a slot open: the iPhone can come back while its old link lingers */
         }
         break;
 
@@ -615,36 +348,20 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGI(TAG, "disconnected, reason 0x%x", event->disconnect.reason);
         if (event->disconnect.reason == BLE_HS_HCI_ERR(BLE_ERR_CONN_TERM_MIC)) {
             /* MIC failure: our stored keys for this peer no longer match (it forgot the bond, e.g. "Forget This
-             * Device" on the Mac or iPhone). Drop them so the next connection pairs from scratch instead of
+             * Device" on the iPhone). Drop them so the next connection pairs from scratch instead of
              * failing the same way every time */
             ESP_LOGW(TAG, "link %d: stale bond (MIC failure), deleting it", event->disconnect.conn.conn_handle);
             ble_store_util_delete_peer(&event->disconnect.conn.peer_id_addr);
         }
         if (event->disconnect.conn.conn_handle == s_phone_conn) {
-            phone_audio_off(false);
+            phone_audio_off();
         }
         if (event->disconnect.conn.conn_handle == s_pace_retry_conn) {
             s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
         }
-        {
-            struct link_slot *slot = slot_of(event->disconnect.conn.conn_handle);
-            if (slot != NULL) {
-                *slot = (struct link_slot){ .conn = BLE_HS_CONN_HANDLE_NONE };
-            }
-        }
         if (event->disconnect.conn.conn_handle == s_audio_pending_conn) {
             s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
         }
-        {
-            int slot = claude_links_slot(&s_links, event->disconnect.conn.conn_handle);
-            if (slot >= 0) {
-                s_claude_rx[slot].len = 0;
-            }
-            claude_links_disconnected(&s_links, event->disconnect.conn.conn_handle);
-            apply_links();   /* the Claude link went down, or moved to the other link */
-        }
-        ancs_client_on_disconnect(event->disconnect.conn.conn_handle, event->disconnect.conn.peer_id_addr.type,
-                                  event->disconnect.conn.peer_id_addr.val);
         start_advertising();
         break;
 
@@ -653,8 +370,8 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             uint16_t conn = event->subscribe.conn_handle;
             bool on = event->subscribe.cur_notify;
             if (on && event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_RESTORE) {
-                /* The iPhone is bonded (ANCS): NimBLE restored its old audio CCCD as the link encrypted, also when
-                 * iOS connects without the translator app. Do not stream yet: s_audio_pending_conn. */
+                /* The iPhone is bonded: NimBLE restored its old audio CCCD as the link encrypted, also when iOS
+                 * connects without the translator app. Do not stream yet: s_audio_pending_conn. */
                 if (conn != s_phone_conn) {
                     set_audio_pending(conn);
                     ESP_LOGI(TAG, "iPhone audio subscription restored from the bond: waiting for the app");
@@ -667,27 +384,9 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                 }
                 if (conn == s_phone_conn) {
                     ESP_LOGI(TAG, "iPhone audio off");
-                    phone_audio_off(true);
+                    phone_audio_off();
                 }
             }
-        } else if (event->subscribe.attr_handle == s_claude_ans_handle) {
-            uint16_t conn = event->subscribe.conn_handle;
-            bool on = event->subscribe.cur_notify;
-            if (!claude_links_answer(&s_links, conn, on)) {
-                ESP_LOGW(TAG, "link %d: no room for another Claude subscriber", conn);
-            }
-            if (!on) {
-                int slot = claude_links_slot(&s_links, conn);
-                if (slot >= 0) {
-                    s_claude_rx[slot].len = 0;
-                }
-            }
-            ESP_LOGI(TAG, "link %d: Claude answers %s%s", conn, on ? "on" : "off",
-                     event->subscribe.reason == BLE_GAP_SUBSCRIBE_REASON_RESTORE ? " (restored)" : "");
-            apply_links();   /* a role needs the hello that follows (kind 9) */
-        } else if (event->subscribe.attr_handle == s_claude_voice_handle) {
-            claude_links_voice(&s_links, event->subscribe.conn_handle, event->subscribe.cur_notify);
-            apply_links();   /* voice is live only on the active link with a full-frame MTU */
         }
         break;
 
@@ -708,45 +407,21 @@ static int gap_event(struct ble_gap_event *event, void *arg)
                      conn, event->conn_update.status, desc.conn_itvl, desc.conn_latency, desc.supervision_timeout);
         }
         if (conn == s_pace_retry_conn) {
-            bool fast = s_pace_retry_fast;
             s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
-            /* Re-decide from the roles now (still busy: it waits for the next completed update again) */
-            if (conn == s_phone_conn || (fast && conn != s_ancs_conn)) {
-                set_pace(conn, true);
-            } else {
-                relax_if_ancs_only();
-            }
+            set_fast_pace(conn);   /* still busy: it waits for the next completed update again */
         }
         break;
     }
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %d", event->mtu.value);
-        claude_links_mtu(&s_links, event->mtu.conn_handle, event->mtu.value);
-        apply_links();   /* voice waits for a full-frame MTU: Speak may appear now */
         break;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
-        /* A failure (the user declined or ignored the pairing prompt: Pairing Failed from iOS, or the 30 s SMP
-         * timeout) keeps the link: NimBLE only drops it for a broken bond, and the translator service needs no
-         * encryption. The app keeps streaming unencrypted, without ANCS; request_encryption() does not ask again
-         * on this connection. */
+        /* Only when the phone itself encrypts (a bond from older firmware): the translator service works either way */
         ESP_LOGI(TAG, "link %d: encryption %s (status %d)", event->enc_change.conn_handle,
                  event->enc_change.status == 0 ? "on" : "failed", event->enc_change.status);
-        if (event->enc_change.status == 0) {
-            ancs_client_on_encrypted(event->enc_change.conn_handle);
-        }
         break;
-
-    case BLE_GAP_EVENT_NOTIFY_RX: {
-        /* Notifications from a GATT server we subscribed to (the iPhone's ANCS). Static: host task stack. */
-        static uint8_t rx[256];
-        uint16_t n = 0;
-        if (ble_hs_mbuf_to_flat(event->notify_rx.om, rx, sizeof(rx), &n) == 0) {
-            ancs_client_on_notify(event->notify_rx.conn_handle, event->notify_rx.attr_handle, rx, n);
-        }
-        break;   /* the host frees the mbuf */
-    }
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
         start_advertising();
@@ -784,17 +459,13 @@ static void start_advertising(void)
         return;
     }
 
-    /* Scan response: ANCS service solicitation (iOS lists the board as an accessory that wants notifications and
-     * may connect it without an app) + the name, shortened to fit 31 bytes (18 + 2 + 11). The full name stays
-     * the GAP device name. */
+    /* Scan response: the name, shortened to fit 31 bytes (2 + 29). The full name stays the GAP device name. */
     const char *name = ble_svc_gap_device_name();
     size_t name_len = strlen(name);
     struct ble_hs_adv_fields rsp = { 0 };
-    rsp.sol_uuids128 = &s_ancs_sol_uuid;
-    rsp.sol_num_uuids128 = 1;
     rsp.name = (const uint8_t *)name;
-    rsp.name_len = name_len > 11 ? 11 : name_len;
-    rsp.name_is_complete = name_len <= 11;
+    rsp.name_len = name_len > 29 ? 29 : name_len;
+    rsp.name_is_complete = name_len <= 29;
     rc = ble_gap_adv_rsp_set_fields(&rsp);
     if (rc != 0) {
         ESP_LOGE(TAG, "scan response rc=%d", rc);
@@ -821,11 +492,9 @@ static void hash_bytes(uint32_t *h, const void *data, size_t len)
     }
 }
 
-/* Bonded peers cache this GATT table. When a firmware update changes it (Phase 3 added the voice characteristic),
- * mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects, and the peer
- * rediscovers. Without it macOS keeps the old table and never sees the new characteristic.
- * The range starts at the translator service: its board info characteristic (...0005) sits before the Claude
- * service and shifts the Claude handles, so a peer with the old cache must rediscover both.
+/* Bonded peers cache this GATT table. When a firmware update changes it (e.g. the companion service of older
+ * firmware was removed), mark Service Changed once: NimBLE indicates it to each bonded peer when it reconnects, and
+ * the peer rediscovers instead of keeping the old table. The range starts at the translator service.
  * Known limits: the hash is stored right away, before any peer got the indication (NimBLE persists the pending
  * indication per bonded peer, but a peer that bonds later never needs it); a change to the translator service or
  * the GAP / GATT services would need its own range (they are not hashed here). */
@@ -884,15 +553,11 @@ void ble_link_init(void)
 {
     ESP_ERROR_CHECK(nimble_port_init());
     ble_npl_callout_init(&s_phone_idle_timer, nimble_port_get_dflt_eventq(), on_phone_idle_check, NULL);
-    ble_npl_callout_init(&s_pace_timer, nimble_port_get_dflt_eventq(), on_pace_timer, NULL);
-    for (size_t i = 0; i < sizeof(s_slots) / sizeof(s_slots[0]); i++) {
-        s_slots[i].conn = BLE_HS_CONN_HANDLE_NONE;
-    }
     ble_npl_event_init(&s_wake_ev, on_wake_phone, NULL);
-    claude_links_init(&s_links);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
-    /* Just Works bonding (no keypad); only the Claude characteristics demand encryption */
+    /* Just Works bonding (no keypad) if the phone asks for it; the board never initiates security and no
+     * characteristic demands encryption */
     ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 0;
@@ -907,7 +572,6 @@ void ble_link_init(void)
     ESP_ERROR_CHECK(ble_gatts_add_svcs(s_services));
 
     ble_store_config_init();
-    ancs_client_init();
     nimble_port_freertos_init(host_task);
 }
 
@@ -954,96 +618,4 @@ void ble_link_notify_control(uint8_t state)
     if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE || s_audio_pending_conn != BLE_HS_CONN_HANDLE_NONE) {
         ble_gatts_chr_updated(s_ctrl_handle);
     }
-}
-
-bool ble_link_claude_connected(void)
-{
-    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE;
-}
-
-bool ble_link_claude_relayed(void)
-{
-    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE && s_claude_relayed;
-}
-
-static int send_claude_input(const uint8_t *data, size_t len)
-{
-    uint16_t conn = s_claude_conn;
-    if (conn == BLE_HS_CONN_HANDLE_NONE || len == 0 || len > CLAUDE_INPUT_MAX) {
-        return BLE_HS_ENOTCONN;
-    }
-    struct os_mbuf *om = ble_hs_mbuf_from_flat(data, (uint16_t)len);
-    if (om == NULL) {
-        return BLE_HS_ENOMEM;
-    }
-    return ble_gatts_notify_custom(conn, s_claude_ans_handle, om);
-}
-
-bool ble_link_send_claude_input(const uint8_t *data, size_t len)
-{
-    return send_claude_input(data, len) == 0;
-}
-
-bool ble_link_send_claude_input_retry(const uint8_t *data, size_t len)
-{
-    for (int attempt = 0; attempt < 3; attempt++) {
-        int rc = send_claude_input(data, len);
-        if (rc == 0) {
-            return true;
-        }
-        if (rc != BLE_HS_ENOMEM) {
-            return false;
-        }
-        vTaskDelay(pdMS_TO_TICKS(5));   /* buffers free up as the radio drains them */
-    }
-    return false;
-}
-
-bool ble_link_send_claude_answer(uint32_t id, uint8_t decision)
-{
-    uint8_t payload[5];
-    claude_encode_answer(id, decision, payload);
-    return ble_link_send_claude_input(payload, sizeof(payload));
-}
-
-uint16_t ble_link_mac_mtu(void)
-{
-    return s_claude_conn == BLE_HS_CONN_HANDLE_NONE ? 0 : s_claude_mtu;
-}
-
-/* The active Claude link (Mac or relay) subscribed to voice and its MTU fits a full frame per notification */
-bool ble_link_voice_ready(void)
-{
-    return s_claude_conn != BLE_HS_CONN_HANDLE_NONE && s_claude_voice;
-}
-
-uint16_t ble_link_voice_payload_max(void)
-{
-    uint16_t mtu = s_claude_conn == BLE_HS_CONN_HANDLE_NONE ? 0 : s_claude_mtu;
-    return mtu > 23 ? mtu - 3 : 20;
-}
-
-/* Audio task only: never from the NimBLE host task (its 6 KB stack has no room for the encoder path) */
-bool ble_link_send_voice(const uint8_t *data, uint16_t len)
-{
-    for (int attempt = 0; attempt < 5; attempt++) {
-        uint16_t conn = s_claude_conn;
-        if (conn == BLE_HS_CONN_HANDLE_NONE || !s_claude_voice) {
-            return false;
-        }
-        struct os_mbuf *om = ble_hs_mbuf_from_flat(data, len);
-        if (om == NULL) {
-            vTaskDelay(pdMS_TO_TICKS(2));
-            continue;
-        }
-        int rc = ble_gatts_notify_custom(conn, s_claude_voice_handle, om);
-        if (rc == 0) {
-            return true;
-        }
-        if (rc != BLE_HS_ENOMEM) {
-            return false;
-        }
-        vTaskDelay(pdMS_TO_TICKS(2));
-    }
-    return false;
 }
