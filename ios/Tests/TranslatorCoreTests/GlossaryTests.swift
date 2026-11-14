@@ -22,6 +22,12 @@ private final class Counter: @unchecked Sendable {
     func next() -> String { lock.withLock { n += 1; return "id\(n)" } }
 }
 
+/// The backup flag of `dir/glossary.json`, read through a fresh URL (URLs cache resource values).
+private func excludedFromBackup(_ dir: URL) -> Bool {
+    let url = URL(fileURLWithPath: dir.appendingPathComponent(GlossaryStore.fileName).path)
+    return (try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup) == true
+}
+
 private func store(_ dir: URL, clock: () -> Date = { Date() }) -> GlossaryStore {
     let counter = Counter()
     return GlossaryStore(directory: dir, clock: clock, newId: { counter.next() })
@@ -300,6 +306,31 @@ private func run(_ op: String, on s: GlossaryStore, input: [String: Any],
         #expect(seen == [["A"]])
         // A stream asked for after close is already finished
         for await _ in s.changes() { Issue.record("stream after close must be finished") }
+    }
+
+    /// R17 (ARCHITECTURE §4): the glossary never goes to iCloud backup. An atomic write replaces the file, so the
+    /// flag is set again after every write, not only after the first.
+    @Test func everyWriteLeavesTheFileExcludedFromBackup() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let s = store(dir)
+        let first = try await s.add(text: "Zalo")
+        #expect(excludedFromBackup(dir))
+        _ = try await s.update(first.id, text: "Grab")
+        #expect(excludedFromBackup(dir))
+        try await s.remove(first.id)
+        #expect(excludedFromBackup(dir))
+    }
+
+    /// A file written before the flag existed (or restored from an old backup) is excluded when the store opens it
+    @Test func anExistingFileIsExcludedFromBackupOnLoad() async throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(#"[{"id":"a","text":"Zalo"}]"#.utf8).write(to: dir.appendingPathComponent(GlossaryStore.fileName))
+        #expect(!excludedFromBackup(dir))
+        let s = store(dir)
+        #expect(await s.terms.map(\.text) == ["Zalo"])
+        #expect(excludedFromBackup(dir))
     }
 
     @Test func theDefaultDirectoryIsApplicationSupport() throws {

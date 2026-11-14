@@ -72,6 +72,7 @@
   "glossary.error.duplicate": "Từ này đã có trong từ điển",
   "glossary.error.tooManyVariants": "Tối đa 8 cách viết khác",
   "menu.relay": "Claude relay",
+  "menu.forgetBoard": "Quên board",
   "cue.unclear": "Không nghe rõ",
   "status.preparing": "Đang chuẩn bị…",
   "failed.noRecognizer": "Máy này chưa nhận giọng được ngôn ngữ này.",

@@ -203,6 +203,8 @@ final class UIState {
     var toggleBoardMic: () -> Void = {}
     var clear: () -> Void = {}
     var openTtsSettings: () -> Void = {}
+    /// Forget the pinned board and look for one again ("Quên board"); the composition root binds it to the link.
+    var forgetBoard: () -> Void = {}
     /// The glossary closures may throw `GlossaryValidationError`.
     var glossaryAdd: (String) throws -> Void = { _ in }
     var glossaryUpdate: (String, String) throws -> Void = { _, _ in }

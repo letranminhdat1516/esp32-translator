@@ -151,6 +151,10 @@ private struct Header: View {
                         Button(Copy.t("menu.glossary"), systemImage: "character.book.closed") { showGlossary = true }
                     }
                     Button(Copy.t("menu.relay"), systemImage: "point.3.connected.trianglepath.dotted") { showRelay = true }
+                    // The phone only talks to the board it paired with first: a new board needs this
+                    Button(Copy.t("menu.forgetBoard"), systemImage: "antenna.radiowaves.left.and.right.slash") {
+                        ui.forgetBoard()
+                    }
                     Button(Copy.t("menu.clear"), systemImage: "trash", role: .destructive) { confirmClear = true }
                         .disabled(!live.running || !live.hasHistory)
                 } label: {

@@ -128,3 +128,88 @@ struct BoardLabel {
         value.flatMap(BoardProtocol.parseBoardInfo) ?? BoardInfo(protocolVersion: 0, fontSets: .latinVI)
     }
 }
+
+/// Which board this phone talks to (P9 access control). The first board is trusted on first use: once its
+/// translator setup finished AND an encrypted access succeeded on the same link (the board's Claude characteristics
+/// need a bonded, encrypted link), its identifier is pinned. From then on only that board is reconnected, by
+/// identifier (`retrievePeripherals(withIdentifiers:)` + a pending connect); a device found by a scan that is not
+/// the pinned board is never connected, whatever it advertises. Claude traffic from the board is forwarded only on
+/// a link where the encrypted access succeeded. `forget` drops the pin (a new board) and scanning starts again.
+struct BoardPin {
+    enum Reconnect: Equatable {
+        /// Connect to this identifier only (and wait for it)
+        case pinned(UUID)
+        /// No board yet: scan for the board service
+        case discover
+    }
+
+    private(set) var pinned: UUID?
+    /// The peripheral being connected or connected, and what its link has proven so far
+    private var link: UUID?
+    private var setUp = false
+    private var encrypted = false
+
+    init(pinned: UUID?) { self.pinned = pinned }
+
+    var reconnect: Reconnect { pinned.map(Reconnect.pinned) ?? .discover }
+
+    /// Whether a peripheral found by a scan (or already connected to the system) may be connected
+    func mayConnect(_ id: UUID) -> Bool { pinned == nil || pinned == id }
+
+    /// A connection to `id` starts: nothing is proven on it yet
+    mutating func connecting(_ id: UUID) {
+        link = id
+        setUp = false
+        encrypted = false
+    }
+
+    /// The translator setup finished on the current link; the identifier to persist when it just became the pin
+    mutating func setupFinished() -> UUID? {
+        guard link != nil else { return nil }
+        setUp = true
+        return pinIfProven()
+    }
+
+    /// An encrypted characteristic access (the Claude answer subscription) succeeded on the current link; the
+    /// identifier to persist when it just became the pin
+    mutating func encryptedAccessSucceeded() -> UUID? {
+        guard link != nil else { return nil }
+        encrypted = true
+        return pinIfProven()
+    }
+
+    /// Board → relay traffic may be forwarded: an encrypted access succeeded on this link
+    var claudeTrusted: Bool { link != nil && encrypted }
+
+    mutating func linkGone() {
+        link = nil
+        setUp = false
+        encrypted = false
+    }
+
+    /// Drops the pin and the current link's trust (the caller disconnects and scans again)
+    mutating func forget() {
+        pinned = nil
+        linkGone()
+    }
+
+    private mutating func pinIfProven() -> UUID? {
+        guard pinned == nil, setUp, encrypted, let link else { return nil }
+        pinned = link
+        return link
+    }
+}
+
+/// Where the pinned board's identifier is kept (UserDefaults: an identifier CoreBluetooth gives this app only)
+struct BoardPinStore {
+    static let key = "ble.pinnedBoard"
+    let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+
+    func load() -> UUID? { defaults.string(forKey: Self.key).flatMap(UUID.init(uuidString:)) }
+
+    func save(_ id: UUID?) {
+        if let id { defaults.set(id.uuidString, forKey: Self.key) } else { defaults.removeObject(forKey: Self.key) }
+    }
+}
