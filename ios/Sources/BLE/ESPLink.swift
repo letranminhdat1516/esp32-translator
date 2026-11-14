@@ -16,7 +16,7 @@ import os
 /// read of control `…0004`. New firmware (board info version ≥ 2) refuses it until the link is encrypted and
 /// authenticated, so iOS shows its pairing dialog with the board's 6 digits; the read succeeds once both sides
 /// confirmed, and the board is pinned `.secure`. Old firmware (version < 2, or no control characteristic) asks for no
-/// pairing, so the read proves nothing: the link holds it and reports `.legacyBoard`; only `acceptLegacyBoard()`
+/// pairing, so the read proves nothing: the link holds it and reports `.legacyBoard(id:gen:)`; only `answerLegacyBoard`
 /// ("Vẫn ghép") pins it, as `.legacy`. A `.secure` pinned board that comes back as old firmware is refused
 /// (disconnected, never ready, `.authFailed(.unverified)`); a `.legacy` pin becomes `.secure` once the board proves
 /// it. Notifications are enabled only when `BoardPin` lets the setup finish. A refused read keeps the link and waits
@@ -145,15 +145,20 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
 
     /// The user's answer about an old-firmware board (`PairingLinkEvent.legacyBoard`): true ("Vẫn ghép") finishes the
     /// setup and pins it as legacy; false ("Huỷ") drops it and ignores it until `retryPairing()` or `forgetBoard()`.
-    func answerLegacyBoard(accept: Bool) {
+    /// `id`/`gen` are the question's (`PairingLinkEvent.legacyBoard`): an answer for another peripheral or an
+    /// earlier link (the user answered after a reconnect) is ignored and logged by `BoardPin`.
+    func answerLegacyBoard(id: UUID, gen: Int, accept: Bool) {
         queue.async { [self] in
-            guard let peripheral, peripheral.state == .connected else { return }
+            guard let peripheral, peripheral.state == .connected, peripheral.identifier == id else {
+                Diag.log("ble: consent for \(id) ignored: not the connected board")
+                return
+            }
             if accept {
-                guard pin.acceptLegacy() else { return }
+                guard pin.acceptLegacy(id: id, gen: gen) else { return }
                 Diag.log("ble: old-firmware board accepted by the user")
                 completeSetup(peripheral)
             } else {
-                guard pin.declineLegacy() != nil else { return }
+                guard pin.declineLegacy(id: id, gen: gen) != nil else { return }
                 Diag.log("ble: old-firmware board declined by the user")
                 central?.cancelPeripheralConnection(peripheral)   // didDisconnect rescans; this board is skipped
             }
@@ -455,7 +460,8 @@ extension ESPLink: CBPeripheralDelegate {
         case .askConsent:
             // Old firmware: nothing proves this is the user's board. Hold the link, nothing streams, ask the user
             Diag.log("ble: board cannot authenticate (old firmware), asking the user")
-            onPairingEvent?(.legacyBoard)
+            guard let asked = pin.consentRequest else { return }
+            onPairingEvent?(.legacyBoard(id: asked.id, gen: asked.gen))
         case .refuse:
             // The pinned secure board came back as old firmware (or something posing as it): never ready, never
             // a downgraded pin. The disconnect rescans with the backoff.

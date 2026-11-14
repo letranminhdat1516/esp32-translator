@@ -325,14 +325,19 @@ final class AppleVoiceEngine: VoiceEngine {
 
     // MARK: Board audio
 
+    /// Throws `notReady` while either recognizer is not running (see `feedTheirAudio`); phone-only's death signal.
+    func checkRecognizers() async throws {
+        guard recognizers.theirsAlive else { throw EngineErrors.notReady("their recognizer is not running") }
+        guard recognizers.mineAlive else { throw EngineErrors.notReady("the home recognizer is not running") }
+    }
+
     /// PCM from the board (the controller decodes the BLE ADPCM). Throws `notReady` whenever either recognizer is
     /// not running (before `start`, after `stop`, or after its analysis ended with an error) until the next
     /// successful `start`: the controller takes that as "recognizer died" (restart once, then failed). The home
     /// recognizer is checked here too because the controller has no other death signal; the board streams while
     /// it hears speech, the wearer's included, so a dead home recognizer is noticed as soon as anyone talks.
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
-        guard recognizers.theirsAlive else { throw EngineErrors.notReady("their recognizer is not running") }
-        guard recognizers.mineAlive else { throw EngineErrors.notReady("the home recognizer is not running") }
+        try await checkRecognizers()
         guard let x = theirRecognizer, let converter = theirConverter,
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }

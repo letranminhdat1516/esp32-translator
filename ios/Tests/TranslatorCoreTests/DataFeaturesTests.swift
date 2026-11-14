@@ -296,6 +296,46 @@ private final class ManualClock: @unchecked Sendable {
         return Calendar.current.date(from: c)!
     }
 
+    @Test func updateKeepsTheClipPersistsAndExportsTheCorrectedTranslation() async throws {
+        let dir = tempDir()
+        let q = FileFeedbackQueue(directory: dir, clock: Self.fixedClock)
+        let clip = WAV.encode([Int16](repeating: 3, count: 16_000), sampleRate: 16_000)
+        await q.add(Self.item("a"), clip: clip)
+        var changed = try #require(await q.items().first)
+        changed.correctedTranslation = "better a"
+        changed.clipFile = nil   // the queue owns the clip reference
+        await q.update(changed)
+        await q.update(Self.item("missing"))   // unknown ids are ignored
+        #expect(await q.items().count == 1)
+        #expect(await q.items().first?.correctedTranslation == "better a")
+        #expect(await q.clipURL("a") != nil)
+        #expect(await FileFeedbackQueue(directory: dir).items().first?.correctedTranslation == "better a")
+
+        let folder = try #require(try await q.exportBundle())
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let entries = try decoder.decode([FeedbackExportItem].self, from: Data(contentsOf: folder.appendingPathComponent("items.json")))
+        #expect(entries.first?.correctedTranslation == "better a")
+        #expect(entries.first?.wav == "01.wav")
+    }
+
+    @Test func reviewTitle() {
+        var item = Self.item("a")
+        #expect(item.reviewTitle == "heard a \u{2192} fixed a")
+        item.expected = ""
+        #expect(item.reviewTitle == "heard a")
+        item.correctedTranslation = "better a"
+        #expect(item.reviewTitle == "heard a \u{2192} better a")
+    }
+
+    @Test func itemsSavedBeforeCorrectionsStillLoad() throws {
+        let old = #"[{"id":"x","mine":true,"heard":"h","expected":"e","sensitive":false,"selected":true,"at":"2026-11-15T09:41:07Z","target":"t","languageCode":"en"}]"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let items = try decoder.decode([FeedbackItem].self, from: Data(old.utf8))
+        #expect(items.first?.lineID == nil && items.first?.correctedTranslation == nil)
+    }
+
     @Test func exportBundleContents() async throws {
         let dir = tempDir()
         let q = FileFeedbackQueue(directory: dir, clock: Self.fixedClock)
@@ -436,6 +476,63 @@ private final class ManualClock: @unchecked Sendable {
         #expect(items.first?.mine == false)
         #expect(items.first?.languageCode == "en")
         #expect(items.first?.clipSeconds == 1.5)   // the range plus 0.25 s each side
+    }
+
+    @Test func correctionWithSharingOffIsIgnored() async {
+        let (data, ui, services, _, _, recorder) = rig(share: false)
+        defer { withExtendedLifetime(data) {} }
+        recorder.append([Int16](repeating: 1, count: 32_000), sampleRate: 16_000, side: .theirs, endingAt: 102)
+        ui.recordCorrection(flagged(100.5...101.5), "Ben Thanh market")
+        await data.pendingWork()
+        #expect(await services.feedback.items().isEmpty)
+        #expect(ui.feedbackDraft == nil, "Sửa never opens the report sheet")
+    }
+
+    @Test func correctionWithSharingOnQueuesTheLineWithItsClip() async {
+        let (data, ui, services, _, _, recorder) = rig(share: true)
+        defer { withExtendedLifetime(data) {} }
+        recorder.append([Int16](repeating: 1, count: 32_000), sampleRate: 16_000, side: .theirs, endingAt: 102)
+        ui.recordCorrection(flagged(100.5...101.5), " Chợ Bến Thành ")
+        await data.pendingWork()
+        let items = services.feedbackItems
+        #expect(items.count == 1)
+        #expect(items.first?.lineID == "t-1")
+        #expect(items.first?.heard == "Ben Thanh")
+        #expect(items.first?.target == "Bến Thành", "the translation as it was")
+        #expect(items.first?.correctedTranslation == "Chợ Bến Thành")
+        #expect(items.first?.expected == "")
+        #expect(items.first?.clipSeconds == 1.5)
+        #expect(items.first?.languageCode == "en")
+
+        // A second "Sửa" on the same line updates the queued item instead of adding one
+        ui.recordCorrection(flagged(100.5...101.5), "Chợ Bến Thành (Q1)")
+        await data.pendingWork()
+        #expect(services.feedbackItems.count == 1)
+        #expect(services.feedbackItems.first?.correctedTranslation == "Chợ Bến Thành (Q1)")
+    }
+
+    @Test func correctionAfterReportIsStoredOnTheReportedItem() async {
+        let (data, ui, services, _, _, _) = rig(share: true)
+        defer { withExtendedLifetime(data) {} }
+        ui.reportWrong(flagged(nil))
+        await data.submit(expected: "Bến Thành market")
+        ui.recordCorrection(flagged(nil), "Chợ Bến Thành")
+        await data.pendingWork()
+        let items = services.feedbackItems
+        #expect(items.count == 1)
+        #expect(items.first?.expected == "Bến Thành market")
+        #expect(items.first?.correctedTranslation == "Chợ Bến Thành")
+    }
+
+    @Test func sensitiveCorrectionIsQueuedUnselected() async {
+        let (data, ui, services, _, _, _) = rig(share: true)
+        defer { withExtendedLifetime(data) {} }
+        var l = flagged(nil)
+        l.source = "mật khẩu wifi"
+        ui.recordCorrection(l, "the wifi password")
+        await data.pendingWork()
+        #expect(services.feedbackItems.first?.sensitive == true)
+        #expect(services.feedbackItems.first?.selected == false)
     }
 
     @Test func reportWithoutAudioOrSensitive() async {

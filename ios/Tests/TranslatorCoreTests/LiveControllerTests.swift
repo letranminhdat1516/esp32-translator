@@ -223,4 +223,40 @@ struct LiveControllerTests {
         #expect(sides == [.theirs, .mine, .theirs, .mine, .mine])
         #expect(await eventually { await rig.fake.inputModes == [.phoneOnly, .board] })
     }
+
+    /// Phone-only: no board audio arrives, so `feedTheirAudio` never reports a dead recognizer. The controller asks
+    /// the engine itself while phone-only runs, into the same restart-once-then-failed path as board audio.
+    @Test func phoneOnlyNoticesADeadRecognizerRestartsOnceThenFails() async throws {
+        var tuning = ConversationController.Tuning()
+        tuning.recognizerCheckInterval = 0.02
+        let rig = try await Rig(tuning: tuning)
+        #expect(await rig.startRunning())
+        rig.engine.killTheirRecognizer()
+        await settle()
+        #expect(rig.ui.session == .running("en"), "board mode: board audio is the signal, nothing is polled")
+
+        rig.ui.setPhoneOnly(true)
+        #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
+        #expect(await rig.fake.stopCount == 1)
+        #expect(await eventually { rig.ui.session == .failed("en", reason: "recognizer stopped") })
+        #expect(await rig.fake.starts.count == 2)
+        rig.controller.shutdown()
+    }
+
+    @Test func phoneOnlyWithLiveRecognizersKeepsRunning() async throws {
+        var tuning = ConversationController.Tuning()
+        tuning.recognizerCheckInterval = 0.02
+        let rig = try await Rig(tuning: tuning)
+        #expect(await rig.startRunning())
+        rig.ui.setPhoneOnly(true)
+        #expect(await eventually { rig.engine.recognizerChecks >= 3 })
+        #expect(rig.ui.session == .running("en"))
+        // Back in board mode the checks stop
+        rig.ui.setPhoneOnly(false)
+        await settle()
+        let checks = rig.engine.recognizerChecks
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(rig.engine.recognizerChecks == checks)
+        rig.controller.shutdown()
+    }
 }

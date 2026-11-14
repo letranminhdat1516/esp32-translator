@@ -25,6 +25,9 @@ final class ConversationController {
         var maxLines = 100
         /// The board mic streams 16 kHz mono
         var boardSampleRate = 16_000
+        /// Phone-only: how often the engine is asked whether both recognizers still run (no board audio = no
+        /// `feedTheirAudio` to report a death)
+        var recognizerCheckInterval: TimeInterval = 1
     }
 
     /// The pick when nothing is saved: the Swift app's EN ↔ VI pair.
@@ -54,6 +57,8 @@ final class ConversationController {
     private(set) var session = Session(state: .loading, generation: 0)
     /// Bumped on every state change: an async step started for an older state drops its result.
     private var epoch = 0
+    /// The newest language-list refresh (`refreshPackStatus`); older ones drop their results.
+    private var packRefresh = 0
     private var started = false
     private var tasks: [Task<Void, Never>] = []
     /// One-off steps (checks, downloads, starts, glossary saves); cancelled by `shutdown`
@@ -75,6 +80,8 @@ final class ConversationController {
     private var openedOnce = false
     private var activity = ConversationActivity()
     private var micChain: Task<Void, Never>?
+    /// Phone-only's recognizer checks (`startRecognizerChecks`)
+    private var recognizerChecks: Task<Void, Never>?
 
     // Their side
     private var decoder = ADPCMDecoder()
@@ -189,7 +196,8 @@ final class ConversationController {
         tasks.removeAll()
         for task in oneOffs.values { task.cancel() }
         oneOffs.removeAll()
-        for task in [theirWorker, speechChain, micChain, boardChain, levelDecay] { task?.cancel() }
+        for task in [theirWorker, speechChain, micChain, boardChain, levelDecay, recognizerChecks] { task?.cancel() }
+        recognizerChecks = nil
         levelDecay = nil
         theirWorker = nil
         speechChain = nil
@@ -289,6 +297,10 @@ final class ConversationController {
         ui.session = session.state
         Diag.log("session: \(old.state) → \(session.state) (gen \(session.generation))")
         enter(session.state)
+        switch event {
+        case .picked, .downloadDone, .downloadFailed: refreshPackStatus()
+        default: break
+        }
     }
 
     private func enter(_ state: SessionState) {
@@ -337,17 +349,19 @@ final class ConversationController {
 
     /// The language list's "Đã tải" / "Tải": what each offered language still misses (the Vietnamese voice aside).
     /// Track A (onboarding language step); the picked language's download shows over this.
+    /// Re-run after the catalog loads, after every download and after every language change (Settings or
+    /// onboarding), so the list never shows a stale "Tải" / "Đã tải". Only the newest refresh writes.
     private func refreshPackStatus() {
+        packRefresh += 1
         let codes = ui.offeredPacks.map(\.code), engine = self.engine, generation = session.generation
+        let token = packRefresh
         oneOff { [weak self] in
             for code in codes {
                 let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: generation)
                 guard let missing = try? await engine.missing(pair: pair) else { continue }
-                guard let self else { return }
+                guard let self, packRefresh == token else { return }
                 let blocking = missing.filter { $0.kind != .ttsVoice }
-                if ui.packStatus[code] != .installed {
-                    ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
-                }
+                ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
             }
         }
     }
@@ -652,15 +666,42 @@ final class ConversationController {
         let e = epoch
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
-        } catch EngineError.notReady {
-            // A recognizer is gone, the board's or mine (the only error that means death); the machine allows one
-            // restart per running session, then `failed`
-            guard epoch == e, case .running = session.state else { return }
-            Diag.log("controller: a recognizer stopped")
-            dropMyPartial()
-            apply(.recognizerDied)
         } catch {
-            Diag.log("controller: feedTheirAudio failed: \(error)")
+            recognizerError(error, epoch: e, from: "feedTheirAudio")
+        }
+    }
+
+    /// A recognizer is gone, the board's or mine: `notReady` is the only error that means death. The machine allows
+    /// one restart per running session, then `failed`. Board audio and phone-only's checks both end here.
+    private func recognizerError(_ error: Error, epoch e: Int, from source: String) {
+        guard case EngineError.notReady = error else {
+            Diag.log("controller: \(source) failed: \(error)")
+            return
+        }
+        guard epoch == e, case .running = session.state else { return }
+        Diag.log("controller: a recognizer stopped (\(source))")
+        dropMyPartial()
+        apply(.recognizerDied)
+    }
+
+    /// Phone-only: the iPhone mic feeds their recognizer inside the engine, so no board audio reports a death; the
+    /// engine is asked every `recognizerCheckInterval` while phone-only runs.
+    private func startRecognizerChecks() {
+        recognizerChecks?.cancel()
+        let interval = tuning.recognizerCheckInterval, engine = self.engine
+        recognizerChecks = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled, let self else { return }
+                guard inputMode == .phoneOnly, engineStarted, case .running = session.state else { continue }
+                let e = epoch
+                do {
+                    try await engine.checkRecognizers()
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    recognizerError(error, epoch: e, from: "phone-only check")
+                }
+            }
         }
     }
 
@@ -921,6 +962,12 @@ final class ConversationController {
         inputMode = mode
         ui.phoneOnly = on
         if !on { ui.talkHeld = false }
+        if on {
+            startRecognizerChecks()
+        } else {
+            recognizerChecks?.cancel()
+            recognizerChecks = nil
+        }
         onMicSide?(on ? .theirs : .mine)
         enqueueRouting { try await $0.setInputMode(mode) }
     }

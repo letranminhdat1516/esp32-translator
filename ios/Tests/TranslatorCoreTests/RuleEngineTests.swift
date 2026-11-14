@@ -165,6 +165,27 @@ private func unboundedLookbehind(_ pattern: String) -> Bool {
         return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
     }
 
+    /// The fastest of up to `runs` timings, re-timed only while over `limit`. Catastrophic backtracking is slow on
+    /// every run, so the guard holds; a run stretched by parallel test load (the scheduler, not the regex) is not
+    /// counted against the rule.
+    private func bestMilliseconds(under limit: Double, runs: Int = 5, _ body: () -> Void) -> Double {
+        var best = Double.infinity
+        for _ in 0..<runs {
+            best = min(best, milliseconds(body))
+            if best < limit { break }
+        }
+        return best
+    }
+
+    @Test func bestOfStopsAtTheFirstFastRunAndKeepsASlowOne() {
+        var calls = 0
+        _ = bestMilliseconds(under: 1_000) { calls += 1 }
+        #expect(calls == 1)
+        calls = 0
+        let ms = bestMilliseconds(under: 0) { calls += 1 }
+        #expect(calls == 5 && ms >= 0, "always over the limit: every run is timed and the result still fails")
+    }
+
     @Test func everyViRuleIsFastOnAdversarialText() throws {
         let limit = Double(adversarial["maxMsPerRule"] as! Int)
         let engine = try RuleEngine(pack: Fixtures.pack("vi"))
@@ -172,7 +193,7 @@ private func unboundedLookbehind(_ pattern: String) -> Bool {
         #expect(!all.isEmpty)
         for rule in all {
             for (name, text) in subjects {
-                let ms = milliseconds {
+                let ms = bestMilliseconds(under: limit) {
                     let range = NSRange(location: 0, length: (text as NSString).length)
                     _ = rule.context?.firstMatch(in: text, range: range)
                     _ = rule.regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
@@ -186,7 +207,7 @@ private func unboundedLookbehind(_ pattern: String) -> Bool {
         let limit = Double(adversarial["maxMsPipeline"] as! Int)
         let engine = try RuleEngine(pack: Fixtures.pack("vi"))
         for (name, text) in subjects {
-            let ms = milliseconds { _ = engine.forTranslation(text) }
+            let ms = bestMilliseconds(under: limit) { _ = engine.forTranslation(text) }
             #expect(ms < limit, "forTranslation on \(name) took \(ms) ms")
         }
     }

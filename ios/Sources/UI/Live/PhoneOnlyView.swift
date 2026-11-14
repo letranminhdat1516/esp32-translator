@@ -39,6 +39,8 @@ struct PhoneOnlyView: View {
         .background(DS.Color.stone.ignoresSafeArea())
         // The face runs under the status bar: 390 pt from the top edge, as in the canvas
         .ignoresSafeArea(edges: .top)
+        // Dark status bar text would sit unreadable on the dark face, which belongs to the other person anyway
+        .statusBarHidden(true)
     }
 }
 

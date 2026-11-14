@@ -114,7 +114,7 @@ struct SharingView: View {
                 .accessibilityLabel(Copy.t("sharing.select"))
                 .accessibilityValue(item.selected ? Text(Copy.t("settings.on")) : Text(Copy.t("settings.off")))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.expected.isEmpty ? item.heard : item.heard + " \u{2192} " + item.expected)
+                    Text(item.reviewTitle)
                         .ds(DSType.row.with(weight: 700)).lineSpacing(0)
                         .lineLimit(2)
                     Text(subtitle(item)).ds(.caption)
@@ -133,7 +133,8 @@ struct SharingView: View {
                     .frame(width: 40, height: 40)
                     .overlay(RoundedRectangle(cornerRadius: DS.Radius.smallButton, style: .continuous)
                         .strokeBorder(DS.Color.ink, lineWidth: 1))
-                    .frame(width: 44, height: 44)
+                    // 44 pt to tap, the 40 pt box flush with the rule's right end (as in the canvas)
+                    .frame(width: 44, height: 44, alignment: .trailing)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

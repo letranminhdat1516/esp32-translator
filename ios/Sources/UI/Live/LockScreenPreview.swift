@@ -18,7 +18,9 @@ struct LockScreenPreview: View {
             // Wider than the canvas' 214 pt (290) so "EN→VI" clears the camera cutout the simulator draws on top
             .frame(width: 290, height: 37)
             .background(Color.black, in: Capsule())
-            .padding(.top, 11)
+            // The canvas' 14 pt: the same band as the device's own island (14…51 pt on iPhone 17 Pro), so no edge
+            // of the cutout shows below the mock
+            .padding(.top, 14)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Copy.t("activity.island", ["code": info.languageCode.uppercased()]))
             VStack(spacing: 4) {
@@ -33,7 +35,7 @@ struct LockScreenPreview: View {
             ActivityLockView(info: info, state: state)
                 .background(DS.Color.stone, in: RoundedRectangle(cornerRadius: DS.Radius.activity, style: .continuous))
                 .padding(.horizontal, 12)
-                .padding(.bottom, 20)
+                // The canvas keeps the card 34 pt off the bottom edge: the home-indicator safe area is exactly that
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DS.Color.lockGround.ignoresSafeArea())

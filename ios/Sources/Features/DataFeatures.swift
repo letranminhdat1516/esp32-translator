@@ -36,6 +36,8 @@ final class DataCoordinator {
     private let defaults: UserDefaults?
     private let newID: () -> String
     private var pendingClip: Data?
+    /// Queue writes run one after another (a report and a "Sửa" on the same line must not race).
+    private var work: Task<Void, Never>?
     private(set) var history: HistoryRecorder?
 
     /// `defaults` nil: the switches are not persisted (demo mode, tests).
@@ -53,6 +55,7 @@ final class DataCoordinator {
         ui.setSaveHistory = { [weak self] in self?.setSaveHistory($0) }
         ui.setShareToImprove = { [weak self] in self?.setShare($0) }
         ui.reportWrong = { [weak self] in self?.report($0) }
+        ui.recordCorrection = { [weak self] line, corrected in self?.recordCorrection(line, corrected) }
         ui.enableSharingForFeedback = { [weak self] in self?.enableSharingForDraft() }
         ui.submitFeedback = { [weak self] expected in
             guard let self else { return }
@@ -85,9 +88,7 @@ final class DataCoordinator {
     /// "Báo dịch sai" on `line`: the clip is taken now (the ring keeps only 20 s), held in memory, and kept only if
     /// the user sends the report with sharing on.
     func report(_ line: UILine) {
-        pendingClip = line.audioRange.flatMap { r in
-            services.recorder.clip((r.lowerBound - Self.clipPadding)...(r.upperBound + Self.clipPadding), side: line.side)
-        }
+        pendingClip = clip(of: line)
         ui.feedbackDraft = FeedbackDraft(line: line, needsSharing: !ui.shareToImprove, hasClip: pendingClip != nil)
     }
 
@@ -106,11 +107,59 @@ final class DataCoordinator {
         let item = FeedbackItem(id: newID(), mine: line.mine, heard: line.source, expected: fixed,
                                 clipSeconds: clip.flatMap(WAV.duration), clipFile: nil, sensitive: sensitive,
                                 selected: !sensitive, at: line.at, target: line.target,
-                                languageCode: ui.languageCode ?? "")
+                                languageCode: ui.languageCode ?? "", lineID: line.id)
         ui.feedbackDraft = nil
         pendingClip = nil
-        await services.feedback.add(item, clip: clip)
-        services.feedbackItems = await services.feedback.items()
+        enqueue { [services] in
+            await services.feedback.add(item, clip: clip)
+            services.feedbackItems = await services.feedback.items()
+        }
+        await pendingWork()
+    }
+
+    /// "Sửa" on a line (the controller hands over the line as it was and the corrected translation). Like "Báo dịch
+    /// sai" nothing is kept while sharing is off; with sharing on the correction is stored on the queued item of that
+    /// line (still unsent), or a new item is queued with the line's clip.
+    func recordCorrection(_ line: UILine, _ corrected: String) {
+        let fixed = corrected.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ui.shareToImprove, !fixed.isEmpty else { return }
+        let clip = clip(of: line)
+        let id = newID()
+        let language = ui.languageCode ?? ""
+        enqueue { [services] in
+            let queue = services.feedback
+            if var item = await queue.items().last(where: { $0.lineID == line.id && $0.sentAt == nil }) {
+                item.correctedTranslation = fixed
+                if item.sensitive == false, FeedbackItem.looksSensitive(fixed) { item.sensitive = true; item.selected = false }
+                await queue.update(item)
+            } else {
+                let sensitive = FeedbackItem.looksSensitive(line.source, line.target, fixed)
+                var item = FeedbackItem(id: id, mine: line.mine, heard: line.source, expected: "",
+                                        clipSeconds: clip.flatMap(WAV.duration), clipFile: nil, sensitive: sensitive,
+                                        selected: !sensitive, at: line.at, target: line.target, languageCode: language)
+                item.lineID = line.id
+                item.correctedTranslation = fixed
+                await queue.add(item, clip: clip)
+            }
+            services.feedbackItems = await queue.items()
+        }
+    }
+
+    /// Waits for the queued writes (tests).
+    func pendingWork() async { await work?.value }
+
+    private func enqueue(_ job: @escaping @MainActor () async -> Void) {
+        let previous = work
+        work = Task { @MainActor in
+            await previous?.value
+            await job()
+        }
+    }
+
+    private func clip(of line: UILine) -> Data? {
+        line.audioRange.flatMap { r in
+            services.recorder.clip((r.lowerBound - Self.clipPadding)...(r.upperBound + Self.clipPadding), side: line.side)
+        }
     }
 
     func cancel() {
