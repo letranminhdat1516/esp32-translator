@@ -636,8 +636,13 @@ struct ConversationControllerTests {
         #expect(await rig.startRunning())
         rig.theirs("Hello")
         #expect(await eventually { rig.ui.lines.contains { $0.source == "Hello" } })
-        rig.clock.advance(700)
-        #expect(await eventually { !rig.ui.listening })
+        // The failed speak is noted as ended whenever its task gets to run (later under load); the idle timeout
+        // counts from that moment, so the test clock keeps moving instead of one jump that may come too early.
+        // A stuck "speaking" keeps listening on however far the clock goes.
+        #expect(await eventually {
+            rig.clock.advance(700)
+            return !rig.ui.listening
+        })
         rig.controller.shutdown()
     }
 
