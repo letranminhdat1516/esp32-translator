@@ -115,8 +115,8 @@ static void screen_timer_cb(lv_timer_t *t)
     shell_snapshot(&m);
     lock_ui_set_face(modes_face_visible(&m, now));
     modes_panel_t panel = modes_panel(&m, now);
-    if (m.locked && lock_ui_notice_active()) {
-        panel = MODES_PANEL_ON;   /* a lock-screen notice (e.g. "unlock to pair") is readable for its 2 s */
+    if (lock_ui_notice_active()) {
+        panel = MODES_PANEL_ON;   /* a notice ("unlock to pair", "too many requests") is readable for its 2 s */
     }
     if (panel != MODES_PANEL_AUTO) {
         set_screen(panel == MODES_PANEL_ON);

@@ -116,8 +116,8 @@ actor InMemoryHistoryStore: HistoryStoring {
 /// The file store: one JSON file per session in `directory` (Application Support/History, excluded from backup).
 ///
 /// Writes are batched: an append marks its session dirty and schedules one flush `flushDelay` later (2 s); `flush()`
-/// writes immediately (conversation stopped, app in the background). Every file is written atomically and then
-/// flagged excluded from backup. A file that cannot be read is set aside as `<name>.corrupt` and logged; it never
+/// writes immediately (conversation stopped, app in the background). Every file is written atomically with the
+/// `completeUnlessOpen` protection class (`DataProtection`) and then flagged excluded from backup. A file that cannot be read is set aside as `<name>.corrupt` and logged; it never
 /// stops the others from loading. Runs off the main actor.
 actor FileHistoryStore: HistoryStoring {
     static func defaultDirectory() throws -> URL {
@@ -202,7 +202,7 @@ actor FileHistoryStore: HistoryStoring {
             guard let s = all[id] else { continue }
             var url = file(id)
             do {
-                try encoder.encode(s).write(to: url, options: .atomic)
+                try encoder.encode(s).write(to: url, options: DataProtection.writeOptions)
                 writeCount += 1
                 Self.excludeFromBackup(&url)
             } catch {
@@ -228,7 +228,7 @@ actor FileHistoryStore: HistoryStoring {
 
     private func ensureDirectory() throws {
         var dir = directory
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(dir)
         Self.excludeFromBackup(&dir)
     }
 
@@ -275,6 +275,8 @@ final class HistoryRecorder {
     private let store: any HistoryStoring
     private let calendar: Calendar
     private var seen: [String: (line: UILine, session: String)] = [:]
+    /// Lines that were on screen while "Lưu lịch sử" was off: never saved.
+    private var skipped = Set<String>()
     private(set) var sessionID: String?
     private var sessionLanguage: String?
     private var wasListening = false
@@ -287,10 +289,17 @@ final class HistoryRecorder {
     /// Feeds the current transcript; returns the lines handed to the store (tests).
     @discardableResult
     func sync(lines: [UILine], languageCode: String?, enabled: Bool) -> [HistoryLine] {
-        guard enabled, let code = languageCode else { return [] }
+        guard enabled else {
+            // Off: every line on screen now was said while history was off and stays out of it, also once the
+            // switch is back on (a line already saved keeps its place and may still be updated)
+            for line in lines where seen[line.id] == nil { skipped.insert(line.id) }
+            return []
+        }
+        guard let code = languageCode else { return [] }
         if sessionLanguage != nil && code != sessionLanguage { endSession() }
         var out: [HistoryLine] = []
         for line in lines {
+            guard !skipped.contains(line.id) else { continue }
             guard line.mine ? !line.target.isEmpty : true, !line.source.isEmpty else { continue }
             let known = seen[line.id]
             if let known, known.line.source == line.source, known.line.target == line.target { continue }

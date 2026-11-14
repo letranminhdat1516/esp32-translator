@@ -127,18 +127,45 @@ import Testing
         #expect(m.state == .failed(.timeout))
     }
 
-    @Test func bluetoothOffAndPairedIsSticky() {
+    @Test func bluetoothOffAndPairedFollowsTheLink() {
         var m = connected()
         m.handle(.bluetoothOff)
         #expect(m.state == .failed(.bluetoothOff))
+        // A paired board's own refusals are retried by the link: still paired while the link is up
         var p = PairingMachine(state: .paired(name: "X"))
-        for e: PairingLinkEvent in [.scanning, .connected(name: "X"), .linkLost, .bluetoothOff, .authFailed(.rejected)] {
-            p.handle(e)
-        }
+        p.handle(.connected(name: "X"))
+        p.handle(.authFailed(.rejected))
         #expect(p.state == .paired(name: "X"))
         // Retry does nothing unless failed
         p.retry(connected: true)
         #expect(p.state == .paired(name: "X"))
+        // The board going away is shown: the Pair screen looks for it again, and the reconnect pairs it again
+        for e: PairingLinkEvent in [.linkLost, .scanning] {
+            var q = PairingMachine(state: .paired(name: "X"))
+            q.handle(e)
+            #expect(q.state == .scanning, "\(e)")
+        }
+        var r = PairingMachine(state: .paired(name: "X"))
+        r.handle(.bluetoothOff)
+        #expect(r.state == .failed(.bluetoothOff))
+        var t = PairingMachine(state: .paired(name: "X"))
+        t.handle(.scanning)
+        t.handle(.connected(name: "X"))
+        #expect(t.state == .found(name: "X", battery: nil))
+        t.handle(.authenticated)
+        #expect(t.state == .paired(name: "X"))
+    }
+
+    /// Paired at launch (a pinned board) but not connected: the Pair screen ("Kết nối board" from phone-only) shows
+    /// the search, not "paired"; once the link is up it shows paired.
+    @Test func pairScreenOnAPinnedBoardThatIsAbsentShowsTheSearch() {
+        var m = PairingMachine(state: .paired(name: "X"))
+        m.start()
+        #expect(m.state == .scanning)
+        var up = PairingMachine(state: .paired(name: "X"))
+        up.handle(.authenticated)
+        up.start()
+        #expect(up.state == .paired(name: "X"), "connected and authenticated: paired")
     }
 
     @Test func batteryIsCarried() {
@@ -161,6 +188,9 @@ import Testing
         #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).name == "A")
         #expect(PairDisplay(.failed(.unverified)).bodyKey == "pair.bodyUnverified")
         #expect(PairDisplay(.failed(.declined)).bodyKey == "pair.bodyDeclined")
+        #expect(PairDisplay(.failed(.refusedByBoard)).bodyKey == "pair.bodyRefusedByBoard")
+        #expect(PairDisplay(.failed(.refusedByBoard)).failed)
+        #expect(Copy.t("pair.bodyRefusedByBoard").hasPrefix("Board đang từ chối ghép, thử lại sau ít phút"))
         #expect(PairDisplay(.confirming(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
         #expect(PairDisplay(.found(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
         #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).dialogHintKey == nil)
@@ -168,7 +198,7 @@ import Testing
         for state: PairingState in [.idle, .scanning, .found(name: "A", battery: nil), .confirming(name: "A", battery: nil),
                                     .paired(name: "A"), .failed(.rejected), .failed(.timeout), .failed(.lost),
                                     .failed(.bluetoothOff), .failed(.declined), .failed(.unverified),
-                                    .legacyConsent(name: "A", id: UUID(), gen: 0)] {
+                                    .failed(.refusedByBoard), .legacyConsent(name: "A", id: UUID(), gen: 0)] {
             let d = PairDisplay(state)
             for key in [d.kickerKey, d.dialKey, d.noteKey, d.bodyKey] + [d.dialogHintKey].compactMap({ $0 }) {
                 #expect(Copy.t(key) != key, "\(key)")
@@ -242,10 +272,13 @@ import Testing
         let m = LinkPairingModel(retryLink: { false }, onStart: { started += 1 })
         m.markPaired(name: "B")
         #expect(m.state == .paired(name: "B"))
+        m.start()
+        #expect(m.state == .scanning, "the pinned board is not connected yet")
+        m.markPaired(name: "B")
         m.reset()
         #expect(m.state == .idle)
         m.start()
-        #expect(started == 1)
+        #expect(started == 2)
         #expect(m.state == .scanning)
     }
 }

@@ -68,6 +68,7 @@ private final class RecordingController: LiveActivityControlling {
     }
 
     var calls: [Call] = []
+    var onStartFailed: (@MainActor () -> Void)?
     func start(languageCode: String, languageName: String, state: TranslatorActivityState) {
         calls.append(.start(languageCode, languageName, state))
     }
@@ -190,6 +191,28 @@ private final class RecordingController: LiveActivityControlling {
         #expect(c.isActive)
     }
 
+    @Test func aFailedOrRefusedStartIsReported() async {
+        let b = FakeBackend(), clock = ManualClock()
+        let c = make(b, clock)
+        var failures = 0
+        c.onStartFailed = { failures += 1 }
+        b.failRequest = true
+        c.start(languageCode: "en", languageName: "x", state: st("a"))
+        await c.waitUntilIdle()
+        #expect(failures == 1, "a start refused in the background is reported")
+        b.failRequest = false
+        b.areActivitiesEnabled = false
+        c.start(languageCode: "en", languageName: "x", state: st("a"))
+        #expect(failures == 2, "Live Activities turned off counts as a failed start too")
+        // A failure of an activity ended meanwhile is not reported
+        b.areActivitiesEnabled = true
+        b.failRequest = true
+        c.start(languageCode: "en", languageName: "x", state: st("a"))
+        c.end()
+        await c.waitUntilIdle()
+        #expect(failures == 2)
+    }
+
     @Test func updatesAreCoalescedWithATrailingUpdate() async {
         let b = FakeBackend(), clock = ManualClock()
         let c = make(b, clock)
@@ -295,6 +318,41 @@ private final class RecordingController: LiveActivityControlling {
         d.apply(snap(false))
         d.apply(snap(true, "en", "c"))
         #expect(rec.calls.last == .start("en", "tiếng Anh", st("c")))
+    }
+
+    @Test func aFailedStartIsRetriedWhenTheAppBecomesActive() {
+        let rec = RecordingController()
+        var now = Date(timeIntervalSince1970: 0)
+        let d = LiveActivityDriver(controller: rec, now: { now })
+        d.apply(snap(true))
+        rec.onStartFailed?()   // started from the background: ActivityKit refused it
+        #expect(d.activeCode == nil)
+        // Snapshots right after the failure do not hammer ActivityKit
+        now += 1
+        d.apply(snap(true, "en", "b"))
+        #expect(rec.calls == [.start("en", "tiếng Anh", st("a"))])
+        // Back in the foreground: started again with the newest state
+        d.sceneBecameActive()
+        #expect(rec.calls.last == .start("en", "tiếng Anh", st("b")))
+        #expect(d.activeCode == "en")
+        d.apply(snap(true, "en", "c"))
+        #expect(rec.calls.last == .update(st("c")))
+    }
+
+    @Test func aFailedStartIsRetriedByALaterSnapshot() {
+        let rec = RecordingController()
+        var now = Date(timeIntervalSince1970: 0)
+        let d = LiveActivityDriver(controller: rec, now: { now })
+        d.apply(snap(true))
+        rec.onStartFailed?()
+        now += LiveActivityDriver.retryInterval
+        d.apply(snap(true, "en", "b"))
+        #expect(rec.calls == [.start("en", "tiếng Anh", st("a")), .start("en", "tiếng Anh", st("b"))])
+        // Becoming active while it runs, or while idle, starts nothing
+        d.sceneBecameActive()
+        d.apply(snap(false))
+        d.sceneBecameActive()
+        #expect(rec.calls.count == 3 && rec.calls.last == .end)
     }
 
     @Test func endNowWhileIdleDoesNotBlockTheNextStart() {

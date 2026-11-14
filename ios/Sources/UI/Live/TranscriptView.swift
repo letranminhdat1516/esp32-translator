@@ -160,15 +160,32 @@ private struct LineActions: View {
     let edit: () -> Void
     let report: () -> Void
 
+    /// Extra room around each label so its hit target is at least 44 pt; taken back from the layout so the labels
+    /// sit where they did.
+    private static let vPad: CGFloat = 14
+    private static let hPad: CGFloat = 6
+
     var body: some View {
-        HStack(spacing: 12) {
-            Button(Copy.t("live.replay"), action: replay)
-            Button(Copy.t("live.edit"), action: edit)
-            Button(Copy.t("live.report"), action: report).foregroundStyle(DS.Color.warnText)
+        HStack(spacing: 12 - 2 * Self.hPad) {
+            action(Copy.t("live.replay"), replay)
+            action(Copy.t("live.edit"), edit)
+            action(Copy.t("live.report"), report).foregroundStyle(DS.Color.warnText)
         }
+        .padding(.vertical, -Self.vPad)
+        .padding(.horizontal, -Self.hPad)
         .ds(.label)
         .foregroundStyle(DS.Color.ink)
         .buttonStyle(.plain)
+    }
+
+    private func action(_ title: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Text(title)
+                .padding(.vertical, Self.vPad)
+                .padding(.horizontal, Self.hPad)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
     }
 }
 

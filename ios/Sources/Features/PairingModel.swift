@@ -34,6 +34,9 @@ enum PairingFailure: Hashable, Sendable {
     case bluetoothOff
     /// The user cancelled pinning an old-firmware board ("Huỷ").
     case declined
+    /// The board refused the request itself, at once (too many pairing requests, or it is locked or busy): try
+    /// again in a few minutes.
+    case refusedByBoard
     /// The pinned (secure) board no longer authenticates: it reports old firmware or lacks the protected
     /// characteristic. The link refused it and never downgrades the pin.
     case unverified
@@ -68,15 +71,22 @@ struct PairingMachine: Hashable, Sendable {
     /// The board's name and battery, kept across `found` → `confirming`.
     private var name: String?
     private var battery: Int?
+    /// The link is up and authenticated (`.authenticated` seen since the last loss). A machine made `.paired` for a
+    /// pinned board starts without it: the board may not be there.
+    private(set) var linkUp = false
 
-    init(state: PairingState = .idle) { self.state = state }
+    init(state: PairingState = .idle) {
+        self.state = state
+        if case let .paired(n) = state { name = n }
+    }
 
     mutating func handle(_ event: PairingLinkEvent) {
         switch event {
         case .scanning:
-            // A failure stays on screen until the user retries; a pinned board reconnecting after pairing stays paired
+            // A failure stays on screen until the user retries; a paired board that went away is looked for again
+            linkUp = false
             switch state {
-            case .failed, .paired: return
+            case .failed: return
             case .confirming, .legacyConsent: state = .failed(.lost)
             default: state = .scanning
             }
@@ -89,6 +99,7 @@ struct PairingMachine: Hashable, Sendable {
             if case .failed = state { return }
             state = .confirming(name: name ?? Self.defaultName, battery: battery)
         case .authenticated:
+            linkUp = true
             state = .paired(name: name ?? Self.defaultName)
         case let .authFailed(reason):
             // A paired board that no longer authenticates is shown; other refusals of a paired board are retried
@@ -99,13 +110,14 @@ struct PairingMachine: Hashable, Sendable {
             if case .failed = state { return }
             state = .legacyConsent(name: name ?? Self.defaultName, id: id, gen: gen)
         case .linkLost:
+            linkUp = false
             switch state {
             case .confirming, .legacyConsent: state = .failed(.lost)
-            case .found: state = .scanning
+            case .found, .paired: state = .scanning
             default: break
             }
         case .bluetoothOff:
-            if case .paired = state { return }
+            linkUp = false
             state = .failed(.bluetoothOff)
         }
     }
@@ -120,9 +132,11 @@ struct PairingMachine: Hashable, Sendable {
         }
     }
 
-    /// The user started pairing (the Pair screen appeared).
+    /// The user started pairing (the Pair screen appeared). A pinned board that is not connected now is looked
+    /// for (the screen never says "paired" for a board that is absent).
     mutating func start() {
         if state == .idle { state = .scanning }
+        if case .paired = state, !linkUp { state = .scanning }
     }
 
     /// "Thử lại" after a failure: the link reads again (still connected) or keeps scanning.
@@ -218,7 +232,8 @@ final class LinkPairingModel: PairingModeling {
         self.timeout = timeout
     }
 
-    /// Already paired before this run (a pinned board): the screen shows paired.
+    /// Already paired before this run (a pinned board). The Pair screen shows paired only once the link is up again;
+    /// opened before that ("Kết nối board" from phone-only) it shows the search.
     func markPaired(name: String) { machine = PairingMachine(state: .paired(name: name)) }
 
     /// The board was forgotten: pairing starts over.

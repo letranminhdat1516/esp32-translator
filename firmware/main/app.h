@@ -84,7 +84,7 @@ bool pmu_usb_powered(void);
 void lock_ui_init(void);
 lv_obj_t *lock_ui_screen(void);
 void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the clock tick */
-/* A short non-interactive line on the lock screen for ms (lights the panel meanwhile, see lock_ui_notice_active).
+/* A short non-interactive line over any screen for ms (lights the panel meanwhile, see lock_ui_notice_active).
  * Takes the LVGL lock (not from LVGL callbacks). */
 void lock_ui_notice(const char *utf8, uint32_t ms);
 bool lock_ui_notice_active(void);                   /* LVGL task / display lock held */

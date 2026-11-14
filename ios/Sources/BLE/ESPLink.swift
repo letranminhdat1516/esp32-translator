@@ -20,8 +20,8 @@ import os
 /// ("Vẫn ghép") pins it, as `.legacy`. A `.secure` pinned board that comes back as old firmware is refused
 /// (disconnected, never ready, `.authFailed(.unverified)`); a `.legacy` pin becomes `.secure` once the board proves
 /// it. Notifications are enabled only when `BoardPin` lets the setup finish. A refused read keeps the link and waits
-/// for `retryPairing()` (an unpinned board, the Pair screen) or reads again after `authRetryDelay` (the pinned board,
-/// whose bond was lost). `onPairingEvent` reports the steps to the Pair screen.
+/// for `retryPairing()` (an unpinned board, the Pair screen) or reads again after 15, 30 and 60 s (`AuthRetry`; the
+/// pinned board, whose bond was lost), then waits for `retryPairing()` or a new link. `onPairingEvent` reports the steps to the Pair screen.
 /// The central is created by `activate()` (or at init with `startCentral`), since creating it asks for the Bluetooth
 /// permission: the Permissions screen asks first.
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
@@ -75,8 +75,11 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// The protected read was refused on this link; waiting for a retry (BLE queue)
     private var authRefused = false
     private var authRetry: DispatchWorkItem?
-    /// The pinned board's read is retried after this long when refused (the board rate-limits pairing requests)
-    static let authRetryDelay: TimeInterval = 15
+    /// The pinned board's automatic reads after a refusal: 15, 30, 60 s, then only "Thử lại" or a new link (the
+    /// board rate-limits pairing requests; endless retries would use up the owner's attempts)
+    private var authRetries = AuthRetry()
+    /// When the protected read went out: a rejection within `PairingErrorMap.quickRefusal` is the board refusing
+    private var authSentAt = DispatchTime.now()
     /// Subtitle chunks not yet written, tied to the current text characteristic (BLE queue)
     private var textQueue = BoardWriteQueue<CBCharacteristic>()
     /// The language label to resend on ready (BLE queue)
@@ -129,6 +132,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         queue.async { [self] in
             // A board the user said "Huỷ" to may be found again
             pin.clearDeclined()
+            authRetries.reset()
             if authRefused, let peripheral, peripheral.state == .connected {
                 readProtected(peripheral)
                 return
@@ -271,6 +275,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private func linkGone() {
         translatorGone()
         pin.linkGone()
+        authRetries.reset()   // a new link starts with fresh automatic retries
     }
 
     /// The board notified something: if the app has not written for 15 s (it was suspended), prove it is alive
@@ -486,6 +491,7 @@ extension ESPLink: CBPeripheralDelegate {
         authRetry?.cancel()
         authRetry = nil
         authReading = true
+        authSentAt = DispatchTime.now()
         setAuthRefused(false)
         onPairingEvent?(.authenticating)
         peripheral.readValue(for: controlCharacteristic)
@@ -495,22 +501,28 @@ extension ESPLink: CBPeripheralDelegate {
     private func protectedReadDone(_ peripheral: CBPeripheral, error: Error?) {
         authReading = false
         if let error {
-            let failure = PairingErrorMap.failure(error)
-            Diag.log("ble: protected read refused (\(failure)): \(error)")
+            let elapsed = Double(DispatchTime.now().uptimeNanoseconds &- authSentAt.uptimeNanoseconds) / 1e9
+            let failure = PairingErrorMap.failure(error, after: elapsed)
+            Diag.log("ble: protected read refused (\(failure)) after \(String(format: "%.1f", elapsed)) s: \(error)")
             setAuthRefused(true)
             onPairingEvent?(.authFailed(failure))
-            // The pinned board lost its bond: ask again later (the board rate-limits requests); an unpinned one
-            // waits for "Thử lại" on the Pair screen
+            // The pinned board lost its bond: ask again a few times, backing off (the board rate-limits requests),
+            // then wait for "Thử lại" or a new link; an unpinned one waits for "Thử lại" on the Pair screen
             if pin.pinned != nil {
+                guard let delay = authRetries.nextDelay() else {
+                    Diag.log("ble: automatic pairing retries used up, waiting for Thử lại or a new link")
+                    return
+                }
                 let work = DispatchWorkItem { [weak self] in
                     guard let self, authRefused, let p = self.peripheral, p.state == .connected else { return }
                     readProtected(p)
                 }
                 authRetry = work
-                queue.asyncAfter(deadline: .now() + Self.authRetryDelay, execute: work)
+                queue.asyncAfter(deadline: .now() + delay, execute: work)
             }
             return
         }
+        authRetries.reset()
         Diag.log("ble: protected read ok")
         apply(pin.accessGranted(), peripheral)
     }

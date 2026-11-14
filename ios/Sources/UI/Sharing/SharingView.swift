@@ -10,6 +10,9 @@ struct SharingView: View {
     let services: AppServices
     @State private var player = ClipPlayer()
     @State private var export: ExportFile?
+    /// The export the share sheet is showing, and whether it reported it was shared
+    @State private var sharing: FeedbackExport?
+    @State private var shared = false
     @State private var exporting = false
     @State private var confirmClear = false
     @State private var error: String?
@@ -63,8 +66,12 @@ struct SharingView: View {
         }
         .task { await services.refresh() }
         .onDisappear { player.stop() }
-        .sheet(item: $export) { file in
-            ActivitySheet(items: [file.url]).ignoresSafeArea()
+        .sheet(item: $export, onDismiss: finishShare) { file in
+            ActivitySheet(items: [file.url]) { completed in
+                shared = completed
+                export = nil   // the activity view dismisses itself; the sheet goes with it
+            }
+            .ignoresSafeArea()
         }
         .confirmationDialog(Copy.t("sharing.clearTitle"), isPresented: $confirmClear, titleVisibility: .visible) {
             if sentCount > 0 {
@@ -86,18 +93,30 @@ struct SharingView: View {
         exporting = true
         Task {
             defer { exporting = false }
-            guard let folder = await services.exportFeedback() else {
+            guard let built = await services.exportFeedback() else {
                 error = Copy.t("sharing.exportFailed")
                 return
             }
-            export = ExportFile(url: ExportFile.zipped(folder) ?? folder)
+            sharing = built
+            shared = false
+            export = ExportFile(url: ExportFile.zipped(built.folder) ?? built.folder)
         }
+    }
+
+    /// The share sheet closed: the items are sent only when it reported a completed share; a cancel (or a swipe
+    /// down) removes the export.
+    private func finishShare() {
+        guard let built = sharing else { return }
+        sharing = nil
+        let completed = shared
+        shared = false
+        Task { await services.finishExport(built, completed: completed) }
     }
 
     private func play(_ item: FeedbackItem) {
         error = nil
         Task {
-            guard let url = await services.feedback.clipURL(item.id), player.toggle(url, id: item.id) else {
+            guard let clip = await services.feedback.clipData(item.id), player.toggle(clip, id: item.id) else {
                 error = Copy.t("sharing.playFailed")
                 return
             }
@@ -138,12 +157,15 @@ struct SharingView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(item.clipFile == nil)
-                .opacity(item.clipFile == nil ? 0.35 : 1)
+                .disabled(!hasClip(item))
+                .opacity(hasClip(item) ? 1 : 0.35)
                 .accessibilityLabel(Copy.t("sharing.play"))
             }
         }
     }
+
+    /// A clip on disk, or one held in memory (an unselected sensitive item)
+    private func hasClip(_ item: FeedbackItem) -> Bool { item.clipFile != nil || item.clipSeconds != nil }
 
     private func subtitle(_ item: FeedbackItem) -> String {
         var parts = [Copy.t(item.mine ? "bubble.mine" : "bubble.theirs")]
@@ -172,6 +194,7 @@ struct ExportFile: Identifiable {
             try? FileManager.default.removeItem(at: dst)
             do {
                 try FileManager.default.copyItem(at: tmp, to: dst)
+                DataProtection.protect(dst)
                 result = dst
             } catch {
                 Diag.log("feedback: zip copy failed: \(error)")
@@ -182,11 +205,14 @@ struct ExportFile: Identifiable {
     }
 }
 
-/// `UIActivityViewController` (AirDrop, Mail, Files…).
+/// `UIActivityViewController` (AirDrop, Mail, Files…); `onComplete` gets whether an activity completed.
 struct ActivitySheet: UIViewControllerRepresentable {
     let items: [Any]
+    var onComplete: (Bool) -> Void = { _ in }
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let vc = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        vc.completionWithItemsHandler = { _, completed, _, _ in onComplete(completed) }
+        return vc
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
@@ -197,9 +223,9 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
     private(set) var playingID: String?
     @ObservationIgnored private var player: AVAudioPlayer?
 
-    /// Plays `url`, or stops when `id` is already playing. False when the file cannot be played.
+    /// Plays `clip` (WAV bytes), or stops when `id` is already playing. False when it cannot be played.
     @discardableResult
-    func toggle(_ url: URL, id: String) -> Bool {
+    func toggle(_ clip: Data, id: String) -> Bool {
         if playingID == id {
             stop()
             return true
@@ -211,7 +237,7 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
             if session.category != .playAndRecord {
                 try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             }
-            let p = try AVAudioPlayer(contentsOf: url)
+            let p = try AVAudioPlayer(data: clip)
             p.delegate = self
             guard p.play() else { return false }
             player = p

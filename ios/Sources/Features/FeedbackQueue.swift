@@ -68,6 +68,12 @@ struct FeedbackExportItem: Codable, Hashable, Sendable {
     var correctedTranslation: String? = nil
 }
 
+/// A built export folder and the items in it; they are marked sent only once the share sheet reports it was shared.
+struct FeedbackExport: Hashable, Sendable {
+    var folder: URL
+    var itemIDs: [String]
+}
+
 /// The local queue of reports; export builds `feedback-<date>/` with `items.json` and the WAVs for the share sheet.
 protocol FeedbackQueueing: Sendable {
     func items() async -> [FeedbackItem]
@@ -78,15 +84,24 @@ protocol FeedbackQueueing: Sendable {
     func removeAll() async
     /// Removes the items already exported, their clips and every export folder ("Xoá dữ liệu đã gửi").
     func removeSent() async
-    /// The folder to share, or nil when nothing is selected. Marks the exported items sent.
-    func exportBundle() async throws -> URL?
-    /// The queued clip of `id`, for playback.
+    /// Builds the folder to share, or nil when nothing is selected. Marks nothing sent (see `markSent`).
+    func exportBundle() async throws -> FeedbackExport?
+    /// The share sheet reported the export was shared: its items are sent.
+    func markSent(_ export: FeedbackExport) async
+    /// The share was cancelled: the export folder (and its zip) goes, nothing is marked sent.
+    func discardExport(_ export: FeedbackExport) async
+    /// The queued clip of `id` on disk.
     func clipURL(_ id: String) async -> URL?
+    /// The clip of `id` for playback: from disk, or from memory for an unselected sensitive item.
+    func clipData(_ id: String) async -> Data?
 }
 
 extension FeedbackQueueing {
     func removeSent() async {}
+    func markSent(_ export: FeedbackExport) async {}
+    func discardExport(_ export: FeedbackExport) async {}
     func clipURL(_ id: String) async -> URL? { nil }
+    func clipData(_ id: String) async -> Data? { nil }
 }
 
 extension FeedbackItem {
@@ -114,7 +129,7 @@ actor InMemoryFeedbackQueue: FeedbackQueueing {
 
     func removeAll() async { list.removeAll() }
     func removeSent() async { list.removeAll { $0.sentAt != nil } }
-    func exportBundle() async throws -> URL? { nil }
+    func exportBundle() async throws -> FeedbackExport? { nil }
 
     /// How many items an export would send (the "Gửi n câu" button).
     static func selectedCount(_ items: [FeedbackItem]) -> Int { FeedbackItem.selectedCount(items) }
@@ -123,6 +138,10 @@ actor InMemoryFeedbackQueue: FeedbackQueueing {
 /// The file queue in `directory` (Application Support/Feedback, excluded from backup):
 /// `queue.json` (the items), `clips/<id>.wav`, and `exports/feedback-<yyyyMMdd-HHmmss>/` (`items.json` + `NN.wav`)
 /// built for the share sheet. An unreadable `queue.json` is set aside as `queue.corrupt-<n>.json` and logged.
+///
+/// The clip of an item that is sensitive and not selected is never written: it is held in memory until the user
+/// selects the item (then written), and an item that becomes sensitive and unselected has its file moved back into
+/// memory. A held clip is gone when the app quits.
 actor FileFeedbackQueue: FeedbackQueueing {
     static func defaultDirectory() throws -> URL {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
@@ -134,6 +153,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
     private let clock: @Sendable () -> Date
     private let calendar: Calendar
     private var list: [FeedbackItem]
+    /// Clips of unselected sensitive items (memory only).
+    private var heldClips: [String: Data] = [:]
 
     init(directory: URL, clock: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current) {
         self.directory = directory
@@ -151,17 +172,13 @@ actor FileFeedbackQueue: FeedbackQueueing {
         var item = item
         item.clipFile = nil
         if let clip {
-            do {
-                try ensure(clipsDirectory)
-                let name = "\(Self.safeName(item.id)).wav"
-                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: .atomic)
-                item.clipFile = name
-                item.clipSeconds = item.clipSeconds ?? WAV.duration(clip)
-            } catch {
-                Diag.log("feedback: clip write failed: \(error)")
-            }
+            item.clipSeconds = item.clipSeconds ?? WAV.duration(clip)
+            heldClips[item.id] = clip
+        } else {
+            item.clipSeconds = nil
         }
         list.append(item)
+        settleClip(list.count - 1)
         save()
     }
 
@@ -171,17 +188,20 @@ actor FileFeedbackQueue: FeedbackQueueing {
         item.clipFile = list[i].clipFile
         item.clipSeconds = list[i].clipSeconds
         list[i] = item
+        settleClip(i)
         save()
     }
 
     func setSelected(_ id: String, _ selected: Bool) async {
         guard let i = list.firstIndex(where: { $0.id == id }) else { return }
         list[i].selected = selected
+        settleClip(i)
         save()
     }
 
     func removeAll() async {
         list.removeAll()
+        heldClips.removeAll()
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -190,6 +210,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
         for item in list where item.sentAt != nil {
             if let f = item.clipFile { try? fm.removeItem(at: clipsDirectory.appendingPathComponent(f)) }
         }
+        for item in list where item.sentAt != nil { heldClips[item.id] = nil }
         list.removeAll { $0.sentAt != nil }
         try? fm.removeItem(at: exportsDirectory)
         save()
@@ -201,7 +222,13 @@ actor FileFeedbackQueue: FeedbackQueueing {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
-    func exportBundle() async throws -> URL? {
+    func clipData(_ id: String) async -> Data? {
+        if let held = heldClips[id] { return held }
+        guard let url = await clipURL(id) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    func exportBundle() async throws -> FeedbackExport? {
         let chosen = list.filter(\.selected)
         guard !chosen.isEmpty else { return nil }
         let now = clock()
@@ -212,7 +239,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let fm = FileManager.default
         try? fm.removeItem(at: folder)
         try ensure(exportsDirectory)
-        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(folder)
         var entries: [FeedbackExportItem] = []
         for (i, item) in chosen.enumerated() {
             var wav: String?
@@ -221,6 +248,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
                 if fm.fileExists(atPath: src.path) {
                     let dst = String(format: "%02d.wav", i + 1)
                     try fm.copyItem(at: src, to: folder.appendingPathComponent(dst))
+                    DataProtection.protect(folder.appendingPathComponent(dst))
                     wav = dst
                 }
             }
@@ -232,21 +260,60 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(entries).write(to: folder.appendingPathComponent("items.json"), options: .atomic)
-        let ids = Set(chosen.map(\.id))
+        try encoder.encode(entries).write(to: folder.appendingPathComponent("items.json"),
+                                          options: DataProtection.writeOptions)
+        return FeedbackExport(folder: folder, itemIDs: chosen.map(\.id))
+    }
+
+    func markSent(_ export: FeedbackExport) async {
+        let ids = Set(export.itemIDs), now = clock()
         for i in list.indices where ids.contains(list[i].id) { list[i].sentAt = now }
         save()
-        return folder
+    }
+
+    func discardExport(_ export: FeedbackExport) async {
+        let fm = FileManager.default
+        // Only folders this queue built (and the zip made beside one)
+        guard export.folder.deletingLastPathComponent().standardizedFileURL == exportsDirectory.standardizedFileURL
+        else { return }
+        try? fm.removeItem(at: export.folder)
+        try? fm.removeItem(at: export.folder.deletingLastPathComponent()
+            .appendingPathComponent(export.folder.lastPathComponent + ".zip"))
     }
 
     // MARK: Internals
+
+    /// Puts the clip of item `i` where it belongs: memory while the item is sensitive and unselected, the clips
+    /// folder otherwise.
+    private func settleClip(_ i: Int) {
+        let item = list[i]
+        let fm = FileManager.default
+        if item.sensitive && !item.selected {
+            guard let f = item.clipFile else { return }
+            let url = clipsDirectory.appendingPathComponent(f)
+            if let data = try? Data(contentsOf: url) { heldClips[item.id] = data }
+            try? fm.removeItem(at: url)
+            list[i].clipFile = nil
+        } else if let clip = heldClips[item.id] {
+            do {
+                try ensure(clipsDirectory)
+                let name = "\(Self.safeName(item.id)).wav"
+                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: DataProtection.writeOptions)
+                list[i].clipFile = name
+                heldClips[item.id] = nil
+            } catch {
+                Diag.log("feedback: clip write failed: \(error)")
+            }
+        }
+    }
 
     private static func safeName(_ id: String) -> String {
         String(id.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
     }
 
     private func ensure(_ dir: URL) throws {
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(dir)
+        if dir != directory { DataProtection.protect(directory) }
         var root = directory
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
@@ -259,7 +326,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(list).write(to: directory.appendingPathComponent("queue.json"), options: .atomic)
+            try encoder.encode(list).write(to: directory.appendingPathComponent("queue.json"),
+                                           options: DataProtection.writeOptions)
         } catch {
             Diag.log("feedback: save failed: \(error)")
         }
@@ -270,7 +338,12 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         do {
-            return try decoder.decode([FeedbackItem].self, from: Data(contentsOf: file))
+            // A clip held in memory (unselected sensitive item) did not survive the restart: no audio shown
+            return try decoder.decode([FeedbackItem].self, from: Data(contentsOf: file)).map { item in
+                var item = item
+                if item.clipFile == nil { item.clipSeconds = nil }
+                return item
+            }
         } catch {
             Diag.log("feedback: unreadable queue, set aside: \(error)")
             let aside = file.deletingLastPathComponent()

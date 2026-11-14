@@ -19,6 +19,9 @@ import UIKit
 /// Starts, updates and ends the Live Activity.
 @MainActor
 protocol LiveActivityControlling: AnyObject {
+    /// Called when a `start` did not produce an activity (ActivityKit refused it, e.g. asked from the background,
+    /// or Live Activities are off): the driver forgets it and starts again later.
+    var onStartFailed: (@MainActor () -> Void)? { get set }
     func start(languageCode: String, languageName: String, state: TranslatorActivityState)
     func update(_ state: TranslatorActivityState)
     func end()
@@ -28,6 +31,7 @@ protocol LiveActivityControlling: AnyObject {
 @MainActor
 final class NoopLiveActivityController: LiveActivityControlling {
     private(set) var lastState: TranslatorActivityState?
+    var onStartFailed: (@MainActor () -> Void)?
     init() {}
     func start(languageCode: String, languageName: String, state: TranslatorActivityState) { lastState = state }
     func update(_ state: TranslatorActivityState) { lastState = state }
@@ -145,6 +149,7 @@ final class CoalescingLiveActivityController: LiveActivityControlling {
     /// Bumped on every start and end: timers and failures of an earlier activity are ignored.
     private var generation = 0
     private var chain: Task<Void, Never>?
+    var onStartFailed: (@MainActor () -> Void)?
 
     init(backend: any LiveActivityBackend, interval: TimeInterval = 1.5,
          staleAfter: TimeInterval = CoalescingLiveActivityController.defaultStaleAfter,
@@ -170,6 +175,7 @@ final class CoalescingLiveActivityController: LiveActivityControlling {
         }
         guard backend.areActivitiesEnabled else {
             Diag.log("live activity: disabled in Settings, not started")
+            onStartFailed?()
             return
         }
         isActive = true
@@ -235,6 +241,7 @@ final class CoalescingLiveActivityController: LiveActivityControlling {
         guard gen == generation else { return }
         isActive = false
         coalescer.reset()
+        onStartFailed?()
     }
 
     private func enqueue(_ work: @escaping @MainActor (any LiveActivityBackend) async -> Void) {
@@ -271,21 +278,38 @@ struct LiveActivitySnapshot: Equatable, Sendable {
 }
 
 /// Turns screen-model snapshots into start / update / end: an activity runs while a conversation is listening.
+///
+/// A start that fails (ActivityKit refuses a request made while the app is in the background, or Live Activities
+/// are off) is reported back by the controller: the driver forgets the activity and starts it again when the app
+/// becomes active, or with a snapshot at least `retryInterval` after the failure.
 @MainActor
 final class LiveActivityDriver {
+    /// The least time between a failed start and a retry from a snapshot.
+    static let retryInterval: TimeInterval = 15
+
     private let controller: any LiveActivityControlling
+    private let now: () -> Date
     /// The language of the running activity; nil when none runs.
     private(set) var activeCode: String?
     /// Ended from outside (stop button, board forgotten) while still listening: no restart until listening stops.
     private(set) var suppressed = false
     private var lastListening = false
+    private var lastSnapshot: LiveActivitySnapshot?
+    /// When the last start failed; nil when none failed since.
+    private var failedAt: Date?
 
-    init(controller: any LiveActivityControlling) { self.controller = controller }
+    init(controller: any LiveActivityControlling, now: @escaping () -> Date = { Date() }) {
+        self.controller = controller
+        self.now = now
+        controller.onStartFailed = { [weak self] in self?.startFailed() }
+    }
 
     func apply(_ s: LiveActivitySnapshot) {
         lastListening = s.listening
+        lastSnapshot = s
         guard s.listening, let code = s.languageCode else {
             suppressed = false
+            failedAt = nil
             if activeCode != nil {
                 activeCode = nil
                 controller.end()
@@ -293,6 +317,7 @@ final class LiveActivityDriver {
             return
         }
         guard !suppressed else { return }
+        if activeCode == nil, let failedAt, now().timeIntervalSince(failedAt) < Self.retryInterval { return }
         if activeCode == code {
             controller.update(s.state)
             return
@@ -307,8 +332,23 @@ final class LiveActivityDriver {
     /// conversation.
     func endNow() {
         activeCode = nil
+        failedAt = nil
         suppressed = lastListening
         controller.end()
+    }
+
+    /// The app came to the foreground (`scenePhase == .active`): a start that failed is tried again now.
+    func sceneBecameActive() {
+        guard failedAt != nil, activeCode == nil, let s = lastSnapshot else { return }
+        failedAt = nil
+        apply(s)
+    }
+
+    private func startFailed() {
+        guard activeCode != nil else { return }
+        Diag.log("live activity: start failed, retrying when the app is active")
+        activeCode = nil
+        failedAt = now()
     }
 }
 

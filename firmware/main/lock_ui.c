@@ -8,9 +8,9 @@
  * SWIPE_PX it slides up and fades out, then MODES_EV_SWIPE_UP unlocks (modes.c re-checks the face is up).
  * On the dark panel a swipe is just a tap (LVGL still sends SINGLE_CLICKED): it shows the face, never unlocks.
  * Animations (chevron bounce, slide-out) run only while the face is visible; lock_ui_set_face(false) stops them.
- * Notice (lock_ui_notice): a short line in a pill in the middle, over the face or the dark screen, e.g. "Mở khoá
- * board để ghép" when an iPhone asks to pair while locked. Not interactive; ui.c's screen timer lights the panel
- * while it is up.
+ * Notice (lock_ui_notice): a short line in a pill in the middle, over any screen (LVGL's top layer), e.g. "Mở khoá
+ * board để ghép" when an iPhone asks to pair while locked, or "Quá nhiều yêu cầu ghép" when pairing requests are
+ * refused by the rate limit. Not interactive; ui.c's screen timer lights the panel while it is up.
  */
 #include <stdio.h>
 #include <string.h>
@@ -329,8 +329,8 @@ void lock_ui_init(void)
     s_hint = make_label(&font_vi_22, 0x8c8c8c, LV_ALIGN_BOTTOM_MID, -48);
     lv_label_set_text(s_hint, "Vuốt lên để mở khoá");
 
-    /* Notice pill: on the screen, not the face, so it shows on the dark panel too */
-    s_notice = lv_obj_create(s_scr);
+    /* Notice pill: on the top layer, not the face, so it shows on the dark panel and over the unlocked screens too */
+    s_notice = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_notice);
     lv_obj_set_size(s_notice, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(s_notice, lv_color_hex(0x1e2024), 0);

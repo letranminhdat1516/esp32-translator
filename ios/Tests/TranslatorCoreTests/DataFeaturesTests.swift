@@ -1,3 +1,4 @@
+import AVFAudio
 import Foundation
 import Testing
 @testable import TranslatorCore
@@ -190,6 +191,23 @@ private final class ManualClock: @unchecked Sendable {
         await rec.settle()
         #expect(await store.sessions().isEmpty)
     }
+
+    /// Lines spoken while "Lưu lịch sử" was off never reach the store, not even when it is turned back on (or when
+    /// their translation arrives after that).
+    @Test func linesFromWhileOffStayUnsavedAfterTurningBackOn() async {
+        let store = InMemoryHistoryStore()
+        let rec = HistoryRecorder(store: store)
+        #expect(rec.sync(lines: [uiLine("t-1", mine: false, "a", "A")], languageCode: "en", enabled: true).count == 1)
+        var lines = [uiLine("t-1", mine: false, "a", "A"), uiLine("t-2", mine: false, "secret", "BÍ MẬT", at: 1),
+                     uiLine("m-1", mine: true, "mật khẩu", "", at: 2)]
+        #expect(rec.sync(lines: lines, languageCode: "en", enabled: false).isEmpty)
+        lines[2].target = "the password"   // its translation lands after the switch is back on
+        lines.append(uiLine("t-3", mine: false, "b", "B", at: 3))
+        let saved = rec.sync(lines: lines, languageCode: "en", enabled: true)
+        #expect(saved.map(\.id) == ["t-3"])
+        await rec.settle()
+        #expect(await store.sessions().flatMap(\.lines).map(\.source) == ["a", "b"])
+    }
 }
 
 // MARK: AudioClipRecorder
@@ -243,6 +261,24 @@ private final class ManualClock: @unchecked Sendable {
             rec.append([Int16](repeating: 1, count: 320), sampleRate: 16_000, side: .theirs)
         }
         #expect(rec.clip(100...100.2, side: .theirs).map(Self.samples)?.count == 3_200)
+    }
+
+    /// A chunk stamped early (callback jitter) must not overlap the previous span: its audio follows it, so a clip
+    /// never holds the same stretch twice.
+    @Test func aJitteredEarlyChunkNeverOverlapsThePreviousSpan() {
+        let c = ManualClock()
+        let rec = RingAudioClipRecorder(clock: c.clock)
+        // 0.5 s of 1s ending at 101, then 0.5 s of 2s stamped as ending at 101.4 (0.1 s too early)
+        rec.append([Int16](repeating: 1, count: 8_000), sampleRate: 16_000, side: .mine, endingAt: 101)
+        rec.append([Int16](repeating: 2, count: 8_000), sampleRate: 16_000, side: .mine, endingAt: 101.4)
+        let all = rec.clip(100...102, side: .mine).map(Self.samples) ?? []
+        #expect(all.count == 16_000, "no duplicated audio")
+        #expect(all.prefix(8_000).allSatisfy { $0 == 1 })
+        #expect(all.suffix(8_000).allSatisfy { $0 == 2 })
+        // The overlap stretch is not heard twice, and the late chunk follows the first one
+        #expect(rec.clip(100.9...101.0, side: .mine).map(Self.samples)?.count == 1_600)
+        let late = rec.clip(101.0...101.5, side: .mine).map(Self.samples) ?? []
+        #expect(late.count == 8_000 && late.allSatisfy { $0 == 2 })
     }
 
     @Test func resamplesOtherRates() {
@@ -311,7 +347,7 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.clipURL("a") != nil)
         #expect(await FileFeedbackQueue(directory: dir).items().first?.correctedTranslation == "better a")
 
-        let folder = try #require(try await q.exportBundle())
+        let folder = try #require(try await q.exportBundle()).folder
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let entries = try decoder.decode([FeedbackExportItem].self, from: Data(contentsOf: folder.appendingPathComponent("items.json")))
@@ -349,8 +385,10 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.clipURL("a") != nil)
         #expect(await q.clipURL("d") == nil)
 
-        let folder = try #require(try await q.exportBundle())
+        let export = try #require(try await q.exportBundle())
+        let folder = export.folder
         #expect(folder.lastPathComponent == "feedback-20261115-094107")
+        #expect(export.itemIDs == ["a", "c", "d"])
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
         #expect(names == ["01.wav", "02.wav", "items.json"])
         #expect(try Data(contentsOf: folder.appendingPathComponent("01.wav")) == clipA)
@@ -365,6 +403,8 @@ private final class ManualClock: @unchecked Sendable {
         #expect(entries[1].durationSeconds == 0.5)
         #expect(isExcludedFromBackup(dir))
 
+        #expect(await q.items().allSatisfy { $0.sentAt == nil }, "building the export sends nothing")
+        await q.markSent(export)
         let items = await q.items()
         #expect(items.filter { $0.sentAt != nil }.map(\.id) == ["a", "c", "d"])
         // Persisted
@@ -385,7 +425,9 @@ private final class ManualClock: @unchecked Sendable {
         let clip = WAV.encode([1, 2, 3], sampleRate: 16_000)
         await q.add(Self.item("a"), clip: clip)
         await q.add(Self.item("b", selected: false), clip: clip)
-        let folder = try #require(try await q.exportBundle())
+        let export = try #require(try await q.exportBundle())
+        let folder = export.folder
+        await q.markSent(export)
         let clipA = try #require(await q.clipURL("a"))
         await q.removeSent()
         #expect(await q.items().map(\.id) == ["b"])
@@ -396,6 +438,91 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await q.items().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: dir.path))
         #expect(await FileFeedbackQueue(directory: dir).items().isEmpty)
+    }
+
+    /// The share sheet was cancelled: nothing is sent and the export (folder and zip) is gone.
+    @Test func cancelledShareSendsNothingAndCleansUp() async throws {
+        let dir = tempDir()
+        let q = FileFeedbackQueue(directory: dir)
+        await q.add(Self.item("a"), clip: WAV.encode([1, 2, 3], sampleRate: 16_000))
+        let export = try #require(try await q.exportBundle())
+        let zip = export.folder.deletingLastPathComponent().appendingPathComponent(export.folder.lastPathComponent + ".zip")
+        try Data("zip".utf8).write(to: zip)
+        let services = await AppServices(feedback: q, appVersion: "t")
+        await services.finishExport(export, completed: false)
+        #expect(await q.items().allSatisfy { $0.sentAt == nil })
+        #expect(!FileManager.default.fileExists(atPath: export.folder.path))
+        #expect(!FileManager.default.fileExists(atPath: zip.path))
+        #expect(await q.clipURL("a") != nil, "the queued clip stays")
+        // Shared: sent
+        let again = try #require(try await q.exportBundle())
+        await services.finishExport(again, completed: true)
+        #expect(await q.items().first?.sentAt != nil)
+        #expect(await services.feedbackItems.first?.sentAt != nil)
+    }
+
+    /// The clip of an unselected sensitive item stays in memory: written only once the user selects the item, and
+    /// taken off the disk again if the item becomes sensitive and unselected.
+    @Test func unselectedSensitiveClipsAreNeverWritten() async throws {
+        let dir = tempDir()
+        let q = FileFeedbackQueue(directory: dir)
+        let clip = WAV.encode([Int16](repeating: 3, count: 16_000), sampleRate: 16_000)
+        var secret = Self.item("s", selected: false)
+        secret.sensitive = true
+        await q.add(secret, clip: clip)
+        let clipsDir = dir.appendingPathComponent("clips")
+        let clipsOnDisk = { (try? FileManager.default.contentsOfDirectory(atPath: clipsDir.path)) ?? [] }
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipURL("s") == nil)
+        #expect(await q.clipData("s") == clip, "still playable from memory")
+        #expect(await q.items().first?.clipSeconds == 1)
+        #expect(await q.items().first?.clipFile == nil)
+        // Selected: written
+        await q.setSelected("s", true)
+        #expect(clipsOnDisk().count == 1)
+        #expect(await q.clipData("s") == clip)
+        // Unselected again: off the disk, back in memory
+        await q.setSelected("s", false)
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipData("s") == clip)
+
+        // A queued item that a later "Sửa" makes sensitive (and unselected) loses its file too
+        await q.add(Self.item("a"), clip: clip)
+        #expect(clipsOnDisk().count == 1)
+        var a = try #require(await q.items().first { $0.id == "a" })
+        a.sensitive = true
+        a.selected = false
+        await q.update(a)
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipData("a") == clip)
+
+        // A memory clip does not outlive the process: after a reload the item shows no audio
+        let reloaded = FileFeedbackQueue(directory: dir)
+        #expect(await reloaded.items().allSatisfy { $0.clipSeconds == nil && $0.clipFile == nil })
+        #expect(await reloaded.clipData("s") == nil)
+    }
+
+    /// History and feedback files carry `completeUnlessOpen`: written with it, directories created with it.
+    @Test func filesAreWrittenWithCompleteUnlessOpen() async throws {
+        #expect(DataProtection.fileProtection == .completeUnlessOpen)
+        #expect(DataProtection.protectedWriteOptions.contains(.completeFileProtectionUnlessOpen))
+        #expect(DataProtection.protectedWriteOptions.contains(.atomic))
+        #if os(iOS)
+        #expect(DataProtection.enabled && DataProtection.writeOptions == DataProtection.protectedWriteOptions)
+        #else
+        // macOS honours the class and would lock this unentitled test process out of its own files
+        #expect(!DataProtection.enabled && DataProtection.writeOptions == [.atomic])
+        #endif
+        let dir = tempDir().appendingPathComponent("Feedback")
+        let q = FileFeedbackQueue(directory: dir)
+        await q.add(Self.item("a"), clip: WAV.encode([1, 2, 3], sampleRate: 16_000))
+        #expect(await q.clipURL("a") != nil)
+        #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("queue.json").path))
+        let hdir = tempDir().appendingPathComponent("History")
+        let h = FileHistoryStore(directory: hdir)
+        await h.append(line("a", id: "1"), sessionID: "s", languageCode: "en")
+        await h.flush()
+        #expect(FileManager.default.fileExists(atPath: hdir.appendingPathComponent("s.json").path))
     }
 
     @Test func corruptQueueStartsEmpty() async throws {
@@ -511,6 +638,18 @@ private final class ManualClock: @unchecked Sendable {
         #expect(services.feedbackItems.first?.correctedTranslation == "Chợ Bến Thành (Q1)")
     }
 
+    @Test func turningSharingOffDropsTheBufferedAudio() {
+        let (data, ui, _, _, _, recorder) = rig(share: true)
+        defer { withExtendedLifetime(data) {} }
+        recorder.append([Int16](repeating: 1, count: 32_000), sampleRate: 16_000, side: .theirs, endingAt: 102)
+        recorder.append([Int16](repeating: 1, count: 16_000), sampleRate: 16_000, side: .mine, endingAt: 102)
+        ui.setShareToImprove(true)
+        #expect(recorder.clip(100.5...101.5, side: .theirs) != nil)
+        ui.setShareToImprove(false)
+        #expect(recorder.clip(100.5...101.5, side: .theirs) == nil)
+        #expect(recorder.clip(101...102, side: .mine) == nil)
+    }
+
     @Test func correctionAfterReportIsStoredOnTheReportedItem() async {
         let (data, ui, services, _, _, _) = rig(share: true)
         defer { withExtendedLifetime(data) {} }
@@ -548,5 +687,49 @@ private final class ManualClock: @unchecked Sendable {
         #expect(item?.sensitive == true)
         #expect(item?.selected == false)
         #expect(item?.clipSeconds == nil)
+    }
+}
+
+// MARK: Mic tap
+
+@Suite(.serialized) struct MicPCMTapTests {
+    private static func buffer(_ value: Int16, frames: Int = 1_600) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let b = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+        b.frameLength = AVAudioFrameCount(frames)
+        for i in 0..<frames { b.int16ChannelData![0][i] = value }
+        return b
+    }
+
+    /// The audio thread reads `MicSource.tap` for every buffer: it is installed once and `connect` (every phone-only
+    /// toggle, every "Giữ để nói" press) only moves the target and side under the tap's lock.
+    @Test func connectNeverReassignsTheTap() throws {
+        MicPCMTap.install()
+        let installs = MicSource.tapInstallCount
+        #expect(installs >= 1)
+        #expect(MicSource.tap != nil)
+        let c = ManualClock()
+        let a = RingAudioClipRecorder(clock: c.clock), b = RingAudioClipRecorder(clock: c.clock)
+        MicPCMTap.connect(a, side: .mine)
+        MicPCMTap.connect(a, side: .theirs)
+        MicPCMTap.connect(nil)
+        MicPCMTap.connect(b, side: .mine)
+        MicPCMTap.install()   // a second install is ignored
+        #expect(MicSource.tapInstallCount == installs, "connect and later installs leave the tap alone")
+
+        // Buffers go to the recorder and side connected now
+        let tap = try #require(MicSource.tap)
+        c.t = 101
+        tap(Self.buffer(3))
+        #expect(b.clip(100.9...101, side: .mine) != nil)
+        #expect(a.clip(100.9...101, side: .mine) == nil && a.clip(100.9...101, side: .theirs) == nil)
+        MicPCMTap.connect(b, side: .theirs)
+        c.t = 102
+        tap(Self.buffer(4))
+        #expect(b.clip(101.9...102, side: .theirs) != nil)
+        MicPCMTap.connect(nil)
+        c.t = 103
+        tap(Self.buffer(5))   // nothing connected: dropped
+        #expect(b.clip(102.9...103, side: .theirs) == nil)
     }
 }

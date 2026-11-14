@@ -116,8 +116,11 @@ final class ConversationController {
     /// Track C hook: every decoded board PCM chunk while running (the "theirs" clip ring of `AudioClipRecorder`).
     var onTheirPCM: (([Int16], Int) -> Void)?
     /// Whose voice the phone's mic carries now (`.theirs` in phone-only, `.mine` otherwise and while "Giữ để nói" is
-    /// held): the app points the mic clip tap (`MicPCMTap`) at that ring.
+    /// held): the app points the mic clip tap (`MicPCMTap`) at that ring. Called once the engine finished moving
+    /// the mic, on the main actor.
     var onMicSide: ((Side) -> Void)?
+    /// Track C hook: the conversation was cleared (the app drops the clip rings with it).
+    var onClear: (() -> Void)?
 
     /// `packs` are every bundled pack, the home language (`LanguageCatalog.homeCode`) included. `glossary` nil: no
     /// glossary (the editor reports "Không lưu được").
@@ -285,6 +288,7 @@ final class ConversationController {
         ranges.reset()
         editedLines.removeAll()
         sendSubtitle("")
+        onClear?()
     }
 
     // MARK: Session machine
@@ -609,12 +613,16 @@ final class ConversationController {
     }
 
     /// Input routing (phone-only) goes through the mic chain, so it keeps its order with the mic changes.
-    private func enqueueRouting(_ work: @escaping @Sendable (any VoiceEngine) async throws -> Void) {
+    /// `then` runs on the main actor once `work` has finished (not when it failed): the mic clip tap moves to the
+    /// other ring only after the engine rerouted the mic, so no buffer lands in the wrong ring.
+    private func enqueueRouting(_ work: @escaping @Sendable (any VoiceEngine) async throws -> Void,
+                                then: (@MainActor () -> Void)? = nil) {
         let previous = micChain, engine = self.engine
-        micChain = Task {
+        micChain = Task { @MainActor in
             await previous?.value
             do {
                 try await work(engine)
+                then?()
             } catch {
                 Diag.log("conversation: input routing failed: \(error)")
             }
@@ -968,8 +976,8 @@ final class ConversationController {
             recognizerChecks?.cancel()
             recognizerChecks = nil
         }
-        onMicSide?(on ? .theirs : .mine)
-        enqueueRouting { try await $0.setInputMode(mode) }
+        enqueueRouting({ try await $0.setInputMode(mode) },
+                       then: { [weak self] in self?.onMicSide?(on ? .theirs : .mine) })
     }
 
     /// "Giữ để nói": a press starts the conversation if it was off, then gives the input to you until released.
@@ -977,8 +985,8 @@ final class ConversationController {
         guard inputMode == .phoneOnly, held != ui.talkHeld else { return }
         ui.talkHeld = held
         if held && !ui.listening { note(.userStart) }
-        onMicSide?(held ? .mine : .theirs)
-        enqueueRouting { try await $0.setTalkHeld(held) }
+        enqueueRouting({ try await $0.setTalkHeld(held) },
+                       then: { [weak self] in self?.onMicSide?(held ? .mine : .theirs) })
     }
 
     // MARK: Board

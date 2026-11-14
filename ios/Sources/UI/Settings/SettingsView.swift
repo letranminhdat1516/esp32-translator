@@ -7,6 +7,7 @@ struct SettingsView: View {
     let router: AppRouter
     let appVersion: String
     var forget: () -> Void
+    @State private var confirmForget = false
 
     var body: some View {
         InstrumentScreen {
@@ -46,8 +47,9 @@ struct SettingsView: View {
             .scrollBounceBehavior(.basedOnSize)
             .padding(.top, 18)
             Spacer(minLength: 12)
-            InstrumentButton(Copy.t("settings.forget"), kind: .destructive, height: 50, action: forget)
+            InstrumentButton(Copy.t("settings.forget"), kind: .destructive, height: 50) { confirmForget = true }
         }
+        .forgetBoardConfirmation(isPresented: $confirmForget, forget: forget)
     }
 
     @Environment(\.openURL) private var openURL
@@ -101,5 +103,17 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+extension View {
+    /// "Quên board này" asks first: forgetting drops the pin, and the board must be paired by code again.
+    func forgetBoardConfirmation(isPresented: Binding<Bool>, forget: @escaping () -> Void) -> some View {
+        confirmationDialog(Copy.t("dialog.forgetTitle"), isPresented: isPresented, titleVisibility: .visible) {
+            Button(Copy.t("dialog.forgetConfirm"), role: .destructive, action: forget)
+            Button(Copy.t("dialog.cancel"), role: .cancel) {}
+        } message: {
+            Text(Copy.t("dialog.forgetBody"))
+        }
     }
 }

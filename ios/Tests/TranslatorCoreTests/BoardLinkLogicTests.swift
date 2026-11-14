@@ -148,6 +148,23 @@ private final class FakeChar {}
     }
 }
 
+@Suite struct AuthRetryTests {
+    /// The pinned board's refused protected read is retried automatically a few times, backing off, then waits
+    /// for the user ("Thử lại") or a new link: every retry costs one of the board's rate-limited pairing attempts.
+    @Test func threeBackedOffRetriesThenStop() {
+        var r = AuthRetry()
+        #expect(r.nextDelay() == 15)
+        #expect(r.nextDelay() == 30)
+        #expect(r.nextDelay() == 60)
+        #expect(r.nextDelay() == nil)
+        #expect(r.nextDelay() == nil)
+        #expect(r.exhausted)
+        r.reset()   // "Thử lại", a new link, or the read went through
+        #expect(!r.exhausted)
+        #expect(r.nextDelay() == 15)
+    }
+}
+
 @Suite struct BoardLabelTests {
     private let date = Date(timeIntervalSince1970: 1_700_000_000)
     private let utc = TimeZone(secondsFromGMT: 0)!
@@ -474,6 +491,18 @@ private final class FakeChar {}
         #expect(PairingErrorMap.failure(domain: "CBErrorDomain", code: 14) == .rejected)
         #expect(PairingErrorMap.failure(domain: "CBErrorDomain", code: 7) == .lost)
         #expect(PairingErrorMap.failure(NSError(domain: "CBATTErrorDomain", code: 5)) == .rejected)
+    }
+
+    /// The board refuses a request it rate-limits (or while locked or busy) at once, before anyone could answer:
+    /// a tap on the board counts only after the code was up for 1 s. A rejection that quick is the board refusing.
+    @Test func aRejectionFasterThanAnyTapIsTheBoardRefusing() {
+        let refused = NSError(domain: "CBATTErrorDomain", code: 15)
+        #expect(PairingErrorMap.failure(refused, after: 0.3) == .refusedByBoard)
+        #expect(PairingErrorMap.failure(refused, after: PairingErrorMap.quickRefusal - 0.01) == .refusedByBoard)
+        #expect(PairingErrorMap.failure(refused, after: 4) == .rejected, "Sai on the board, or Huỷ on the iPhone")
+        // Only rejections: a quick timeout or loss stays what it is
+        #expect(PairingErrorMap.failure(NSError(domain: "CBErrorDomain", code: 7), after: 0.1) == .lost)
+        #expect(PairingErrorMap.failure(NSError(domain: "CBErrorDomain", code: 15), after: 0.1) == .timeout)
     }
 
     @Test func forgettingClearsThePin() {
