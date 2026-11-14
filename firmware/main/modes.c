@@ -5,27 +5,13 @@
 void modes_init(modes_t *m)
 {
     memset(m, 0, sizeof(*m));
-    m->mode = BOARD_TRANSLATOR;
 }
 
-static bool unlock_to(modes_t *m, board_mode_t mode)
-{
-    m->mode = mode;
-    m->locked = false;
-    m->urgent = false;
-    m->notice = false;
-    m->face_until_us = 0;
-    return true;
-}
-
-/* Unlocking (tap x2 or swipe up on the lock screen) brings a request left behind back on top */
-static bool unlock_in_place(modes_t *m)
+/* Unlocking (PWR x2 / x3, BOOT, tap x2 or swipe up on the lock face) shows the translator */
+static bool unlock(modes_t *m)
 {
     m->locked = false;
     m->face_until_us = 0;
-    if (m->pending) {
-        m->urgent = true;
-    }
     return true;
 }
 
@@ -33,105 +19,40 @@ bool modes_handle(modes_t *m, modes_event_t ev, int64_t now_us)
 {
     switch (ev) {
     case MODES_EV_PWR_1:
-        if (m->notice) {
-            m->notice = false;   /* closes the notice only: locked stays locked, unlocked stays unlocked */
-            return false;
-        }
         if (m->locked) {
-            /* PWR x1 never unlocks: it shows the lock face (swipe up or double tap to unlock). A request shown
-             * over the lock goes dark (it stays pending and comes back on unlock). */
-            m->urgent = false;
+            /* PWR x1 never unlocks: it shows the lock face (swipe up or double tap to unlock) */
             m->face_until_us = now_us + MODES_FACE_US;
             return false;
         }
         m->locked = true;
-        m->urgent = false;   /* the user put the board away: a shown request goes dark (it stays pending) */
         m->face_until_us = 0;
         return false;
     case MODES_EV_PWR_2:
-        return unlock_to(m, BOARD_TRANSLATOR);
     case MODES_EV_PWR_3:
-        return unlock_to(m, BOARD_CLAUDE);
     case MODES_EV_BOOT_1:
-        return unlock_to(m, BOARD_TRANSLATOR);
+        return unlock(m);
     case MODES_EV_TAP_1:
-        if (m->locked && !m->urgent && !m->notice) {
+        if (m->locked) {
             m->face_until_us = now_us + MODES_FACE_US;
         }
         return false;
     case MODES_EV_TAP_2:
-        if (m->locked && !m->urgent && !m->notice) {
-            return unlock_in_place(m);
-        }
-        return false;
+        return m->locked ? unlock(m) : false;
     case MODES_EV_SWIPE_UP:
         /* Only on the visible face: a swipe on the dark panel (pocket) does nothing here */
-        return modes_face_visible(m, now_us) ? unlock_in_place(m) : false;
-    case MODES_EV_OPEN_PICKER:
-        if (m->locked || m->urgent || m->notice || m->mode != BOARD_CLAUDE) {
-            return false;   /* only from the Claude screen's session view */
-        }
-        m->mode = BOARD_PICKER;
-        return true;
-    case MODES_EV_URGENT:
-        m->urgent = true;
-        m->pending = true;
-        m->notice = false;   /* a Mac request replaces an iPhone notice */
-        m->face_until_us = 0;
-        return true;
-    case MODES_EV_URGENT_DONE:
-        m->urgent = false;
-        m->pending = false;
-        return false;
-    case MODES_EV_PICK:
-        if (m->locked || m->urgent || m->notice) {
-            return false;   /* the picker is not on screen then */
-        }
-        m->mode = BOARD_CLAUDE;
-        return true;
-    case MODES_EV_NOTICE:
-        if (m->urgent) {
-            return false;   /* a Mac request has the screen; the iPhone keeps the notification */
-        }
-        m->notice = true;
-        m->face_until_us = 0;
-        return true;
-    case MODES_EV_NOTICE_DONE:
-        m->notice = false;
-        return false;
+        return modes_face_visible(m, now_us) ? unlock(m) : false;
     }
     return false;
 }
 
 board_screen_t modes_screen(const modes_t *m)
 {
-    if (m->urgent) {
-        return SCREEN_CLAUDE;
-    }
-    if (m->notice) {
-        return SCREEN_PHONE;
-    }
-    if (m->locked) {
-        return SCREEN_LOCK;
-    }
-    switch (m->mode) {
-    case BOARD_CLAUDE:
-        return SCREEN_CLAUDE;
-    case BOARD_PICKER:
-        return SCREEN_PICKER;
-    default:
-        return SCREEN_TRANSLATOR;
-    }
+    return m->locked ? SCREEN_LOCK : SCREEN_TRANSLATOR;
 }
 
 bool modes_face_visible(const modes_t *m, int64_t now_us)
 {
-    return m->locked && !m->urgent && !m->notice && now_us < m->face_until_us;
-}
-
-bool modes_notice_allowed(const modes_t *m)
-{
-    return !m->urgent;
+    return m->locked && now_us < m->face_until_us;
 }
 
 modes_panel_t modes_panel(const modes_t *m, int64_t now_us)
@@ -139,10 +60,7 @@ modes_panel_t modes_panel(const modes_t *m, int64_t now_us)
     if (!m->locked) {
         return MODES_PANEL_AUTO;
     }
-    if (m->urgent || m->notice || modes_face_visible(m, now_us)) {
-        return MODES_PANEL_ON;
-    }
-    return MODES_PANEL_OFF;
+    return modes_face_visible(m, now_us) ? MODES_PANEL_ON : MODES_PANEL_OFF;
 }
 
 static void click_press(modes_clicks_t *c, uint32_t now_ms)
@@ -186,29 +104,4 @@ int modes_clicks_step(modes_clicks_t *c, bool pressed, bool released, uint32_t n
         return n;
     }
     return 0;
-}
-
-int modes_report(const modes_t *m)
-{
-    if (m->locked) {
-        return 0;
-    }
-    switch (m->mode) {
-    case BOARD_CLAUDE:
-        return 1;
-    case BOARD_PICKER:
-        return 2;
-    default:
-        return 0;
-    }
-}
-
-bool modes_report_due(int *last, const modes_t *m)
-{
-    int now = modes_report(m);
-    if (now == *last) {
-        return false;
-    }
-    *last = now;
-    return true;
 }

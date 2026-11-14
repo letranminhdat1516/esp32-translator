@@ -1,6 +1,6 @@
 /*
  * iPhone app liveness (pure C, host-tested in firmware/test/test_phone_idle.c).
- * A bonded iPhone keeps the BLE link up for ANCS after the translator app is gone, and iOS may never write the
+ * iOS may keep the BLE link up after the translator app is gone (suspended or swiped away), and may never write the
  * audio CCCD off: the board would stream audio into a dead link for hours. The app writes something (text, mic
  * state, or the keepalive byte every 20 s) while it runs; after PHONE_IDLE_TIMEOUT_US without a write the board
  * leaves the iPhone audio role (ble_link.c).

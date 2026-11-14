@@ -1,7 +1,7 @@
 /*
  * Wall clock for the lock face. The board has no clock source of its own: the iPhone (translator text
- * characteristic, kind 2) and the Mac (Claude message kind 3) send "<unix seconds> <UTC offset minutes>"
- * in ASCII on connect, e.g. "1759555200 420" or "1759555200 -330".
+ * characteristic, kind 2) sends "<unix seconds> <UTC offset minutes>" in ASCII on
+ * connect, e.g. "1759555200 420" or "1759555200 -330".
  */
 #pragma once
 #include <stdbool.h>

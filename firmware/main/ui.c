@@ -93,8 +93,6 @@ static void set_screen(bool on)
         return;
     }
     s_screen_on = on;
-    claude_ui_set_touch_enabled(on);
-    phone_ui_set_touch_enabled(on);
     bsp_display_brightness_set(on ? 100 : 0);
     /* While dark, a tap only wakes the screen; it must not toggle the mic */
     lv_obj_set_clickable(s_btn_mic, on);
@@ -118,18 +116,6 @@ static void screen_timer_cb(lv_timer_t *t)
     }
     if (s_manual_off) {
         set_screen(false);
-        return;
-    }
-    if (voice_ui_active_locked()) {
-        set_screen(true);   /* a voice capture, its confirmation or its result is on screen */
-        return;
-    }
-    if (modes_screen(&m) == SCREEN_PHONE) {
-        set_screen(true);   /* an iPhone notice is up (closes after 20 s, 60 s with actions, at once on link loss) */
-        return;
-    }
-    if (claude_ui_pending() && modes_screen(&m) == SCREEN_CLAUDE) {
-        set_screen(true);   /* keep Allow/Deny visible while a request is pending (on the Claude screen only) */
         return;
     }
 #if defined(CONFIG_TRANSLATOR_DEV_STAY_ON) && CONFIG_TRANSLATOR_DEV_STAY_ON
@@ -190,15 +176,6 @@ void ui_force_screen_on(void)
 {
     s_manual_off = false;
     ui_mark_activity();
-}
-
-void ui_wake_from_tap(void)
-{
-    /* LVGL task: only flags, the 250 ms screen timer turns the panel on (and re-arms Allow/Deny) */
-    if (s_manual_off) {
-        s_manual_off = false;
-        ui_mark_activity();
-    }
 }
 
 bool ui_shutting_down(void)

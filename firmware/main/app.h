@@ -3,11 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "claude_proto.h"
-#include "ancs.h"
 #include "lvgl.h"
 #include "modes.h"
-#include "question.h"
 
 /* Board microphone streaming state */
 typedef enum {
@@ -21,15 +18,6 @@ void app_request_recording(rec_lang_t lang);
 rec_lang_t app_get_recording(void);
 /* iPhone translation link (audio characteristic subscribed) up/down */
 void app_on_connection_changed(bool connected);
-/* Claude link (the Mac, or the iPhone relay) up/down, and an incoming Claude message from it */
-void app_on_claude_link(bool connected);
-void app_on_claude_message(const claude_msg_t *msg);
-/* Voice live on the Claude link (voice characteristic subscribed, full-frame MTU) or not (NimBLE host task) */
-void app_on_claude_voice_link(bool on);
-/* iPhone notifications (ANCS) ready / gone: a link for the deep-sleep rule (NimBLE host task) */
-void app_on_phone_notices_link(bool up);
-/* A Claude notice from the iPhone was shown (NimBLE host task): restarts the notice-link sleep grace */
-void app_on_phone_notice(void);
 /* audio_in.c: the board VAD detected the start of speech */
 void app_on_speech_activity(void);
 /* Shows the sleep screen and enters deep sleep (touch or BOOT wakes) */
@@ -54,45 +42,9 @@ void ble_link_notify_control(uint8_t state);
 /* Board mic tapped without the iPhone audio role: if an iPhone link waits for the app, take it back (async, NimBLE
  * host task) and request lang again; false: no such link */
 bool ble_link_wake_phone(rec_lang_t lang);
-bool ble_link_claude_connected(void);
-/* The Claude link is the iPhone relay (the Mac is out of range), not the Mac itself */
-bool ble_link_claude_relayed(void);
-bool ble_link_send_claude_answer(uint32_t id, uint8_t decision);   /* CLAUDE_DECISION_* */
-/* Any board -> Mac bytes (claude_proto.h encoders), at most CLAUDE_INPUT_MAX, over the Claude link (the Mac or the
- * iPhone relay); false without one */
-bool ble_link_send_claude_input(const uint8_t *data, size_t len);
-/* The same, retried briefly while the BLE buffers are full (a voice start: the link may still be settling) */
-bool ble_link_send_claude_input_retry(const uint8_t *data, size_t len);
-uint16_t ble_link_mac_mtu(void);                    /* ATT MTU of the Claude link (Mac or relay), 0 without one */
-/* Claude voice characteristic: the board mic to the Mac during a voice capture. Send from the audio task only.
- * ready: the Claude link (Mac or relay) subscribed and its MTU fits one 20 ms frame per notification. */
-bool ble_link_voice_ready(void);
-uint16_t ble_link_voice_payload_max(void);
-bool ble_link_send_voice(const uint8_t *data, uint16_t len);
-/* The ANCS link is ready / gone (ancs_client.c, host task): relaxed connection pace while only ANCS uses it */
-void ble_link_ancs_link(uint16_t conn, bool up);
-
-/* ancs_client.c: iPhone notifications (ANCS). init before the NimBLE host starts. The rest runs in the NimBLE
- * host task: a link finished encrypting, a GATT notification arrived (true when it was ANCS), a link went away;
- * except close (shell / LVGL task): the board closed that notice. */
-void ancs_client_init(void);
-void ancs_client_on_encrypted(uint16_t conn);
-bool ancs_client_on_notify(uint16_t conn, uint16_t attr, const uint8_t *data, uint16_t len);
-void ancs_client_on_disconnect(uint16_t conn, uint8_t peer_type, const uint8_t peer_val[6]);   /* peer identity address */
-void ancs_client_close(uint32_t uid);
-/* LVGL task, from an armed tap on the notice's action button: writes Perform Notification Action for the notice
- * on screen only, never the positive action while the board is locked (ancs_action_allowed). True when the write
- * went out; the iPhone's answer arrives as phone_ui_action_result(). */
-bool ancs_client_perform(uint32_t uid, uint8_t action);
 
 /* audio_in.c */
 void audio_in_start(void);
-/* One voice capture at a time (voice_ui.c). start: false without the Mac voice link. stop: the audio task sends
- * its last packet, then the stop input, then calls voice_ui_capture_ended(). abort: stop streaming at once, no
- * stop input (the caller sent a cancel). */
-bool audio_in_voice_start(uint32_t voice_id);
-void audio_in_voice_stop(void);
-void audio_in_voice_abort(void);
 
 /* ui.c (takes the LVGL lock itself; do not call from LVGL callbacks) */
 void ui_init(void);
@@ -103,7 +55,7 @@ void ui_show_status(const char *utf8);
 /* The other person's language, appended to the status line as "<status> · <label>" (empty clears it).
  * At most 32 bytes of valid UTF-8; kept across reconnects. */
 void ui_set_label(const char *utf8);
-/* Voice level ring around the round screen, 0 = hidden, 1..100 = louder. Safe from any task. */
+/* Speech level ring around the round screen, 0 = hidden, 1..100 = louder. Safe from any task. */
 void ui_set_level(int percent);
 /* Keeps the screen on (or wakes it). Safe from any task except LVGL callbacks. */
 void ui_mark_activity(void);
@@ -118,83 +70,18 @@ lv_obj_t *ui_translator_screen(void);
 void ui_force_screen_on(void);
 /* Blanks (true) or wakes (false) the panel like a double-tap. Safe from any task except LVGL callbacks. */
 void ui_set_manual_screen_off(bool off);
-/* LVGL task (Claude / picker screen tap): ends a manual screen-off; the panel wakes within ~250 ms */
-void ui_wake_from_tap(void);
 /* True once the power-off / sleep message is up. Read it with the display lock held. */
 bool ui_shutting_down(void);
 /* pmu.c: true when external USB power (VBUS) is present; false if the PMU is unavailable */
 bool pmu_usb_powered(void);
-
-/* claude_ui.c: Claude companion screen */
-void claude_ui_init(void);
-lv_obj_t *claude_ui_screen(void);
-/* Copies the text; takes the display lock. True when a request is now ready to show (take over the screen). */
-bool claude_ui_on_message(const claude_msg_t *m);
-void claude_ui_set_link(bool connected);
-void claude_ui_set_touch_enabled(bool on);          /* LVGL task: answers ignore taps while the panel is dark */
-bool claude_ui_pending(void);                       /* a request awaits an answer */
-void claude_ui_refresh_session_locked(void);        /* display lock held: status badge + focused session view */
-/* Every answer control (claude_ui.c, question_ui.c), LVGL task */
-void claude_ui_note_press(void);                    /* call from LV_EVENT_PRESSED */
-bool claude_ui_tap_armed(void);                     /* panel lit, press armed (dark: wakes); voice controls */
-bool claude_ui_tap_allowed(void);                   /* tap_armed, a request pending, no voice overlay */
-void claude_ui_rearm(void);                         /* new controls under the finger (page change) */
-/* claude_ui.c: a spoken deny reason was applied (voice_ui.c): show "Denied", then restore */
-void claude_ui_voice_denied_locked(void);
-/* claude_ui.c: Send on the last question page (LVGL task): sends the answers and shows the result */
-void claude_ui_question_send_locked(const uint8_t *answer, size_t len);
-
-/* question_ui.c: AskUserQuestion pages on the Claude screen (display lock held for every call) */
-void question_ui_init(lv_obj_t *scr, question_set_t *set);
-void question_ui_show(void);                        /* page 1 of a complete set */
-void question_ui_refresh(void);                     /* a shown page was resent: rebuild it (caller re-arms) */
-void question_ui_hide(void);                        /* safe before init */
-/* Use on the voice confirm screen: store the spoken Other answer of `page`, select it, redraw that page */
-void question_ui_set_other(uint8_t page, const char *text);
-
-/* voice_ui.c: voice capture overlay on the Claude screen (see the file header for the flow) */
-void voice_ui_init(lv_obj_t *scr);                  /* after question_ui_init: on top of the question pages */
-/* Display lock held (LVGL task): start a capture; purpose CLAUDE_VOICE_FOR_*, question = page (Other), target =
- * session handle or request id. True when the overlay is up (it may show an error). */
-bool voice_ui_start_locked(uint8_t purpose, uint8_t question, uint32_t target);
-void voice_ui_cancel_locked(void);                  /* drop any capture (sends cancel), hide the overlay */
-void voice_ui_request_gone_locked(uint32_t id);     /* an Other / deny capture's request went away */
-bool voice_ui_active_locked(void);                  /* the overlay is shown */
-void voice_ui_on_message(const claude_msg_t *m);    /* kind 8, NimBLE host task; takes the lock */
-void voice_ui_set_link(bool on);                    /* takes the lock */
-void voice_ui_capture_ended(uint32_t id, bool stop_sent); /* audio task, after its stop input; takes the lock */
-void voice_ui_level(int percent);                   /* audio task: level ring, 0 = hidden; takes the lock */
 
 /* lock_ui.c: lock screen (logo, clock, battery) */
 void lock_ui_init(void);
 lv_obj_t *lock_ui_screen(void);
 void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the clock tick */
 
-/* picker_ui.c: Claude session picker; owns the session table */
-void picker_ui_init(void);
-lv_obj_t *picker_ui_screen(void);
-void picker_ui_on_message(const claude_msg_t *m);   /* kinds 4-6; takes the display lock */
-void picker_ui_set_link(bool connected);            /* takes the display lock; a lost link clears the rows */
-void picker_ui_set_touch_enabled(bool on);          /* LVGL task */
-const claude_session_t *picker_ui_focused_locked(void);
-int picker_ui_badge_locked(void);
-
-/* phone_ui.c: the iPhone notice screen (a Claude app notification) */
-void phone_ui_init(void);
-lv_obj_t *phone_ui_screen(void);
-void phone_ui_show(const ancs_notice_t *n, bool fresh);   /* NimBLE host task; takes the lock, posts MODES_EV_NOTICE */
-void phone_ui_gone(uint32_t uid);                         /* NimBLE host task: removed on the iPhone */
-void phone_ui_set_touch_enabled(bool on);                 /* LVGL task (screen timer) */
-void phone_ui_action_result(uint32_t uid, bool ok);       /* NimBLE host task: the iPhone took (or refused) the action */
-void phone_ui_set_link(bool up);                          /* NimBLE host task: the ANCS link is up / gone */
-
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);
 bool shell_post(modes_event_t ev);                  /* never blocks; safe from any task and LVGL callbacks; false: queue full */
 void shell_snapshot(modes_t *out);                  /* current state, for the panel policy */
-void shell_resend_mode(void);                       /* tell the Mac the board mode again (Mac link up) */
 
-/* chime.c: non-blocking notification chime on the speaker */
-typedef enum { CHIME_REQUEST, CHIME_DONE, CHIME_PHONE } chime_t;
-void chime_start(void);
-void chime_play(chime_t kind);

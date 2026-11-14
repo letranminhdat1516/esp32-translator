@@ -1,10 +1,6 @@
 /*
- * Captures both ES7210 mics at 16 kHz, mixes to mono, IMA ADPCM encodes and streams over BLE:
- *   translator: to the iPhone (audio characteristic) while the board mic is on, gated by an energy VAD
- *   voice     : to the Mac (Claude voice characteristic) for one capture at a time (voice_ui.c): every frame from
- *               the start until voice.c's endpointing, Stop, an abort, or the Mac voice link going away
- * A voice capture pauses the translator stream (nothing goes to the iPhone meanwhile); the translator VAD starts
- * fresh afterwards, so no half phrase is sent. The codec is open only while one of them needs it.
+ * Captures both ES7210 mics at 16 kHz, mixes to mono, IMA ADPCM encodes and streams to the iPhone over BLE (audio
+ * characteristic) while the board mic is on, gated by an energy VAD. The codec is open only while streaming.
  * Every packet carries its own ADPCM state, so a lost packet never corrupts the following ones.
  * Encoding and sending happen only in this task, never in the NimBLE host task (its stack is 6 KB).
  *
@@ -22,7 +18,6 @@
 
 #include "adpcm.h"
 #include "app.h"
-#include "voice.h"
 
 static const char *TAG = "audio";
 
@@ -44,8 +39,6 @@ static const char *TAG = "audio";
 #define RING_MAX_DB   -25.0f
 #define RING_EVERY    6          /* update every 120 ms */
 
-typedef enum { SINK_PHONE = 0, SINK_MAC } sink_t;
-
 typedef struct {
     adpcm_state_t st;
     uint16_t seq;
@@ -64,14 +57,6 @@ static int16_t s_preroll[VAD_PREROLL_FRAMES][FRAME_SAMPLES];
 static int s_preroll_head;
 static int s_preroll_count;
 
-/* Voice capture requests from voice_ui.c (LVGL or NimBLE host task); everything else belongs to this task */
-#define VOICE_CMD_NONE  0
-#define VOICE_CMD_STOP  1
-#define VOICE_CMD_ABORT 2
-static portMUX_TYPE s_voice_mux = portMUX_INITIALIZER_UNLOCKED;
-static uint32_t s_voice_id;   /* requested capture, 0 = none */
-static uint8_t s_voice_cmd;
-
 static void put_header(uint8_t *pkt, uint16_t seq, const adpcm_state_t *st)
 {
     pkt[0] = seq & 0xff;
@@ -81,12 +66,12 @@ static void put_header(uint8_t *pkt, uint16_t seq, const adpcm_state_t *st)
     pkt[4] = st->index;
 }
 
-static void send_frame(stream_t *s, const int16_t *mono, sink_t sink)
+static void send_frame(stream_t *s, const int16_t *mono)
 {
     static uint8_t pkt[HEADER_BYTES + FRAME_SAMPLES / 2];
 
     /* Split by negotiated MTU (iPhones usually give >= 185, enough for a full 20 ms frame) */
-    uint16_t payload = sink == SINK_MAC ? ble_link_voice_payload_max() : ble_link_payload_max();
+    uint16_t payload = ble_link_payload_max();
     int chunk = (payload - HEADER_BYTES) * 2;
     if (chunk > FRAME_SAMPLES) {
         chunk = FRAME_SAMPLES;
@@ -96,9 +81,7 @@ static void send_frame(stream_t *s, const int16_t *mono, sink_t sink)
         int n = FRAME_SAMPLES - off < chunk ? FRAME_SAMPLES - off : chunk;
         put_header(pkt, s->seq++, &s->st);
         adpcm_encode(&s->st, mono + off, n, pkt + HEADER_BYTES);
-        bool ok = sink == SINK_MAC ? ble_link_send_voice(pkt, HEADER_BYTES + n / 2)
-                                   : ble_link_send_audio(pkt, HEADER_BYTES + n / 2);
-        if (ok) {
+        if (ble_link_send_audio(pkt, HEADER_BYTES + n / 2)) {
             s->sent++;
         } else {
             s->dropped++;
@@ -138,13 +121,13 @@ static void translator_step(translator_t *t, stream_t *phone, const int16_t *mon
         /* Flush the pre-roll oldest first, then continue live */
         int start = (s_preroll_head - s_preroll_count + VAD_PREROLL_FRAMES) % VAD_PREROLL_FRAMES;
         for (int i = 0; i < s_preroll_count; i++) {
-            send_frame(phone, s_preroll[(start + i) % VAD_PREROLL_FRAMES], SINK_PHONE);
+            send_frame(phone, s_preroll[(start + i) % VAD_PREROLL_FRAMES]);
         }
         s_preroll_count = 0;
     }
 
     if (t->speaking) {
-        send_frame(phone, mono, SINK_PHONE);
+        send_frame(phone, mono);
         if (voiced) {
             t->hangover = VAD_HANGOVER_FRAMES;
         } else if (--t->hangover <= 0) {
@@ -163,62 +146,6 @@ static void translator_step(translator_t *t, stream_t *phone, const int16_t *mon
     }
 }
 
-bool audio_in_voice_start(uint32_t voice_id)
-{
-    if (voice_id == 0 || !ble_link_voice_ready()) {
-        return false;
-    }
-    taskENTER_CRITICAL(&s_voice_mux);
-    s_voice_id = voice_id;
-    s_voice_cmd = VOICE_CMD_NONE;
-    taskEXIT_CRITICAL(&s_voice_mux);
-    return true;
-}
-
-static void voice_command(uint8_t cmd)
-{
-    taskENTER_CRITICAL(&s_voice_mux);
-    if (s_voice_id != 0) {
-        s_voice_cmd = cmd;
-    }
-    taskEXIT_CRITICAL(&s_voice_mux);
-}
-
-void audio_in_voice_stop(void)
-{
-    voice_command(VOICE_CMD_STOP);
-}
-
-void audio_in_voice_abort(void)
-{
-    voice_command(VOICE_CMD_ABORT);
-}
-
-/* Ends capture `id` in this task. stop_input: tell the Mac the audio is complete (after the last packet, on the
- * same link, so it never overtakes it) and let the UI wait for the final transcript. */
-static void end_voice(uint32_t id, bool stop_input, const char *why, const stream_t *mac)
-{
-    taskENTER_CRITICAL(&s_voice_mux);
-    if (s_voice_id == id) {   /* a newer capture may already be requested: leave it */
-        s_voice_id = 0;
-        s_voice_cmd = VOICE_CMD_NONE;
-    }
-    taskEXIT_CRITICAL(&s_voice_mux);
-    voice_ui_level(0);
-    /* Debug: audio task stack headroom (bytes never used), once per capture */
-    ESP_LOGI(TAG, "voice %lu ended (%s): sent %lu, dropped %lu; stack headroom audio_in: %u bytes", (unsigned long)id,
-             why, (unsigned long)mac->sent, (unsigned long)mac->dropped, (unsigned)uxTaskGetStackHighWaterMark(NULL));
-    if (stop_input) {
-        uint8_t buf[CLAUDE_INPUT_MAX];
-        size_t n = claude_encode_voice(id, CLAUDE_INPUT_VOICE_STOP, buf);
-        bool sent = ble_link_send_claude_input_retry(buf, n);   /* may block briefly: this is the audio task */
-        if (!sent) {
-            ESP_LOGW(TAG, "voice %lu: stop not sent", (unsigned long)id);
-        }
-        voice_ui_capture_ended(id, sent);
-    }
-}
-
 static void audio_task(void *arg)
 {
     esp_codec_dev_handle_t mic = bsp_audio_codec_microphone_init();
@@ -233,46 +160,14 @@ static void audio_task(void *arg)
 
     bool open = false;
     stream_t phone = { 0 };
-    stream_t mac = { 0 };
     translator_t tr = { .floor_db = -60.0f };
-    voice_vad_t vad;
-    voice_vad_init(&vad);
-    uint32_t voice = 0;   /* capture this task is streaming, 0 = none */
     uint32_t frames = 0, warmup = 0;
     float peak_db = -100.0f;
 
     while (true) {
-        uint32_t want_voice;
-        uint8_t cmd;
-        taskENTER_CRITICAL(&s_voice_mux);
-        want_voice = s_voice_id;
-        cmd = s_voice_cmd;
-        taskEXIT_CRITICAL(&s_voice_mux);
-
-        if (voice != 0 && want_voice != voice) {
-            /* Replaced by a newer capture (Say again): the UI already sent the cancel */
-            ESP_LOGI(TAG, "voice %lu replaced", (unsigned long)voice);
-            voice = 0;
-            voice_ui_level(0);
-        }
-        if (want_voice != 0 && cmd == VOICE_CMD_ABORT) {
-            end_voice(want_voice, false, "aborted", &mac);
-            voice = 0;
-            continue;
-        }
-        if (voice == 0 && want_voice != 0) {
-            voice = want_voice;
-            memset(&mac, 0, sizeof(mac));
-            voice_vad_init(&vad);
-            translator_reset(&tr);   /* the iPhone stream pauses: no half phrase before or after */
-            ui_set_level(0);
-            ESP_LOGI(TAG, "voice %lu started", (unsigned long)voice);
-        }
-
         bool translating = app_get_recording() != REC_NONE && ble_link_audio_ready();
-        bool want = voice != 0 || translating;
-        if (want != open) {
-            if (want) {
+        if (translating != open) {
+            if (translating) {
                 esp_codec_dev_sample_info_t fs = {
                     .sample_rate = SAMPLE_RATE,
                     .channel = 2,
@@ -292,10 +187,9 @@ static void audio_task(void *arg)
             } else {
                 esp_codec_dev_close(mic);
                 ui_set_level(0);
-                voice_ui_level(0);
                 ESP_LOGI(TAG, "recording stopped");
             }
-            open = want;
+            open = translating;
         }
         if (!open) {
             vTaskDelay(pdMS_TO_TICKS(30));
@@ -321,23 +215,7 @@ static void audio_task(void *arg)
             peak_db = db;
         }
 
-        if (voice != 0) {
-            send_frame(&mac, mono, SINK_MAC);
-            voice_vad_result_t r = voice_vad_step(&vad, db);
-            if (frames % RING_EVERY == 0) {
-                voice_ui_level(db > RING_MIN_DB ? ring_percent(db) : 0);
-            }
-            const char *why = cmd == VOICE_CMD_STOP          ? "stop"
-                              : r == VOICE_VAD_SILENCE       ? "silence"
-                              : r == VOICE_VAD_NOTHING       ? "nothing said"
-                              : r == VOICE_VAD_MAX           ? "30 s"
-                              : !ble_link_voice_ready()      ? "Mac voice link gone"
-                                                             : NULL;
-            if (why != NULL) {
-                end_voice(voice, true, why, &mac);
-                voice = 0;
-            }
-        } else if (translating) {
+        if (translating) {
             translator_step(&tr, &phone, mono, db, frames);
         }
 

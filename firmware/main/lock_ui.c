@@ -1,6 +1,6 @@
 /*
  * Lock screen. Black and empty while the panel is off; a tap shows the face for 5 s:
- *   top    : clock (HH:MM, "--:--" until the iPhone or the Mac sent the time)
+ *   top    : clock (HH:MM, "--:--" until the iPhone sent the time)
  *   middle : the Live Translator mark (tools/gen_logo.py)
  *   bottom : battery, a gently bouncing chevron and "Vuốt lên để mở khoá"
  * Single tap or PWR x1 → the face, double tap → MODES_EV_TAP_2 (unlock); shell.c / modes.c decide.
