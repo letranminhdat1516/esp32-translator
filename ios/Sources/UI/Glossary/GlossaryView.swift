@@ -163,7 +163,12 @@ struct GlossaryView: View {
 
     private func add() {
         do {
-            try ui.glossaryAdd(addText)
+            let fixed = fixedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let addFixed = ui.glossaryAddFixed, !fixed.isEmpty {
+                try addFixed(addText, fixed)
+            } else {
+                try ui.glossaryAdd(addText)
+            }
             addText = ""
             fixedText = ""
             addError = nil

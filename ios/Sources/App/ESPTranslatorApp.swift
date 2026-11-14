@@ -11,13 +11,21 @@ struct ESPTranslatorApp: App {
     @State private var services: AppServices
     private let controller: ConversationController
     private let demo: DemoScreen?
+    /// Track C: persisted switches, "Báo dịch sai", the history mirror
+    private let data: DataCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let ui = UIState()
         let demo = DemoScreen.parse(CommandLine.arguments)
-        // Demo mode shows the canvas' version label
-        let services = demo == nil ? AppServices() : AppServices(appVersion: "0.9")
+        // Demo mode shows the canvas' version label and keeps the canvas data in memory
+        let services = demo == nil ? Self.liveServices()
+            : AppServices(history: InMemoryHistoryStore(DemoData.history),
+                          feedback: InMemoryFeedbackQueue(DemoData.feedback), appVersion: "0.9")
         self.demo = demo
+        let data = DataCoordinator(ui: ui, services: services, defaults: demo == nil ? .standard : nil)
+        data.bind(observeHistory: demo == nil)
+        self.data = data
         if let demo {
             let router = AppRouter(defaults: nil)
             let link = FakeBoardLink()
@@ -57,6 +65,26 @@ struct ESPTranslatorApp: App {
         IntentBridge.toggleBoardMic = { ui.toggleBoardMic() }
         _ui = State(initialValue: ui)
         _services = State(initialValue: services)
+        if demo == nil {
+            // Track C: both clip rings (memory only; a clip is kept only for a line the user flags)
+            let recorder = services.recorder
+            MicPCMTap.connect(recorder, side: .mine)
+            controller.onTheirPCM = { pcm, rate in recorder.append(pcm, sampleRate: rate, side: .theirs) }
+        }
+    }
+
+    /// Track C: the file-backed history and feedback queue (Application Support, excluded from backup) and the clip
+    /// recorder; in-memory stand-ins when Application Support is unavailable.
+    private static func liveServices() -> AppServices {
+        var history: any HistoryStoring = InMemoryHistoryStore()
+        var feedback: any FeedbackQueueing = InMemoryFeedbackQueue()
+        do {
+            history = FileHistoryStore(directory: try FileHistoryStore.defaultDirectory())
+            feedback = FileFeedbackQueue(directory: try FileFeedbackQueue.defaultDirectory())
+        } catch {
+            Diag.log("data: no Application Support directory: \(error)")
+        }
+        return AppServices(history: history, feedback: feedback, recorder: RingAudioClipRecorder())
     }
 
     var body: some Scene {
@@ -66,6 +94,10 @@ struct ESPTranslatorApp: App {
                 router.restartPairing()
             }
             .task { if demo == nil { await controller.start() } }
+            .onChange(of: scenePhase) { _, phase in
+                // Track C: pending history is written when the app leaves the foreground
+                if phase != .active { Task { await services.history.flush() } }
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ struct RootView: View {
             .preferredColorScheme(.light)
             .tint(DS.Color.ink)
             .onChange(of: ui.board, initial: true) { _, state in router.noteBoard(state) }
+            .feedbackReporting(ui)   // Track C: "Báo dịch sai" sheet
             .sheet(item: $router.sheet) { sheet in
                 switch sheet {
                 case .language:
@@ -66,13 +67,13 @@ struct RootView: View {
         case .settings:
             SettingsView(ui: ui, router: router, appVersion: services.appVersion, forget: forgetBoard)
         case .history:
-            HistoryView(router: router, sessions: services.historySessions, now: services.now())
+            HistoryView(router: router, services: services, saving: ui.saveHistory)
         case let .historyDetail(id):
-            HistoryDetailView(router: router, session: services.historySessions.first { $0.id == id })
+            HistoryDetailView(router: router, services: services, sessionID: id)
         case .glossary:
             GlossaryView(ui: ui, router: router, draft: services.glossaryDraft)
         case .sharing:
-            SharingView(ui: ui, router: router, items: services.feedbackItems)
+            SharingView(ui: ui, router: router, services: services)
         case .language:
             LanguageView(ui: ui, router: router, mode: .pushed)
         }

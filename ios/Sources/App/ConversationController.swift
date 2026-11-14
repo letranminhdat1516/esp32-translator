@@ -93,6 +93,9 @@ final class ConversationController {
     // Board
     private var boardChain: Task<Void, Never>?
 
+    /// Track C hook: every decoded board PCM chunk while running (the "theirs" clip ring of `AudioClipRecorder`).
+    var onTheirPCM: (([Int16], Int) -> Void)?
+
     /// `packs` are every bundled pack, the home language (`LanguageCatalog.homeCode`) included. `glossary` nil: no
     /// glossary (the editor reports "Không lưu được").
     init(engine: any VoiceEngine, board: any BoardLink, packs: [LanguagePack], glossary: GlossaryStore?,
@@ -213,6 +216,7 @@ final class ConversationController {
         ui.glossaryAdd = { [weak self] text in try self?.glossaryAdd(text) }
         ui.glossaryUpdate = { [weak self] id, text in try self?.glossaryUpdate(id, text) }
         ui.glossaryDelete = { [weak self] id in try self?.glossaryDelete(id) }
+        ui.glossaryAddFixed = { [weak self] text, fixed in try self?.glossaryAdd(text, fixed: fixed) }   // Track C
     }
 
     /// Saved only when the machine took the pick (a pick while loading, checking, downloading, preparing or
@@ -586,6 +590,7 @@ final class ConversationController {
         }
         let pcm = decoder.decode(packet)
         guard !pcm.isEmpty, engineStarted, case .running = session.state else { return }
+        onTheirPCM?(pcm, tuning.boardSampleRate)   // Track C hook
         let e = epoch
         do {
             try await engine.feedTheirAudio(pcm, sampleRate: tuning.boardSampleRate)
@@ -805,6 +810,24 @@ final class ConversationController {
             await previous?.value
             await work(board)
         }
+    }
+}
+
+// MARK: Track C: glossary term with a fixed translation
+
+extension ConversationController {
+    /// Adds a term whose translation into the current language is fixed (`Term.fixed[code]`); an empty `fixed`
+    /// keeps the term as it is, like `glossaryAdd(_:)`.
+    fileprivate func glossaryAdd(_ text: String, fixed: String) throws {
+        let value = fixed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, let code = ui.languageCode ?? activeCode else { return try glossaryAdd(text) }
+        let store = try writableGlossary()
+        let map = [code: value]
+        try Self.validated { () throws(GlossaryError) in
+            _ = try GlossaryStore.validate(id: "", text: text, fixed: map, among: glossaryTerms, ignoring: nil)
+        }
+        ui.glossaryError = nil
+        saveGlossary { () throws(GlossaryError) in try await store.add(text: text, fixed: map) }
     }
 }
 

@@ -139,5 +139,8 @@ enum DemoData {
             if let i = ui.glossaryTerms.firstIndex(where: { $0.id == id }) { ui.glossaryTerms[i].text = text }
         }
         ui.glossaryDelete = { id in ui.glossaryTerms.removeAll { $0.id == id } }
+        ui.glossaryAddFixed = { text, fixed in
+            ui.glossaryTerms.append(Term(id: UUID().uuidString, text: text, fixed: [ui.languageCode ?? "en": fixed]))
+        }
     }
 }
