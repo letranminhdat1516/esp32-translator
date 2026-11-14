@@ -104,6 +104,11 @@ static void screen_timer_cb(lv_timer_t *t)
     if (s_shutting_down) {
         return;
     }
+    /* Pairing code up: lit whatever the lock or a double-tap says (the policy applies again once it closes) */
+    if (pair_ui_active()) {
+        set_screen(true);
+        return;
+    }
     /* Locked: the lock policy alone decides (activity, subtitles and toasts never light a locked panel) */
     int64_t now = esp_timer_get_time();
     modes_t m;

@@ -108,14 +108,21 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 
 ## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
 
-The board has this one service; it never asks for encryption (it still accepts no-prompt pairing if the phone
-starts it, and deletes a stale bond when a link fails its integrity check).
+The board has this one service. Text, control and the audio / control subscriptions need an **encrypted,
+authenticated link** (LE Secure Connections numeric comparison); board info stays open, so the app can read it
+before pairing. The first access to a protected characteristic fails with ATT error 0x05 (Insufficient
+Authentication) or 0x0F (Insufficient Encryption), and iOS shows its pairing dialog with 6 digits. The board shows
+the same 6 digits full screen ("Ghép với iPhone", **Sai** / **Đúng**), even when locked or dark, and goes back to
+what it showed afterwards; no answer in 30 s rejects. A bond made by older firmware (no code, unauthenticated) is
+upgraded: when such a link encrypts, the board asks for pairing once and streams nothing until the codes were
+confirmed. A stale bond (the link fails its integrity check) is deleted. Simulator: `pair:482913`, `pair:ok`,
+`pair:no`.
 
 | Characteristic | Properties | Payload |
 |---|---|---|
-| `…0002` audio | notify | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
-| `…0003` text | write / write-no-rsp | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect), 3 = language label |
-| `…0004` control | read / write / notify | 1 byte: 0 = board mic off, 1 = on; the app writes `0xFF` every 20 s as a keepalive, and the board stops streaming audio after 60 s without any app write |
+| `…0002` audio | notify (authenticated) | `[seq u16][predictor i16][index u8][IMA ADPCM 4-bit, low nibble first]`, 16 kHz mono |
+| `…0003` text | write / write-no-rsp (authenticated) | `[flags u8][kind u8][UTF-8]`. flags bit0 = first chunk, bit1 = last chunk. kind 0 = subtitle, 1 = status, 2 = time (`"<unix seconds> <UTC offset minutes>"`, ASCII, sent by the app on connect), 3 = language label |
+| `…0004` control | read / write / notify (authenticated) | 1 byte: 0 = board mic off, 1 = on; the app writes `0xFF` every 20 s as a keepalive, and the board stops streaming audio after 60 s without any app write |
 | `…0005` board info | read | `[protocol version u8][font sets u32 LE]`: which scripts the board can draw (latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16) |
 
 **The iPhone app talks to one board only.** Trust on first use: the first board it finds is pinned once the

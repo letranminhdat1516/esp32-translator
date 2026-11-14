@@ -28,6 +28,7 @@ add_executable(board-sim
     sim.c
     ${FW}/ui.c
     ${FW}/lock_ui.c
+    ${FW}/pair_ui.c
     ${FW}/modes.c
     ${FW}/glyphs.c
     ${FW}/font_store.c
