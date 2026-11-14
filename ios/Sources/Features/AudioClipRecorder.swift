@@ -257,20 +257,26 @@ enum WAV {
 // MARK: Mic tap
 
 /// Where the engine's mic path hands its converted (recognizer-format, pre-gate) buffers so "my" ring can be filled
-/// without the engine knowing about the recorder: `connect` installs itself as `MicSource.tap` (one hook line in
-/// `MicSource.handle`). Runs on the audio thread: only a lock-protected copy.
+/// without the engine knowing about the recorder: `install` (once, at launch) makes `feed` the `MicSource.tap` (one
+/// hook line in `MicSource.handle`); `connect` only changes the recorder and the side under the lock, so the audio
+/// thread never sees the tap itself change. Runs on the audio thread: only a lock-protected copy.
 enum MicPCMTap {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var target: (any AudioClipRecording)?
     nonisolated(unsafe) private static var side: Side = .mine
 
-    /// Sets the recorder the mic feeds, and which side the mic is (phone-only mode may route it to `.theirs`).
+    /// Makes `feed` the mic tap. Call once at launch, before the mic starts; later calls do nothing.
+    static func install() {
+        MicSource.installTap { MicPCMTap.feed($0) }
+    }
+
+    /// Sets the recorder the mic feeds, and which side the mic is (phone-only mode routes it to `.theirs` once the
+    /// engine has moved the mic). Never touches `MicSource.tap`.
     static func connect(_ recorder: (any AudioClipRecording)?, side: Side = .mine) {
         lock.lock()
         target = recorder
         self.side = side
         lock.unlock()
-        MicSource.tap = recorder == nil ? nil : { MicPCMTap.feed($0) }
     }
 
     static func feed(_ buffer: AVAudioPCMBuffer) {

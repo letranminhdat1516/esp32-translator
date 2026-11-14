@@ -59,8 +59,23 @@ private struct WearerLevelReset: @unchecked Sendable {
 /// before the close) and `onSpeechEnd` when the gate closes (all on the audio thread).
 final class MicSource {
     /// Sees every converted mic buffer before the gate (Track C: `MicPCMTap` fills the "mine" clip ring, memory
-    /// only). Set once at launch; called on the audio thread.
-    nonisolated(unsafe) static var tap: ((AVAudioPCMBuffer) -> Void)?
+    /// only). Called on the audio thread for every buffer, so it is written once, at launch, before any mic starts
+    /// (`installTap`); later installs are ignored. What it feeds changes behind its own lock, never by reassigning it.
+    nonisolated(unsafe) private(set) static var tap: ((AVAudioPCMBuffer) -> Void)?
+    /// How many times `tap` was written (tests: it must stay 1).
+    nonisolated(unsafe) private(set) static var tapInstallCount = 0
+    private static let tapLock = NSLock()
+
+    /// Installs the tap; a no-op once one is installed. Returns whether this call installed it.
+    @discardableResult
+    static func installTap(_ tap: @escaping (AVAudioPCMBuffer) -> Void) -> Bool {
+        tapLock.lock()
+        defer { tapLock.unlock() }
+        guard self.tap == nil else { return false }
+        self.tap = tap
+        tapInstallCount += 1
+        return true
+    }
 
     private let engine = AVAudioEngine()
     private let converter: BufferConverter

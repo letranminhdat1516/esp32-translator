@@ -110,9 +110,11 @@ struct ESPTranslatorApp: App {
         if demo == nil {
             // Track C: both clip rings (memory only; a clip is kept only for a line the user flags)
             let recorder = services.recorder
+            MicPCMTap.install()   // once, before the mic starts; connect only moves its target and side
             MicPCMTap.connect(recorder, side: .mine)
             controller.onTheirPCM = { pcm, rate in recorder.append(pcm, sampleRate: rate, side: .theirs) }
-            // Phone-only: the iPhone mic hears them, so its chunks go to their ring (back to mine after)
+            // Phone-only: the iPhone mic hears them, so its chunks go to their ring (back to mine after); called once the
+            // engine has rerouted the mic
             controller.onMicSide = { side in MicPCMTap.connect(recorder, side: side) }
         }
     }

@@ -1,3 +1,4 @@
+import AVFAudio
 import Foundation
 import Testing
 @testable import TranslatorCore
@@ -548,5 +549,49 @@ private final class ManualClock: @unchecked Sendable {
         #expect(item?.sensitive == true)
         #expect(item?.selected == false)
         #expect(item?.clipSeconds == nil)
+    }
+}
+
+// MARK: Mic tap
+
+@Suite(.serialized) struct MicPCMTapTests {
+    private static func buffer(_ value: Int16, frames: Int = 1_600) -> AVAudioPCMBuffer {
+        let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
+        let b = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+        b.frameLength = AVAudioFrameCount(frames)
+        for i in 0..<frames { b.int16ChannelData![0][i] = value }
+        return b
+    }
+
+    /// The audio thread reads `MicSource.tap` for every buffer: it is installed once and `connect` (every phone-only
+    /// toggle, every "Giữ để nói" press) only moves the target and side under the tap's lock.
+    @Test func connectNeverReassignsTheTap() throws {
+        MicPCMTap.install()
+        let installs = MicSource.tapInstallCount
+        #expect(installs >= 1)
+        #expect(MicSource.tap != nil)
+        let c = ManualClock()
+        let a = RingAudioClipRecorder(clock: c.clock), b = RingAudioClipRecorder(clock: c.clock)
+        MicPCMTap.connect(a, side: .mine)
+        MicPCMTap.connect(a, side: .theirs)
+        MicPCMTap.connect(nil)
+        MicPCMTap.connect(b, side: .mine)
+        MicPCMTap.install()   // a second install is ignored
+        #expect(MicSource.tapInstallCount == installs, "connect and later installs leave the tap alone")
+
+        // Buffers go to the recorder and side connected now
+        let tap = try #require(MicSource.tap)
+        c.t = 101
+        tap(Self.buffer(3))
+        #expect(b.clip(100.9...101, side: .mine) != nil)
+        #expect(a.clip(100.9...101, side: .mine) == nil && a.clip(100.9...101, side: .theirs) == nil)
+        MicPCMTap.connect(b, side: .theirs)
+        c.t = 102
+        tap(Self.buffer(4))
+        #expect(b.clip(101.9...102, side: .theirs) != nil)
+        MicPCMTap.connect(nil)
+        c.t = 103
+        tap(Self.buffer(5))   // nothing connected: dropped
+        #expect(b.clip(102.9...103, side: .theirs) == nil)
     }
 }

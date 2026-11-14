@@ -202,8 +202,9 @@ struct LiveControllerTests {
         rig.controller.onMicSide = { sides.append($0) }
         rig.ui.setPhoneOnly(true)
         #expect(rig.ui.phoneOnly)
-        #expect(sides == [.theirs], "the mic clip tap follows the iPhone mic to their ring")
+        #expect(sides.isEmpty, "the clip tap moves only once the engine has rerouted the mic")
         #expect(await eventually { await rig.fake.inputModes == [.phoneOnly] })
+        #expect(await eventually { sides == [.theirs] }, "the mic clip tap follows the iPhone mic to their ring")
         rig.ui.setPhoneOnly(true)   // repeated: nothing more
 
         rig.ui.startStop()   // stop
@@ -220,8 +221,8 @@ struct LiveControllerTests {
         rig.ui.holdToTalk(true)
         rig.ui.setPhoneOnly(false)
         #expect(!rig.ui.talkHeld, "leaving phone-only drops the hold")
-        #expect(sides == [.theirs, .mine, .theirs, .mine, .mine])
         #expect(await eventually { await rig.fake.inputModes == [.phoneOnly, .board] })
+        #expect(await eventually { sides == [.theirs, .mine, .theirs, .mine, .mine] })
     }
 
     /// Phone-only: no board audio arrives, so `feedTheirAudio` never reports a dead recognizer. The controller asks
