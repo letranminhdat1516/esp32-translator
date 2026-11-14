@@ -56,6 +56,7 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     private var _startAttempts: [String] = []
     private var _missingLatch: Latch?
     private var _speakFails = false
+    private var _missingByLanguage: [String: [MissingMsg]]?
 
     init(_ fake: FakeVoiceEngine) { self.fake = fake }
 
@@ -69,15 +70,27 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     var startAttempts: [String] { lock.withLock { _startAttempts } }
     /// `missing` waits for this latch.
     func holdMissing(_ latch: Latch) { lock.withLock { _missingLatch = latch } }
+    /// From now on `missing` answers per language (the pair's other code); a download removes the item everywhere
+    /// (a shared model, the Vietnamese recognizer, serves every pair).
+    func setMissing(byLanguage: [String: [MissingMsg]]) { lock.withLock { _missingByLanguage = byLanguage } }
     /// `speak` throws from now on.
     func failSpeak() { lock.withLock { _speakFails = true } }
 
     func capabilities(home: String) async throws -> Capabilities { try await fake.capabilities(home: home) }
     func missing(pair: PairMsg) async throws -> [MissingMsg] {
         if let latch = lock.withLock({ _missingLatch }) { await latch.wait() }
+        if let byLanguage = lock.withLock({ _missingByLanguage }) {
+            _ = try await fake.missing(pair: pair)
+            return byLanguage[pair.other] ?? []
+        }
         return try await fake.missing(pair: pair)
     }
-    func downloadItem(_ item: MissingMsg) async throws { try await fake.downloadItem(item) }
+    func downloadItem(_ item: MissingMsg) async throws {
+        lock.withLock {
+            if let m = _missingByLanguage { _missingByLanguage = m.mapValues { $0.filter { $0 != item } } }
+        }
+        try await fake.downloadItem(item)
+    }
     func start(pair: PairMsg, recognizerX: String, hints: [String]) async throws {
         let fails = lock.withLock { () -> Bool in
             _startAttempts.append(recognizerX)
@@ -375,6 +388,40 @@ struct ConversationControllerTests {
         rig.ui.download()
         #expect(await eventually { rig.ui.session == .running("en") })
         #expect(await rig.fake.downloaded == [item])
+        rig.controller.shutdown()
+    }
+
+    @Test func languageListIsRefreshedAfterADownload() async throws {
+        // The Vietnamese model serves every pair: downloading it for English makes Japanese ready too
+        let vi = MissingMsg(kind: .speechModel, language: "vi")
+        let rig = try await Rig()
+        rig.engine.setMissing(byLanguage: ["en": [vi], "ja": [vi]])
+        await rig.controller.start()
+        #expect(await eventually { rig.ui.session == .needsDownload("en", missing: [vi]) })
+        #expect(await eventually { rig.ui.packStatus["ja"] == .notDownloaded(megabytes: nil) })
+        rig.ui.download()
+        #expect(await eventually { rig.ui.session == .running("en") })
+        #expect(await eventually { rig.ui.packStatus["ja"] == .installed }, "Đã tải without reopening the list")
+        #expect(rig.ui.packStatus["en"] == .installed)
+        rig.controller.shutdown()
+    }
+
+    @Test func languageListIsRefreshedAfterALanguageChange() async throws {
+        let ja = MissingMsg(kind: .speechModel, language: "ja")
+        let rig = try await Rig()
+        rig.engine.setMissing(byLanguage: ["en": [], "ja": [ja]])
+        #expect(await rig.startRunning())
+        #expect(await eventually { rig.ui.packStatus["ja"] == .notDownloaded(megabytes: nil) })
+        // The Japanese model was removed for English meanwhile (Settings › General › Keyboard…), then the user picks
+        // Japanese and back: each change re-reads every language
+        rig.engine.setMissing(byLanguage: ["en": [MissingMsg(kind: .translation, language: "en")], "ja": [ja]])
+        rig.ui.pickLanguage("ja")
+        #expect(await eventually { rig.ui.session == .needsDownload("ja", missing: [ja]) })
+        #expect(await eventually { rig.ui.packStatus["en"] == .notDownloaded(megabytes: nil) }, "Tải again")
+        rig.engine.setMissing(byLanguage: ["en": [], "ja": []])
+        rig.ui.pickLanguage("en")
+        #expect(await eventually { rig.ui.session == .running("en") })
+        #expect(await eventually { rig.ui.packStatus["ja"] == .installed })
         rig.controller.shutdown()
     }
 

@@ -54,6 +54,8 @@ final class ConversationController {
     private(set) var session = Session(state: .loading, generation: 0)
     /// Bumped on every state change: an async step started for an older state drops its result.
     private var epoch = 0
+    /// The newest language-list refresh (`refreshPackStatus`); older ones drop their results.
+    private var packRefresh = 0
     private var started = false
     private var tasks: [Task<Void, Never>] = []
     /// One-off steps (checks, downloads, starts, glossary saves); cancelled by `shutdown`
@@ -289,6 +291,10 @@ final class ConversationController {
         ui.session = session.state
         Diag.log("session: \(old.state) → \(session.state) (gen \(session.generation))")
         enter(session.state)
+        switch event {
+        case .picked, .downloadDone, .downloadFailed: refreshPackStatus()
+        default: break
+        }
     }
 
     private func enter(_ state: SessionState) {
@@ -337,17 +343,19 @@ final class ConversationController {
 
     /// The language list's "Đã tải" / "Tải": what each offered language still misses (the Vietnamese voice aside).
     /// Track A (onboarding language step); the picked language's download shows over this.
+    /// Re-run after the catalog loads, after every download and after every language change (Settings or
+    /// onboarding), so the list never shows a stale "Tải" / "Đã tải". Only the newest refresh writes.
     private func refreshPackStatus() {
+        packRefresh += 1
         let codes = ui.offeredPacks.map(\.code), engine = self.engine, generation = session.generation
+        let token = packRefresh
         oneOff { [weak self] in
             for code in codes {
                 let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: generation)
                 guard let missing = try? await engine.missing(pair: pair) else { continue }
-                guard let self else { return }
+                guard let self, packRefresh == token else { return }
                 let blocking = missing.filter { $0.kind != .ttsVoice }
-                if ui.packStatus[code] != .installed {
-                    ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
-                }
+                ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
             }
         }
     }
