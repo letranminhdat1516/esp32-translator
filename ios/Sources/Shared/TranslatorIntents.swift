@@ -1,15 +1,8 @@
 import AppIntents
 import Foundation
 
-// The Live Activity buttons. `LiveActivityIntent`s run in the app process; the app sets the bridge's closures to
-// its conversation controller at launch (track D wires them).
-
-/// Routes the intents to the running app.
-@MainActor
-enum IntentBridge {
-    static var stop: () -> Void = {}
-    static var toggleBoardMic: () -> Void = {}
-}
+// The Live Activity buttons. `LiveActivityIntent`s run in the app process (the type is compiled into both the app
+// and the extension, which is what lets the system route it to the app); `IntentBridge` hands them to the app.
 
 struct StopConversationIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Stop conversation"
@@ -19,7 +12,7 @@ struct StopConversationIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        IntentBridge.stop()
+        IntentBridge.perform(.stop)
         return .result()
     }
 }
@@ -32,7 +25,7 @@ struct ToggleBoardMicIntent: LiveActivityIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        IntentBridge.toggleBoardMic()
+        IntentBridge.perform(.toggleBoardMic)
         return .result()
     }
 }

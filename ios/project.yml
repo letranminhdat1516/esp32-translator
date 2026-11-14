@@ -42,7 +42,8 @@ targets:
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
 
-  # Live Activity + Dynamic Island. Shares Sources/Shared (attributes, intents, views) and the copy with the app.
+  # Live Activity + Dynamic Island. Shares Sources/Shared (attributes, intents, views), the design tokens and the copy
+  # with the app. Bundle id = the app's + ".widgets"; embedded in the app through the dependency above.
   ESPTranslatorWidgets:
     type: app-extension
     platform: iOS
@@ -50,6 +51,9 @@ targets:
       - Widgets
       - Sources/Shared
       - Sources/UI/Copy.swift
+      # The design tokens and type scale (pure SwiftUI/CoreText), so the card uses the app's exact values
+      - Sources/DesignSystem/Tokens.swift
+      - Sources/DesignSystem/Fonts.swift
       - Sources/Resources/Fonts
       - {path: ../shared/copy, type: folder, buildPhase: resources}
     info:

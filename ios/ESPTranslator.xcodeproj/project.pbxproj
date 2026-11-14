@@ -64,6 +64,7 @@
 		712C78D85C3FF911A2A3BAC5 /* TranslatorIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE9129FCAB3350EC8C46E30 /* TranslatorIntents.swift */; };
 		71E25858D073606202B1141F /* UIState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D252157535003A9CC36E356B /* UIState.swift */; };
 		7295F3080D9D352528F1C67B /* Icons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F779D636AD143A9C13FBB1D8 /* Icons.swift */; };
+		7AB3A0700EA2E8855C88C62E /* IntentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FC4BD0207AFA74E37F2F0C /* IntentBridge.swift */; };
 		818B60BF819786D93A3E1981 /* FakeBoardLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CDC138628E302CED4D5C192 /* FakeBoardLink.swift */; };
 		82A561DF6B2504B7AAEB4CC3 /* UISamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6CACC952B345A7F7DDD1115 /* UISamples.swift */; };
 		8B01A8AD763525B3F1D1C21D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 456755789E04EF17A273C1D9 /* SettingsView.swift */; };
@@ -79,10 +80,12 @@
 		9A8934E28F548B0E488F7DFC /* ConversationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB582AC4013911623BCB7A9E /* ConversationController.swift */; };
 		9BA32CA9B8FF35E76CBF54B9 /* Capabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */; };
 		9E4CEF84E878F88DC06860EA /* InstrumentToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7CDA6B0BC702AEC81717F3 /* InstrumentToggle.swift */; };
+		9ECD45BA1EEDCFD5D4403158 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D277D90555328C55B5FE3E14 /* Tokens.swift */; };
 		A26118AB84CB1B89B51CC07B /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9C9A2162A8C4E5660FBF7 /* GlossaryView.swift */; };
 		A646C681DC9C7856853435F1 /* TranslatorActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */; };
 		A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA56EAB5FB91A561FBBF15AB /* Model.swift */; };
 		A9789BFDA93D00FD8C05649D /* TranslatorActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */; };
+		AA5DB9E7F92F69C9FAAD2B26 /* Fonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85CE2832A6504C65BB013F93 /* Fonts.swift */; };
 		ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1746279919516ABC5EF3518 /* Translator.swift */; };
 		AEDC99658CA73505BCFC5423 /* ESPTranslatorWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = A02EFA273F80C7EACB5C276F /* ESPTranslatorWidgets.swift */; };
 		B078770B47E992D1BF70F0AD /* HistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7849F9C82F919734C1299757 /* HistoryDetailView.swift */; };
@@ -116,6 +119,7 @@
 		F4D6AA350EC81E77F0632A10 /* SharedResources.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDDD0244854947584AA177BC /* SharedResources.swift */; };
 		F540FDA55B26986EABBABCF6 /* ESPLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */; };
 		F56ADA6B4F44ED3D9D22ACEC /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8A9EFE255DF29DA597AACF /* HistoryStore.swift */; };
+		F72B0881CB1ADBDC70A4A3B2 /* IntentBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5FC4BD0207AFA74E37F2F0C /* IntentBridge.swift */; };
 		FB70369B082F5210612493F5 /* AppleVoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA00F3F7391F50F6BE31A40 /* AppleVoiceEngine.swift */; };
 		FD9E804DBB06D6D6F857AF64 /* BoardLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 672D6DBE0831DC54A2C1D741 /* BoardLink.swift */; };
 		FEFAFABB2CA016A9D59CEF0F /* LanguageCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3226B32F8E34166980CB0601 /* LanguageCatalog.swift */; };
@@ -244,6 +248,7 @@
 		DE322D020C75A8D7983F780E /* StatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusDot.swift; sourceTree = "<group>"; };
 		E2FA2A909D240F750B52046E /* BoardLostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLostView.swift; sourceTree = "<group>"; };
 		E5F5F9AE24F83469949F2EC8 /* InstrumentScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstrumentScreen.swift; sourceTree = "<group>"; };
+		E5FC4BD0207AFA74E37F2F0C /* IntentBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntentBridge.swift; sourceTree = "<group>"; };
 		EA56EAB5FB91A561FBBF15AB /* Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Model.swift; sourceTree = "<group>"; };
 		EB582AC4013911623BCB7A9E /* ConversationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationController.swift; sourceTree = "<group>"; };
 		EBDA6DB65733535938AD2B0E /* TextPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextPipeline.swift; sourceTree = "<group>"; };
@@ -390,6 +395,7 @@
 			isa = PBXGroup;
 			children = (
 				967E6B11A49087ED395A0F45 /* ActivityViews.swift */,
+				E5FC4BD0207AFA74E37F2F0C /* IntentBridge.swift */,
 				49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */,
 				0AE9129FCAB3350EC8C46E30 /* TranslatorIntents.swift */,
 			);
@@ -677,6 +683,9 @@
 				5A9360256001ADBBDD2AFAF9 /* ActivityViews.swift in Sources */,
 				F1BD4D410217D2056842767B /* Copy.swift in Sources */,
 				AEDC99658CA73505BCFC5423 /* ESPTranslatorWidgets.swift in Sources */,
+				AA5DB9E7F92F69C9FAAD2B26 /* Fonts.swift in Sources */,
+				7AB3A0700EA2E8855C88C62E /* IntentBridge.swift in Sources */,
+				9ECD45BA1EEDCFD5D4403158 /* Tokens.swift in Sources */,
 				A646C681DC9C7856853435F1 /* TranslatorActivityAttributes.swift in Sources */,
 				712C78D85C3FF911A2A3BAC5 /* TranslatorIntents.swift in Sources */,
 			);
@@ -729,6 +738,7 @@
 				05C9F45B485289D7A9173EAA /* InstrumentButton.swift in Sources */,
 				59155F32885632D33FD1427E /* InstrumentScreen.swift in Sources */,
 				9E4CEF84E878F88DC06860EA /* InstrumentToggle.swift in Sources */,
+				F72B0881CB1ADBDC70A4A3B2 /* IntentBridge.swift in Sources */,
 				FEFAFABB2CA016A9D59CEF0F /* LanguageCatalog.swift in Sources */,
 				9206E39230C5F6B7E52E73D9 /* LanguageView.swift in Sources */,
 				950B92364372F6B045C35AE4 /* LevelModel.swift in Sources */,
