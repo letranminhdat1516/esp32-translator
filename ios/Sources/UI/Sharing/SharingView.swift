@@ -194,6 +194,7 @@ struct ExportFile: Identifiable {
             try? FileManager.default.removeItem(at: dst)
             do {
                 try FileManager.default.copyItem(at: tmp, to: dst)
+                DataProtection.protect(dst)
                 result = dst
             } catch {
                 Diag.log("feedback: zip copy failed: \(error)")

@@ -116,8 +116,8 @@ actor InMemoryHistoryStore: HistoryStoring {
 /// The file store: one JSON file per session in `directory` (Application Support/History, excluded from backup).
 ///
 /// Writes are batched: an append marks its session dirty and schedules one flush `flushDelay` later (2 s); `flush()`
-/// writes immediately (conversation stopped, app in the background). Every file is written atomically and then
-/// flagged excluded from backup. A file that cannot be read is set aside as `<name>.corrupt` and logged; it never
+/// writes immediately (conversation stopped, app in the background). Every file is written atomically with the
+/// `completeUnlessOpen` protection class (`DataProtection`) and then flagged excluded from backup. A file that cannot be read is set aside as `<name>.corrupt` and logged; it never
 /// stops the others from loading. Runs off the main actor.
 actor FileHistoryStore: HistoryStoring {
     static func defaultDirectory() throws -> URL {
@@ -202,7 +202,7 @@ actor FileHistoryStore: HistoryStoring {
             guard let s = all[id] else { continue }
             var url = file(id)
             do {
-                try encoder.encode(s).write(to: url, options: .atomic)
+                try encoder.encode(s).write(to: url, options: DataProtection.writeOptions)
                 writeCount += 1
                 Self.excludeFromBackup(&url)
             } catch {
@@ -228,7 +228,7 @@ actor FileHistoryStore: HistoryStoring {
 
     private func ensureDirectory() throws {
         var dir = directory
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(dir)
         Self.excludeFromBackup(&dir)
     }
 

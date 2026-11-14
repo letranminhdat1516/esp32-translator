@@ -239,7 +239,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let fm = FileManager.default
         try? fm.removeItem(at: folder)
         try ensure(exportsDirectory)
-        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(folder)
         var entries: [FeedbackExportItem] = []
         for (i, item) in chosen.enumerated() {
             var wav: String?
@@ -248,6 +248,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
                 if fm.fileExists(atPath: src.path) {
                     let dst = String(format: "%02d.wav", i + 1)
                     try fm.copyItem(at: src, to: folder.appendingPathComponent(dst))
+                    DataProtection.protect(folder.appendingPathComponent(dst))
                     wav = dst
                 }
             }
@@ -259,7 +260,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(entries).write(to: folder.appendingPathComponent("items.json"), options: .atomic)
+        try encoder.encode(entries).write(to: folder.appendingPathComponent("items.json"),
+                                          options: DataProtection.writeOptions)
         return FeedbackExport(folder: folder, itemIDs: chosen.map(\.id))
     }
 
@@ -296,7 +298,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
             do {
                 try ensure(clipsDirectory)
                 let name = "\(Self.safeName(item.id)).wav"
-                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: .atomic)
+                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: DataProtection.writeOptions)
                 list[i].clipFile = name
                 heldClips[item.id] = nil
             } catch {
@@ -310,7 +312,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
     }
 
     private func ensure(_ dir: URL) throws {
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try DataProtection.ensureDirectory(dir)
+        if dir != directory { DataProtection.protect(directory) }
         var root = directory
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
@@ -323,7 +326,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.sortedKeys]
-            try encoder.encode(list).write(to: directory.appendingPathComponent("queue.json"), options: .atomic)
+            try encoder.encode(list).write(to: directory.appendingPathComponent("queue.json"),
+                                           options: DataProtection.writeOptions)
         } catch {
             Diag.log("feedback: save failed: \(error)")
         }

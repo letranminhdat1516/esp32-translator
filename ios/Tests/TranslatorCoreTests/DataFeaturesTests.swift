@@ -502,6 +502,29 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await reloaded.clipData("s") == nil)
     }
 
+    /// History and feedback files carry `completeUnlessOpen`: written with it, directories created with it.
+    @Test func filesAreWrittenWithCompleteUnlessOpen() async throws {
+        #expect(DataProtection.fileProtection == .completeUnlessOpen)
+        #expect(DataProtection.protectedWriteOptions.contains(.completeFileProtectionUnlessOpen))
+        #expect(DataProtection.protectedWriteOptions.contains(.atomic))
+        #if os(iOS)
+        #expect(DataProtection.enabled && DataProtection.writeOptions == DataProtection.protectedWriteOptions)
+        #else
+        // macOS honours the class and would lock this unentitled test process out of its own files
+        #expect(!DataProtection.enabled && DataProtection.writeOptions == [.atomic])
+        #endif
+        let dir = tempDir().appendingPathComponent("Feedback")
+        let q = FileFeedbackQueue(directory: dir)
+        await q.add(Self.item("a"), clip: WAV.encode([1, 2, 3], sampleRate: 16_000))
+        #expect(await q.clipURL("a") != nil)
+        #expect(FileManager.default.fileExists(atPath: dir.appendingPathComponent("queue.json").path))
+        let hdir = tempDir().appendingPathComponent("History")
+        let h = FileHistoryStore(directory: hdir)
+        await h.append(line("a", id: "1"), sessionID: "s", languageCode: "en")
+        await h.flush()
+        #expect(FileManager.default.fileExists(atPath: hdir.appendingPathComponent("s.json").path))
+    }
+
     @Test func corruptQueueStartsEmpty() async throws {
         let dir = tempDir()
         try Data("[{".utf8).write(to: dir.appendingPathComponent("queue.json"))
