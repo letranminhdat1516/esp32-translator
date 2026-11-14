@@ -11,12 +11,20 @@ struct ESPTranslatorApp: App {
     @State private var services: AppServices
     private let controller: ConversationController
     private let demo: DemoScreen?
+    /// Live Activity (track D): screen model → activity, and the board-forgotten end.
+    private let activityDriver: LiveActivityDriver
+    private let activityObserver: LiveActivityObserver?
 
     init() {
         let ui = UIState()
-        let demo = DemoScreen.parse(CommandLine.arguments)
+        // `-demo lockactivity`: the Live screen's demo data plus a real Live Activity (simulator screenshots)
+        let lockActivityDemo = LiveActivityDemo.requested(CommandLine.arguments)
+        let demo = DemoScreen.parse(CommandLine.arguments) ?? (lockActivityDemo ? .live : nil)
+        let liveActivity: (any LiveActivityControlling)? =
+            demo == nil || lockActivityDemo ? LiveActivitySetup.makeController() : nil
         // Demo mode shows the canvas' version label
-        let services = demo == nil ? AppServices() : AppServices(appVersion: "0.9")
+        let services = demo == nil ? AppServices(liveActivity: liveActivity)
+                                   : AppServices(liveActivity: liveActivity, appVersion: "0.9")
         self.demo = demo
         if let demo {
             let router = AppRouter(defaults: nil)
@@ -52,9 +60,19 @@ struct ESPTranslatorApp: App {
                 link.sendTime()
             }
         }
-        // The Live Activity buttons run in this process (track D completes the wiring)
-        IntentBridge.stop = { if ui.listening { ui.startStop() } }
-        IntentBridge.toggleBoardMic = { ui.toggleBoardMic() }
+        // The Live Activity: follows the conversation (listening, latest phrase pair, board mic, battery); its
+        // buttons run in this process through the bridge
+        let driver = LiveActivityDriver(controller: services.liveActivity)
+        activityDriver = driver
+        IntentBridge.install { LiveActivityActions.handle($0, ui: ui, driver: driver) }
+        if demo == nil || lockActivityDemo {
+            // An activity left by a crash or a kill of an earlier run goes away at launch
+            services.liveActivity.end()
+            activityObserver = LiveActivityObserver(ui: ui, driver: driver)
+            LiveActivitySetup.installTerminationHook()
+        } else {
+            activityObserver = nil
+        }
         _ui = State(initialValue: ui)
         _services = State(initialValue: services)
     }
@@ -63,6 +81,7 @@ struct ESPTranslatorApp: App {
         WindowGroup {
             RootView(ui: ui, router: router, services: services) {
                 ui.forgetBoard()
+                activityDriver.endNow()
                 router.restartPairing()
             }
             .task { if demo == nil { await controller.start() } }

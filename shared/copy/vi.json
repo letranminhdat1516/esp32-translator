@@ -186,5 +186,13 @@
   "activity.micOff": "Tắt mic board",
   "activity.micOn": "Bật mic board",
   "activity.stop": "Dừng",
-  "activity.island": "Dynamic Island: đang dịch {code} sang VI"
+  "activity.island": "Dynamic Island: đang dịch {code} sang VI",
+  "activity.lang.en": "tiếng Anh",
+  "activity.lang.de": "tiếng Đức",
+  "activity.lang.es": "tiếng Tây Ban Nha",
+  "activity.lang.fr": "tiếng Pháp",
+  "activity.lang.ja": "tiếng Nhật",
+  "activity.lang.ko": "tiếng Hàn",
+  "activity.lang.th": "tiếng Thái",
+  "activity.lang.zh": "tiếng Trung"
 }
