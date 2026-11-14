@@ -263,6 +263,24 @@ private final class ManualClock: @unchecked Sendable {
         #expect(rec.clip(100...100.2, side: .theirs).map(Self.samples)?.count == 3_200)
     }
 
+    /// A chunk stamped early (callback jitter) must not overlap the previous span: its audio follows it, so a clip
+    /// never holds the same stretch twice.
+    @Test func aJitteredEarlyChunkNeverOverlapsThePreviousSpan() {
+        let c = ManualClock()
+        let rec = RingAudioClipRecorder(clock: c.clock)
+        // 0.5 s of 1s ending at 101, then 0.5 s of 2s stamped as ending at 101.4 (0.1 s too early)
+        rec.append([Int16](repeating: 1, count: 8_000), sampleRate: 16_000, side: .mine, endingAt: 101)
+        rec.append([Int16](repeating: 2, count: 8_000), sampleRate: 16_000, side: .mine, endingAt: 101.4)
+        let all = rec.clip(100...102, side: .mine).map(Self.samples) ?? []
+        #expect(all.count == 16_000, "no duplicated audio")
+        #expect(all.prefix(8_000).allSatisfy { $0 == 1 })
+        #expect(all.suffix(8_000).allSatisfy { $0 == 2 })
+        // The overlap stretch is not heard twice, and the late chunk follows the first one
+        #expect(rec.clip(100.9...101.0, side: .mine).map(Self.samples)?.count == 1_600)
+        let late = rec.clip(101.0...101.5, side: .mine).map(Self.samples) ?? []
+        #expect(late.count == 8_000 && late.allSatisfy { $0 == 2 })
+    }
+
     @Test func resamplesOtherRates() {
         let c = ManualClock()
         let rec = RingAudioClipRecorder(clock: c.clock)

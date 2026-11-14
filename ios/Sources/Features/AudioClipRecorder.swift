@@ -69,7 +69,8 @@ final class NoopAudioClipRecorder: AudioClipRecording, @unchecked Sendable {
 ///
 /// Each ring keeps the samples plus the spans of time they cover (`Segment`): audio arrives in bursts (the board
 /// only sends while someone talks), so sample index and time are related per contiguous span. A chunk whose start
-/// is within `joinTolerance` of the previous span's end extends that span. `clip` copies the samples of every span
+/// is within `joinTolerance` of the previous span's end extends that span; one stamped earlier than that end is moved
+/// to it (spans never overlap). `clip` copies the samples of every span
 /// overlapping the range and fills the gaps between them with silence.
 final class RingAudioClipRecorder: AudioClipRecording, @unchecked Sendable {
     static let sampleRate = 16_000
@@ -165,6 +166,9 @@ final class RingAudioClipRecorder: AudioClipRecording, @unchecked Sendable {
                 start += Double(drop) / Double(RingAudioClipRecorder.sampleRate)
                 samples = samples.dropFirst(drop)
             }
+            // A chunk stamped before the previous span ends (callback jitter) follows it instead: overlapping spans
+            // would play the same stretch twice in a clip
+            if let last = segments.last, start < last.end { start = last.end }
             if var last = segments.last, abs(last.end - start) <= Self.joinTolerance {
                 last.count += samples.count
                 segments[segments.count - 1] = last
