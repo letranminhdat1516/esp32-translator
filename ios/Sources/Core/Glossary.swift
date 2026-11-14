@@ -25,7 +25,8 @@ enum GlossaryError: Error, Equatable, Sendable {
     case readOnly
 }
 
-/// The user's glossary (R11): a JSON list of `Term` (the pack term format) in one file, on the phone only (R17).
+/// The user's glossary (R11): a JSON list of `Term` (the pack term format) in one file, on the phone only (R17):
+/// the file is excluded from iCloud backup after every write and when an existing file is opened.
 /// Limits: 500 terms, 64 characters per term (and per variant and fixed translation), 8 variants; control characters
 /// and bidirectional overrides (U+202A–U+202E, U+2066–U+2069) are rejected, and every term or variant is unique
 /// ignoring case.
@@ -171,6 +172,7 @@ actor GlossaryStore {
         } catch {
             throw .writeFailed(String(describing: error))
         }
+        Self.excludeFromBackup(file)   // the atomic write replaced the file: the new one has no flag yet
         terms = next
         broadcast.send(next)
     }
@@ -195,9 +197,23 @@ actor GlossaryStore {
                     throw GlossaryError.duplicateTerm(field: "text", value: s)
                 }
             }
+            excludeFromBackup(file)   // a file from before the flag, or restored from an old backup
             return (loaded, false, false)
         } catch {
             return ([], true, !setAside(file, now: clock()))
+        }
+    }
+
+    /// Keeps the glossary out of iCloud backup (R17, ARCHITECTURE §4). Best effort: the terms are already saved, so a
+    /// failure is only logged.
+    private static func excludeFromBackup(_ file: URL) {
+        var url = file
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do {
+            try url.setResourceValues(values)
+        } catch {
+            Diag.log("glossary: could not exclude the file from backup: \(error)")
         }
     }
 

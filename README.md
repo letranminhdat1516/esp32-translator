@@ -140,6 +140,14 @@ is unchanged, except that the iPhone app now also writes `0xFF` to the control c
 heartbeat (0..2 are the mic states): the board leaves the iPhone audio role after 60 s without any write from the
 app, because a bonded iPhone keeps the link up for notifications after the app is gone.
 
+**The iPhone app talks to one board only.** The first board it finds is pinned once its setup is done and the
+encrypted Claude answer subscription succeeded on that link (the board is bonded). From then on the app reconnects
+only that board, by its CoreBluetooth identifier, and never connects another device advertising the board service;
+until the encrypted subscription succeeds on a link, nothing the board sends on the Claude service reaches the relay.
+With a new board, turn the old one off and pick **Quên board** in the settings menu: the pin is cleared and the app
+looks for a board again. A phone with no Mac paired for the relay never makes the encrypted subscription, so it keeps
+finding the first board by scan without pinning it.
+
 ## Getting started
 
 > **Update the iOS app, the Mac daemon and the board firmware together.** They depend on each other's

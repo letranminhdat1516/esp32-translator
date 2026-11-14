@@ -10,6 +10,11 @@ import os
 /// clock and the language label (kind 3) resent whenever the link becomes ready, the 20 s keepalive, a services
 /// reset handled on the same connection, a generation-guarded text queue and a reconnect backoff
 /// (first rescan at once, then 0.5 s → 10 s).
+/// Board pinning (P9, `BoardPin`): the first board is pinned once its setup finished and an encrypted access (the
+/// Claude answer subscription) succeeded on that link; from then on only that identifier is reconnected
+/// (`retrievePeripherals(withIdentifiers:)` + a pending connect, which waits for the board indefinitely) and no
+/// other device is ever connected. Board → relay traffic is forwarded only once the encrypted access succeeded on
+/// the current link. `forgetBoard()` drops the pin and scans again.
 /// The callbacks (`onAudioPacket`, `onStateChange`, `onMicChange`) stay for ConversationEngine.
 final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     typealias State = BoardState
@@ -93,7 +98,14 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     /// The relay's last setClaudeSubscribed (a delayed auth retry must not resubscribe after an unsubscribe)
     private var claudeAnswerWanted = false
 
+    /// The pinned board and what the current link has proven (BLE queue); the pin is kept in `pinStore`
+    private let pinStore: BoardPinStore
+    private var pin: BoardPin
+
     override init() {
+        let store = BoardPinStore()
+        pinStore = store
+        pin = BoardPin(pinned: store.load())
         super.init()
         central = CBCentralManager(delegate: self, queue: queue)
     }
@@ -143,6 +155,29 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
             guard let peripheral, let c = claudeAnswerChar else { return }
             answerRetried = false
             peripheral.setNotifyValue(on, for: c)
+        }
+    }
+
+    /// Forgets the pinned board (the user has a new one) and looks for a board again. A connected board is
+    /// dropped first; the rescan follows its disconnect.
+    func forgetBoard() {
+        queue.async { [self] in
+            Diag.log("ble: forgetting the pinned board")
+            pinStore.save(nil)
+            pin.forget()
+            retry?.cancel()
+            retry = nil
+            guard let old = peripheral else {
+                if central.state == .poweredOn { startScan() }
+                return
+            }
+            central.cancelPeripheralConnection(old)
+            linkGone()   // nothing more from it reaches the relay, even before the disconnect arrives
+            backoff.reset()
+            if old.state == .connected { return }   // didDisconnectPeripheral rescans at once
+            // A pending connect (the pinned board was away): no disconnect to wait for
+            peripheral = nil
+            if central.state == .poweredOn { startScan() }
         }
     }
 
@@ -205,6 +240,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private func linkGone() {
         translatorGone()
         translatorWritten = false
+        pin.linkGone()
         let hadClaude = claudeRequestChar != nil
         claudeRequestChar = nil
         claudeAnswerChar = nil
@@ -259,20 +295,39 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private func startScan() {
         retry?.cancel()
         retry = nil
-        if let known = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
-            connect(known)
-            return
+        switch pin.reconnect {
+        case .pinned(let id):
+            // The pinned board only, by identifier: the connect stays pending until the board is back
+            if let board = central.retrievePeripherals(withIdentifiers: [id]).first {
+                connect(board, waiting: true)
+                return
+            }
+            // The system no longer knows it (e.g. after a Bluetooth reset): scan, but only `id` is connected
+        case .discover:
+            if let known = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
+                connect(known)
+                return
+            }
         }
         central.scanForPeripherals(withServices: [Self.service])
         setState(.scanning)
     }
 
-    private func connect(_ p: CBPeripheral) {
+    /// `waiting`: a pending connect to the pinned board, which may be away (the screen keeps "looking for the board")
+    private func connect(_ p: CBPeripheral, waiting: Bool = false) {
         central.stopScan()
         peripheral = p
         p.delegate = self
+        pin.connecting(p.identifier)
         central.connect(p)
-        setState(.connecting)
+        setState(waiting ? .scanning : .connecting)
+    }
+
+    /// The pin is proven (setup and encrypted access on one link): keep it (BLE queue)
+    private func keepPin(_ id: UUID?) {
+        guard let id else { return }
+        pinStore.save(id)
+        Diag.log("ble: board pinned")
     }
 }
 
@@ -291,18 +346,28 @@ extension ESPLink: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        // With a pinned board, any other device advertising the board service is ignored
+        guard pin.mayConnect(peripheral.identifier) else { return }
         connect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard peripheral === self.peripheral else {
+            central.cancelPeripheralConnection(peripheral)   // given up on (forgetBoard) while it was pending
+            return
+        }
+        if currentState == .scanning { setState(.connecting) }   // the pending connect to the pinned board
         peripheral.discoverServices([Self.service, Self.claudeService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        guard peripheral === self.peripheral else { return }
         scheduleRescan()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        // A peripheral given up on (forgetBoard) is not the link any more
+        guard peripheral === self.peripheral else { return }
         linkGone()
         scheduleRescan()
     }
@@ -390,6 +455,7 @@ extension ESPLink: CBPeripheralDelegate {
             startKeepalive()
         }
         backoff.reset()
+        keepPin(pin.setupFinished())
         setState(.ready)
     }
 
@@ -422,8 +488,14 @@ extension ESPLink: CBPeripheralDelegate {
             controlEvents.send(.micChanged(state != 0))
             onTranslatorActive?()   // the board notifies the control value when it gives the role back
         } else if characteristic.uuid == Self.claudeAnswer {
+            // Only from a link that passed an encrypted access (P9): an unproven device never reaches the Mac
+            guard pin.claudeTrusted else {
+                Diag.log("ble: claude input dropped: no encrypted access on this link yet")
+                return
+            }
             onClaudeInput?(value)
         } else if characteristic.uuid == Self.claudeVoice {
+            guard pin.claudeTrusted else { return }
             onClaudeVoice?(value)
         }
     }
@@ -449,6 +521,10 @@ extension ESPLink: CBPeripheralDelegate {
             }
             onClaudeSubscribed?(false)
             return
+        }
+        // The answer CCCD write needs an encrypted link: it succeeding proves this link (and may pin the board)
+        if c.isNotifying, peripheral === self.peripheral, c === claudeAnswerChar {
+            keepPin(pin.encryptedAccessSucceeded())
         }
         onClaudeSubscribed?(c.isNotifying)
     }

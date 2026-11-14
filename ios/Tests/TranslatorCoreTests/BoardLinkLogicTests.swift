@@ -216,3 +216,103 @@ private final class FakeChar {}
                 == BoardInfo(protocolVersion: 1, fontSets: FontSets(rawValue: 0x1F)))
     }
 }
+
+// MARK: Board pinning (P9 access control)
+
+@Suite struct BoardPinTests {
+    private let board = UUID()
+    private let stranger = UUID()
+
+    @Test func withoutAPinTheFirstBoardIsFoundByScanning() {
+        let pin = BoardPin(pinned: nil)
+        #expect(pin.reconnect == .discover)
+        #expect(pin.mayConnect(board))
+        #expect(pin.mayConnect(stranger))
+    }
+
+    /// A pinned board is reconnected by identifier only: a device found by a scan that is not the pinned board is
+    /// never connected, even when it advertises the board service
+    @Test func aPinnedBoardIsReconnectedByIdentifierOnly() {
+        let pin = BoardPin(pinned: board)
+        #expect(pin.reconnect == .pinned(board))
+        #expect(pin.mayConnect(board))
+        #expect(!pin.mayConnect(stranger))
+    }
+
+    @Test func theBoardIsPinnedOnlyOnceSetupAndAnEncryptedAccessSucceededOnTheSameLink() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        #expect(pin.setupFinished() == nil)          // set up, but nothing proves the link is the bonded board yet
+        #expect(pin.pinned == nil)
+        #expect(pin.encryptedAccessSucceeded() == board)
+        #expect(pin.pinned == board)
+        #expect(pin.reconnect == .pinned(board))
+        // Already pinned: nothing more to persist
+        #expect(pin.setupFinished() == nil)
+        #expect(pin.encryptedAccessSucceeded() == nil)
+    }
+
+    @Test func theOrderOfSetupAndEncryptedAccessDoesNotMatter() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        #expect(pin.encryptedAccessSucceeded() == nil)
+        #expect(pin.setupFinished() == board)
+        #expect(pin.pinned == board)
+    }
+
+    /// Setup on one link and an encrypted access on another (a drop in between) do not pin
+    @Test func aDropResetsWhatTheLinkHasProven() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.setupFinished()
+        pin.linkGone()
+        #expect(pin.encryptedAccessSucceeded() == nil)   // no link
+        pin.connecting(stranger)
+        #expect(pin.encryptedAccessSucceeded() == nil)   // this link was not set up yet
+        #expect(pin.pinned == nil)
+    }
+
+    /// First connection: the relay forwards nothing from the board until an encrypted access succeeded on this link
+    @Test func claudeTrafficWaitsForTheEncryptedAccess() {
+        var pin = BoardPin(pinned: nil)
+        #expect(!pin.claudeTrusted)
+        pin.connecting(board)
+        _ = pin.setupFinished()
+        #expect(!pin.claudeTrusted)
+        _ = pin.encryptedAccessSucceeded()
+        #expect(pin.claudeTrusted)
+        pin.linkGone()
+        #expect(!pin.claudeTrusted)
+        // The next link of the pinned board proves itself again (the board's Claude service is encrypted)
+        pin.connecting(board)
+        #expect(!pin.claudeTrusted)
+        _ = pin.encryptedAccessSucceeded()
+        #expect(pin.claudeTrusted)
+    }
+
+    @Test func forgettingClearsThePinAndTheLinkTrust() {
+        var pin = BoardPin(pinned: board)
+        pin.connecting(board)
+        _ = pin.encryptedAccessSucceeded()
+        pin.forget()
+        #expect(pin.pinned == nil)
+        #expect(pin.reconnect == .discover)
+        #expect(!pin.claudeTrusted)
+        #expect(pin.mayConnect(stranger))
+    }
+
+    @Test func thePinIsKeptInUserDefaults() throws {
+        let suite = "board-pin-tests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BoardPinStore(defaults: defaults)
+        #expect(store.load() == nil)
+        store.save(board)
+        #expect(BoardPinStore(defaults: defaults).load() == board)
+        store.save(nil)
+        #expect(BoardPinStore(defaults: defaults).load() == nil)
+        // Anything that is not a UUID is no pin
+        defaults.set("not a uuid", forKey: BoardPinStore.key)
+        #expect(store.load() == nil)
+    }
+}
