@@ -80,8 +80,11 @@ struct LiveControllerTests {
         rig.mine("xin chào", final: true)
         #expect(await eventually { rig.ui.boardSubtitle == "[en]xin chào" })
         #expect(await eventually { rig.sent(.subtitle).last == "[en]xin chào" })
+        var cleared = 0
+        rig.controller.onClear = { cleared += 1 }
         rig.ui.clear()
         #expect(rig.ui.boardSubtitle == "")
+        #expect(cleared == 1, "clearing the conversation also drops the buffered clip audio")
     }
 
     @Test func linesCarryAudioRangesOnTheSessionClock() async throws {

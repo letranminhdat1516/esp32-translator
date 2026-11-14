@@ -556,6 +556,18 @@ private final class ManualClock: @unchecked Sendable {
         #expect(services.feedbackItems.first?.correctedTranslation == "Chợ Bến Thành (Q1)")
     }
 
+    @Test func turningSharingOffDropsTheBufferedAudio() {
+        let (data, ui, _, _, _, recorder) = rig(share: true)
+        defer { withExtendedLifetime(data) {} }
+        recorder.append([Int16](repeating: 1, count: 32_000), sampleRate: 16_000, side: .theirs, endingAt: 102)
+        recorder.append([Int16](repeating: 1, count: 16_000), sampleRate: 16_000, side: .mine, endingAt: 102)
+        ui.setShareToImprove(true)
+        #expect(recorder.clip(100.5...101.5, side: .theirs) != nil)
+        ui.setShareToImprove(false)
+        #expect(recorder.clip(100.5...101.5, side: .theirs) == nil)
+        #expect(recorder.clip(101...102, side: .mine) == nil)
+    }
+
     @Test func correctionAfterReportIsStoredOnTheReportedItem() async {
         let (data, ui, services, _, _, _) = rig(share: true)
         defer { withExtendedLifetime(data) {} }

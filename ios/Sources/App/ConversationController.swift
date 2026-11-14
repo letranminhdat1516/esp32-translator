@@ -119,6 +119,8 @@ final class ConversationController {
     /// held): the app points the mic clip tap (`MicPCMTap`) at that ring. Called once the engine finished moving
     /// the mic, on the main actor.
     var onMicSide: ((Side) -> Void)?
+    /// Track C hook: the conversation was cleared (the app drops the clip rings with it).
+    var onClear: (() -> Void)?
 
     /// `packs` are every bundled pack, the home language (`LanguageCatalog.homeCode`) included. `glossary` nil: no
     /// glossary (the editor reports "Không lưu được").
@@ -286,6 +288,7 @@ final class ConversationController {
         ranges.reset()
         editedLines.removeAll()
         sendSubtitle("")
+        onClear?()
     }
 
     // MARK: Session machine

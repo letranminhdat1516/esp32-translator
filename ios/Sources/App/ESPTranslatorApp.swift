@@ -116,6 +116,8 @@ struct ESPTranslatorApp: App {
             // Phone-only: the iPhone mic hears them, so its chunks go to their ring (back to mine after); called once the
             // engine has rerouted the mic
             controller.onMicSide = { side in MicPCMTap.connect(recorder, side: side) }
+            // "Xoá" drops the clip audio with the transcript (turning sharing off does too, DataCoordinator)
+            controller.onClear = { recorder.reset() }
         }
     }
 

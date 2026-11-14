@@ -80,9 +80,11 @@ final class DataCoordinator {
         Task { await store.setEnabled(on) }
     }
 
+    /// Off also drops the audio the clip rings hold.
     func setShare(_ on: Bool) {
         ui.shareToImprove = on
         defaults?.set(on, forKey: DataSettings.shareKey)
+        if !on { services.recorder.reset() }
     }
 
     /// "Báo dịch sai" on `line`: the clip is taken now (the ring keeps only 20 s), held in memory, and kept only if
