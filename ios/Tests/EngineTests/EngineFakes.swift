@@ -74,12 +74,16 @@ final class FakeSession: EngineAudioSession {
     let log: CallLog
     var onChange: ((AudioSessionChange) -> Void)?
     var currentRoute: AudioRoute = .headset
+    var headsetConnected = true
     var failConfigure = false
+    private(set) var routes: [InputRoute] = []
 
     init(log: CallLog) { self.log = log }
 
-    func configureForConversation() throws {
-        log.calls.append("session.configure")
+    func configureForConversation(_ route: InputRoute) throws {
+        // Board mode logs as before; the phone-only routes name their target
+        log.calls.append(route == .board ? "session.configure" : "session.configure \(route.target.rawValue)")
+        routes.append(route)
         if failConfigure { throw FakeFailure() }
     }
     func stopSilence() { log.calls.append("session.stopSilence") }
@@ -143,6 +147,8 @@ final class EngineRig {
     var recognizers: [String: [FakeRecognizer]]
     private(set) var speakers: [FakeSpeaker] = []
     private(set) var mics: [FakeMic] = []
+    /// Per mic made: whether it had the own-voice gate
+    private(set) var micGated: [Bool] = []
     var micFails = false
     var micPermitted = true
     private(set) var translatorsMade: [String] = []
@@ -168,8 +174,9 @@ final class EngineRig {
                 speakers.append(s)
                 return s
             },
-            makeMic: { [unowned self] _, _, sink, onStart, onFinalize, onEnd in
+            makeMic: { [unowned self] _, gate, sink, onStart, onFinalize, onEnd in
                 log.calls.append("mic.make")
+                micGated.append(gate != nil)
                 let m = FakeMic(fail: micFails, sink: sink, onSpeechStart: onStart, onFinalize: onFinalize,
                                 onSpeechEnd: onEnd)
                 mics.append(m)

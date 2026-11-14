@@ -35,6 +35,9 @@ final class ConversationController {
     static var unclearCue: String { Copy.t("cue.unclear") }
 
     let ui: UIState
+    /// Hot values kept out of `ui` (ARCHITECTURE §3): the board voice level and the partial phrases
+    let level: LevelModel
+    let partials: PartialModel
     private let engine: any VoiceEngine
     private let board: any BoardLink
     private let packs: [String: LanguagePack]
@@ -43,6 +46,8 @@ final class ConversationController {
     private let defaults: UserDefaults
     private let boardText: BoardText
     private let now: () -> Date
+    /// The audio clock of `UILine.audioRange`: the same clock the clip recorder stamps its rings with
+    private let clock: any SessionClock
     private let tuning: Tuning
 
     /// The session state and their-side generation (`SessionMachine.advance`).
@@ -73,7 +78,8 @@ final class ConversationController {
 
     // Their side
     private var decoder = ADPCMDecoder()
-    private var theirQueue: [TheirsMsg] = []
+    /// Their final phrases waiting for translation, with their audio range
+    private var theirQueue: [(msg: TheirsMsg, range: ClosedRange<TimeInterval>?)] = []
     private var theirWorker: Task<Void, Never>?
     private var speechChain: Task<Void, Never>?
     /// Utterances asked for and not yet ended (`ttsEnd`, skipped, failed or stopped): each one ends exactly once,
@@ -93,13 +99,25 @@ final class ConversationController {
     // Board
     private var boardChain: Task<Void, Never>?
 
+    // Live screen (track B): level ring, audio ranges, line edits, phone-only
+    private var ranges = AudioRanges()
+    private var levelDecay: Task<Void, Never>?
+    private var lastLevelPacket: TimeInterval = 0
+    /// Lines whose translation the user corrected: a late translation result no longer replaces it
+    private var editedLines = Set<String>()
+    private var inputMode: InputMode = .board
     /// Track C hook: every decoded board PCM chunk while running (the "theirs" clip ring of `AudioClipRecorder`).
     var onTheirPCM: (([Int16], Int) -> Void)?
+    /// Whose voice the phone's mic carries now (`.theirs` in phone-only, `.mine` otherwise and while "Giữ để nói" is
+    /// held): the app points the mic clip tap (`MicPCMTap`) at that ring.
+    var onMicSide: ((Side) -> Void)?
 
     /// `packs` are every bundled pack, the home language (`LanguageCatalog.homeCode`) included. `glossary` nil: no
     /// glossary (the editor reports "Không lưu được").
+    /// `level`/`partials` nil: the controller makes its own (the app passes the ones `AppServices` hands the views).
     init(engine: any VoiceEngine, board: any BoardLink, packs: [LanguagePack], glossary: GlossaryStore?,
          defaults: UserDefaults = .standard, boardText: BoardText = BoardText(), ui: UIState,
+         level: LevelModel? = nil, partials: PartialModel? = nil, clock: any SessionClock = MonotonicSessionClock(),
          now: @escaping () -> Date = { Date() }, tuning: Tuning = Tuning()) {
         self.engine = engine
         self.board = board
@@ -109,6 +127,9 @@ final class ConversationController {
         self.defaults = defaults
         self.boardText = boardText
         self.ui = ui
+        self.level = level ?? LevelModel()
+        self.partials = partials ?? PartialModel()
+        self.clock = clock
         self.now = now
         self.tuning = tuning
         onlineAllowed = Set(defaults.stringArray(forKey: Self.onlineAllowedKey) ?? [])
@@ -168,7 +189,8 @@ final class ConversationController {
         tasks.removeAll()
         for task in oneOffs.values { task.cancel() }
         oneOffs.removeAll()
-        for task in [theirWorker, speechChain, micChain, boardChain] { task?.cancel() }
+        for task in [theirWorker, speechChain, micChain, boardChain, levelDecay] { task?.cancel() }
+        levelDecay = nil
         theirWorker = nil
         speechChain = nil
         micChain = nil
@@ -216,6 +238,7 @@ final class ConversationController {
         ui.glossaryAdd = { [weak self] text in try self?.glossaryAdd(text) }
         ui.glossaryUpdate = { [weak self] id, text in try self?.glossaryUpdate(id, text) }
         ui.glossaryDelete = { [weak self] id in try self?.glossaryDelete(id) }
+        bindLiveIntents()
         ui.glossaryAddFixed = { [weak self] text, fixed in try self?.glossaryAdd(text, fixed: fixed) }   // Track C
     }
 
@@ -247,11 +270,13 @@ final class ConversationController {
 
     private func clear() {
         ui.lines.removeAll()
-        ui.myPartial = ""
-        ui.theirPartial = ""
+        setMyPartial("")
+        partials.theirs = ""
         turns.reset()
         subtitles?.reset()
-        sendBoard("", .subtitle)
+        ranges.reset()
+        editedLines.removeAll()
+        sendSubtitle("")
     }
 
     // MARK: Session machine
@@ -434,7 +459,7 @@ final class ConversationController {
                 if activity.isActive { _ = activity.handle(.stop, at: now()) }
                 engineStarted = false
                 ui.listening = false
-                ui.myPartial = ""
+                setMyPartial("")
                 apply(.startFailed(String(describing: error)))
             }
         }
@@ -562,10 +587,23 @@ final class ConversationController {
             setMic(true)
         case .stop?:
             ui.listening = false
-            ui.myPartial = ""
+            setMyPartial("")
             setMic(false)
         case nil:
             break
+        }
+    }
+
+    /// Input routing (phone-only) goes through the mic chain, so it keeps its order with the mic changes.
+    private func enqueueRouting(_ work: @escaping @Sendable (any VoiceEngine) async throws -> Void) {
+        let previous = micChain, engine = self.engine
+        micChain = Task {
+            await previous?.value
+            do {
+                try await work(engine)
+            } catch {
+                Diag.log("conversation: input routing failed: \(error)")
+            }
         }
     }
 
@@ -594,7 +632,7 @@ final class ConversationController {
         guard msg.kind == .interrupted, engineStarted else { return }
         if activity.handle(.stop, at: now()) == .stop {
             ui.listening = false
-            ui.myPartial = ""
+            setMyPartial("")
         }
         setMic(false)
     }
@@ -608,6 +646,7 @@ final class ConversationController {
             note(.boardAudio)
         }
         let pcm = decoder.decode(packet)
+        if !pcm.isEmpty { boardSignal(pcm) }
         guard !pcm.isEmpty, engineStarted, case .running = session.state else { return }
         onTheirPCM?(pcm, tuning.boardSampleRate)   // Track C hook
         let e = epoch
@@ -629,33 +668,34 @@ final class ConversationController {
     /// would count as "I am speaking" and drop every phrase of theirs
     private func dropMyPartial() {
         handleMine(MineMsg(kind: .partial, text: "", startMs: 0, endMs: 0))
-        ui.myPartial = ""
+        setMyPartial("")
         myLastSpeech = .distantPast
     }
 
     private var userIsSpeaking: Bool {
-        !ui.myPartial.isEmpty || now().timeIntervalSince(myLastSpeech) < tuning.echoHold
+        !partials.mine.isEmpty || now().timeIntervalSince(myLastSpeech) < tuning.echoHold
     }
 
     private func handleTheirs(_ msg: TheirsMsg) {
         guard msg.generation == session.generation, let code = activeCode else { return }
         if userIsSpeaking {
-            ui.theirPartial = ""
+            if !partials.theirs.isEmpty { partials.theirs = "" }
             return
         }
         guard msg.text.count > 1 else { return }
+        let range = ranges.theirs(at: clock.now, audio: msg.audio)
         if let min = packs[code]?.minConfidence, let confidence = msg.confidence, confidence < min {
-            unclear(msg.text)
+            unclear(msg.text, range: range)
             return
         }
-        theirQueue.append(msg)
+        theirQueue.append((msg, range))
         runTheirQueue()
     }
 
     /// Crowd noise, overlapping voices: speaking a wrong translation is worse than saying nothing, so the phrase is
     /// only shown dimmed and a short cue is spoken.
-    private func unclear(_ text: String) {
-        addTheirLine(source: text, target: Self.unclearCue, unclear: true)
+    private func unclear(_ text: String, range: ClosedRange<TimeInterval>?) {
+        addTheirLine(source: text, target: Self.unclearCue, unclear: true, range: range)
         let t = now()
         if t.timeIntervalSince(lastUnclearCue) > tuning.unclearCooldown {
             lastUnclearCue = t
@@ -668,14 +708,14 @@ final class ConversationController {
         guard theirWorker == nil else { return }
         theirWorker = Task { [weak self] in
             while let self, !Task.isCancelled, !theirQueue.isEmpty {
-                let msg = theirQueue.removeFirst()
-                await translateTheirs(msg)
+                let next = theirQueue.removeFirst()
+                await translateTheirs(next.msg, range: next.range)
             }
             self?.theirWorker = nil
         }
     }
 
-    private func translateTheirs(_ msg: TheirsMsg) async {
+    private func translateTheirs(_ msg: TheirsMsg, range: ClosedRange<TimeInterval>?) async {
         guard msg.generation == session.generation, let pipeline, let code = activeCode else { return }
         let engine = self.engine, homeCode = LanguageCatalog.homeCode
         let translated: String
@@ -690,7 +730,7 @@ final class ConversationController {
         }
         // Switched meanwhile: nothing of the old pair is shown or spoken (Review Focus 2)
         guard msg.generation == session.generation, !translated.isEmpty else { return }
-        addTheirLine(source: msg.text, target: translated, unclear: false)
+        addTheirLine(source: msg.text, target: translated, unclear: false, range: range)
         say(translated)
     }
 
@@ -728,9 +768,9 @@ final class ConversationController {
         for id in outstandingSpeech.sorted() { speechEnded(id) }
     }
 
-    private func addTheirLine(source: String, target: String, unclear: Bool) {
+    private func addTheirLine(source: String, target: String, unclear: Bool, range: ClosedRange<TimeInterval>?) {
         ui.lines.append(UILine(id: "t-\(nextTheirLine)", mine: false, source: source, target: target,
-                               unclear: unclear, at: now()))
+                               unclear: unclear, at: now(), audioRange: range))
         nextTheirLine += 1
         trimLines()
     }
@@ -772,16 +812,19 @@ final class ConversationController {
             ? .partial(msg.text, audio: 0) : .final(msg.text, confidence: nil, audio: 0)
         let t = now()
         guard let change = turns.handle(event, at: t), let turn = turns.turn else { return }
-        ui.myPartial = turn.partial
+        setMyPartial(turn.partial)
         if !turn.partial.isEmpty || change.final != nil { myLastSpeech = t }
+        let range: ClosedRange<TimeInterval>? = msg.text.isEmpty ? nil
+            : ranges.mine(turn: turn.id, at: clock.now, audio: Double(max(0, msg.endMs - msg.startMs)) / 1000)
         let id = "m-\(turn.id)"
         if let index = ui.lines.lastIndex(where: { $0.id == id }) {
             if ui.lines[index].source != turn.text {
                 ui.lines[index].source = turn.text
                 ui.lines[index].at = t
+                if let range { ui.lines[index].audioRange = range }
             }
         } else if !turn.text.isEmpty {
-            ui.lines.append(UILine(id: id, mine: true, source: turn.text, target: "", at: t))
+            ui.lines.append(UILine(id: id, mine: true, source: turn.text, target: "", at: t, audioRange: range))
             trimLines()
         }
         if let final = change.final { subtitles?.addFinal(final, turn: turn.id) }
@@ -789,10 +832,106 @@ final class ConversationController {
     }
 
     private func showSubtitle(_ text: String, turn: Int) {
-        if let index = ui.lines.lastIndex(where: { $0.id == "m-\(turn)" }) { ui.lines[index].target = text }
+        let id = "m-\(turn)"
+        // A translation the user corrected stays as corrected
+        guard !editedLines.contains(id) else { return }
+        if let index = ui.lines.lastIndex(where: { $0.id == id }) { ui.lines[index].target = text }
         // The board shows the current turn only; late results for an earlier turn just fix its line
         guard turns.turn?.id == turn else { return }
-        sendBoard(boardText.encode(text, board.info.fontSets), .subtitle)
+        sendSubtitle(text)
+    }
+
+    /// Sends a subtitle to the board and shows on the dial exactly what was sent (`ui.boardSubtitle`).
+    private func sendSubtitle(_ text: String) {
+        let encoded = text.isEmpty ? "" : boardText.encode(text, board.info.fontSets)
+        if ui.boardSubtitle != encoded { ui.boardSubtitle = encoded }
+        sendBoard(encoded, .subtitle)
+    }
+
+    // MARK: Live screen (track B): level, partials, line actions, phone-only
+
+    private func bindLiveIntents() {
+        ui.replayLine = { [weak self] in self?.replay($0) }
+        ui.editLine = { [weak self] line, text in self?.edit(line, text) }
+        ui.setPhoneOnly = { [weak self] in self?.setPhoneOnly($0) }
+        ui.holdToTalk = { [weak self] in self?.holdToTalk($0) }
+    }
+
+    /// Partials live in `partials` (written only on change, so an equal partial re-renders nothing).
+    private func setMyPartial(_ text: String) {
+        if partials.mine != text { partials.mine = text }
+    }
+
+    /// One decoded board packet: the dial's level (throttled by `LevelModel`, never `ui`) and the audio clock of
+    /// their phrase.
+    private func boardSignal(_ pcm: [Int16]) {
+        let t = clock.now
+        ranges.boardPacket(at: t, seconds: Double(pcm.count) / Double(tuning.boardSampleRate))
+        level.push(BoardLevelMeter.level(pcm), at: now())
+        lastLevelPacket = t
+        guard levelDecay == nil else { return }
+        // The board stops streaming when its VAD closes: the ring falls to 0 after `silenceAfter` without packets
+        levelDecay = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self else { return }
+                if clock.now - lastLevelPacket >= BoardLevelMeter.silenceAfter {
+                    level.push(0, at: now())
+                    level.flush(at: now())
+                    levelDecay = nil
+                    return
+                }
+            }
+        }
+    }
+
+    /// "Nghe lại": their line is spoken again (its Vietnamese translation); my line's translation is sent to the
+    /// board again.
+    private func replay(_ line: UILine) {
+        guard let current = ui.lines.first(where: { $0.id == line.id }) else { return }
+        if current.mine {
+            guard !current.target.isEmpty else { return }
+            sendSubtitle(current.target)
+        } else {
+            let text = current.target.isEmpty ? current.source : current.target
+            guard !text.isEmpty else { return }
+            say(text)
+        }
+    }
+
+    /// "Sửa": the corrected translation replaces the line's (and goes to the board for my line); the correction is
+    /// handed to `ui.recordCorrection` (the feedback queue, track C) with the line as it was.
+    private func edit(_ line: UILine, _ text: String) {
+        let corrected = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !corrected.isEmpty, let index = ui.lines.firstIndex(where: { $0.id == line.id }) else { return }
+        let original = ui.lines[index]
+        guard original.target != corrected else { return }
+        ui.lines[index].target = corrected
+        ui.lines[index].unclear = false
+        editedLines.insert(original.id)
+        if original.mine { sendSubtitle(corrected) }
+        ui.recordCorrection(original, corrected)
+    }
+
+    /// Phone-only (ARCHITECTURE §5): the engine moves the iPhone mic to their recognizer; back in board mode the
+    /// board feeds it again. "Giữ để nói" is released on the way out.
+    private func setPhoneOnly(_ on: Bool) {
+        let mode: InputMode = on ? .phoneOnly : .board
+        guard mode != inputMode else { return }
+        inputMode = mode
+        ui.phoneOnly = on
+        if !on { ui.talkHeld = false }
+        onMicSide?(on ? .theirs : .mine)
+        enqueueRouting { try await $0.setInputMode(mode) }
+    }
+
+    /// "Giữ để nói": a press starts the conversation if it was off, then gives the input to you until released.
+    private func holdToTalk(_ held: Bool) {
+        guard inputMode == .phoneOnly, held != ui.talkHeld else { return }
+        ui.talkHeld = held
+        if held && !ui.listening { note(.userStart) }
+        onMicSide?(held ? .mine : .theirs)
+        enqueueRouting { try await $0.setTalkHeld(held) }
     }
 
     // MARK: Board
@@ -800,7 +939,17 @@ final class ConversationController {
     /// The link itself resends the clock and the remembered label on every ready (ESPLink, Review Focus 1); the
     /// controller sends the label when the language starts or changes.
     private func handleBoardState(_ state: BoardState) {
+        let old = ui.board
         ui.board = state
+        // The lost screen: when the board was last connected and its battery then. The firmware does not report
+        // its battery over BLE yet, so `boardBattery` (and with it `boardLostBattery`) stays nil and nothing is shown.
+        if state == .ready {
+            ui.boardLostAt = nil
+            ui.boardLostBattery = nil
+        } else if old == .ready {
+            ui.boardLostAt = now()
+            ui.boardLostBattery = ui.boardBattery
+        }
     }
 
     private func handleBoardControl(_ control: BoardControl) {

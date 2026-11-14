@@ -48,14 +48,42 @@ final class AudioSession: EngineAudioSession {
         })
     }
 
-    /// voiceChat: echo cancellation, routes through the AirPods mic; speech still plays in the earbuds.
-    /// mixWithOthers + duckOthers: a video playing in another app gets quieter instead of stopping.
-    func configureForConversation() throws {
+    /// Board mode (`InputRoute.board`): voiceChat, echo cancellation, routes through the AirPods mic; speech still
+    /// plays in the earbuds. mixWithOthers + duckOthers: a video playing in another app gets quieter instead of
+    /// stopping.
+    /// Phone-only (ARCHITECTURE §5): the iPhone mic as the preferred input with the earbuds as A2DP output (or the
+    /// loudspeaker without them); "Giữ để nói" asks for the headset mic over HFP.
+    func configureForConversation(_ route: InputRoute) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .voiceChat,
-                                options: [.allowBluetoothHFP, .mixWithOthers, .duckOthers])
+        var options: AVAudioSession.CategoryOptions = [.mixWithOthers, .duckOthers]
+        options.insert(route.bluetooth == .hfp ? .allowBluetoothHFP : .allowBluetoothA2DP)
+        if route.defaultToSpeaker { options.insert(.defaultToSpeaker) }
+        try session.setCategory(.playAndRecord, mode: route.voiceChatMode ? .voiceChat : .default, options: options)
         try session.setPreferredIOBufferDuration(0.01)
         try session.setActive(true)
+        let inputs = session.availableInputs ?? []
+        let preferred: AVAudioSessionPortDescription?
+        switch route.preferredInput {
+        case .automatic: preferred = nil
+        case .builtInMic: preferred = inputs.first { $0.portType == .builtInMic }
+        case .headset: preferred = inputs.first { EngineMapping.headsetInputs.contains($0.portType) }
+        }
+        // A missing port (no headset after all) leaves iOS's choice; never fatal
+        do {
+            try session.setPreferredInput(preferred)
+        } catch {
+            Diag.log("session: preferred input \(route.preferredInput.rawValue) failed: \(error.localizedDescription)")
+        }
+        let now = session.currentRoute
+        Diag.log("session: route \(route.target.rawValue) in=\(now.inputs.map(\.portName)) out=\(now.outputs.map(\.portName))")
+    }
+
+    /// Earbuds or a headset as output or input (A2DP-only earbuds count: HFP is offered once asked for)
+    var headsetConnected: Bool {
+        let s = AVAudioSession.sharedInstance()
+        let outputs: Set<AVAudioSession.Port> = [.bluetoothA2DP, .bluetoothHFP, .bluetoothLE, .headphones, .usbAudio]
+        return s.currentRoute.outputs.contains { outputs.contains($0.portType) }
+            || (s.availableInputs ?? []).contains { EngineMapping.headsetInputs.contains($0.portType) }
     }
 
     /// The mic is taken: the silence is no longer needed to keep the app alive
@@ -102,6 +130,9 @@ extension EngineMapping {
         let headset: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothLE, .headsetMic, .usbAudio, .carAudio]
         return inputs.contains(where: headset.contains) ? .headset : .phoneMic
     }
+
+    /// The inputs "Giữ để nói" asks for in phone-only
+    static let headsetInputs: Set<AVAudioSession.Port> = [.bluetoothHFP, .bluetoothLE, .headsetMic, .usbAudio]
 
     /// A device came or went; category changes are the engine's own doing and not reported
     static func reportsRouteChange(_ reason: AVAudioSession.RouteChangeReason) -> Bool {

@@ -14,6 +14,8 @@ struct RootView: View {
             .preferredColorScheme(.light)
             .tint(DS.Color.ink)
             .onChange(of: ui.board, initial: true) { _, state in router.noteBoard(state) }
+            // Phone-only follows the screen shown (ARCHITECTURE §5): the engine moves the iPhone mic to them
+            .onChange(of: router.mainScreen(board: ui.board) == .phoneOnly, initial: true) { _, on in ui.setPhoneOnly(on) }
             .feedbackReporting(ui)   // Track C: "Báo dịch sai" sheet
             .sheet(item: $router.sheet) { sheet in
                 switch sheet {
@@ -68,8 +70,8 @@ struct RootView: View {
     private var main: some View {
         switch router.mainScreen(board: ui.board) {
         case .live: LiveView(ui: ui, router: router, services: services)
-        case .phoneOnly: PhoneOnlyView(ui: ui, router: router)
-        case .boardLost: BoardLostView(ui: ui, router: router, now: services.now(), forget: forgetBoard)
+        case .phoneOnly: PhoneOnlyView(ui: ui, router: router, partials: services.partials)
+        case .boardLost: BoardLostView(ui: ui, router: router, now: services.now, forget: forgetBoard)
         }
     }
 

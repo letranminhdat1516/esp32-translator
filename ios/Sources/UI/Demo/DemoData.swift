@@ -86,7 +86,7 @@ enum DemoData {
         ui.voiceName = "Linh"
         ui.listening = true
         ui.lines = lines
-        ui.myPartial = "Được chứ, mình có máy quẹt…"
+        services.partials.mine = "Được chứ, mình có máy quẹt…"
         ui.boardSubtitle = "Of course, we have a card reader…"
         ui.glossaryTerms = glossary
         ui.saveHistory = true
@@ -107,8 +107,10 @@ enum DemoData {
         switch screen {
         case .phoneonly:
             ui.lines = Array(lines.prefix(2))
-            ui.myPartial = ""
+            services.partials.mine = ""
+            ui.boardSubtitle = lines[1].target
             ui.board = .off
+            ui.phoneOnly = true
         case .boardlost:
             ui.board = .scanning
             ui.boardLostAt = now.addingTimeInterval(-12)
@@ -127,8 +129,8 @@ enum DemoData {
         }
         ui.clear = {
             ui.lines.removeAll()
-            ui.theirPartial = ""
-            ui.myPartial = ""
+            services.partials.theirs = ""
+            services.partials.mine = ""
         }
         ui.setSaveHistory = { ui.saveHistory = $0 }
         ui.setShareToImprove = { ui.shareToImprove = $0 }
@@ -139,6 +141,10 @@ enum DemoData {
             if let i = ui.glossaryTerms.firstIndex(where: { $0.id == id }) { ui.glossaryTerms[i].text = text }
         }
         ui.glossaryDelete = { id in ui.glossaryTerms.removeAll { $0.id == id } }
+        ui.editLine = { line, text in
+            if let i = ui.lines.firstIndex(where: { $0.id == line.id }) { ui.lines[i].target = text }
+        }
+        ui.holdToTalk = { ui.talkHeld = $0 }
         ui.glossaryAddFixed = { text, fixed in
             ui.glossaryTerms.append(Term(id: UUID().uuidString, text: text, fixed: [ui.languageCode ?? "en": fixed]))
         }

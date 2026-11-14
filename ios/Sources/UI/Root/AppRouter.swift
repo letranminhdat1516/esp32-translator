@@ -127,10 +127,15 @@ final class AppRouter {
     /// "Dùng iPhone trong lúc chờ".
     func continueWithPhone() { boardLostDismissed = true }
 
-    /// "Kết nối board" from phone-only.
+    /// "Kết nối board" from phone-only: the Pair step (it activates the Bluetooth central and finds the pinned or a
+    /// new board). Not persisted: a relaunch opens the main screen again.
     func connectBoard() {
+        path.removeAll()
+        sheet = nil
         mode = .board
         boardLostDismissed = false
+        onboardingStep = .pair
+        onboardingDone = false
     }
 
     func push(_ route: Route) { path.append(route) }

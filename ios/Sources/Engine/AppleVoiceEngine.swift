@@ -19,8 +19,11 @@ protocol EngineAudioSession: AnyObject {
     /// Called on the main actor
     var onChange: ((AudioSessionChange) -> Void)? { get set }
     var currentRoute: AudioRoute { get }
-    /// Voice chat, other audio ducked (mic held)
-    func configureForConversation() throws
+    /// Earbuds or a headset are connected (as output or input), whatever the current input is
+    var headsetConnected: Bool { get }
+    /// The session for a held mic, other audio ducked: voice chat through the AirPods mic in board mode
+    /// (`InputRoute.board`), the routes of `InputRoute.plan` in phone-only
+    func configureForConversation(_ route: InputRoute) throws
     func stopSilence()
     func deactivate()
     /// Mixable silence that keeps the app running in the background
@@ -48,7 +51,9 @@ protocol EngineMic: AnyObject {
 
 /// What the engine needs from the device, replaceable in tests (`AppleVoiceEngine.live(packs:)` on iOS)
 struct AppleEnginePlatform {
-    typealias MakeMic = @MainActor (_ format: AVAudioFormat, _ gate: VoiceGate,
+    /// `gate` nil: every buffer is passed on (no own-voice gate); `onSpeechStart` comes with the first buffer and
+    /// `onFinalize`/`onSpeechEnd` at `stop`
+    typealias MakeMic = @MainActor (_ format: AVAudioFormat, _ gate: VoiceGate?,
                                     _ sink: @escaping (AVAudioPCMBuffer) -> Void,
                                     _ onSpeechStart: @escaping () -> Void,
                                     _ onFinalize: @escaping () -> Void,
@@ -91,6 +96,11 @@ final class AppleVoiceEngine: VoiceEngine {
     private var speaker: EngineSpeaker?
     /// The controller asked for the mic (micOn(true)) and has not released it
     private var micWanted = false
+    /// Board or phone-only (ARCHITECTURE §5) and phone-only's "Giữ để nói"
+    private var inputMode: InputMode = .board
+    private var talkHeld = false
+    /// The route the running mic was taken with; nil while the mic is not held
+    private(set) var micRoute: InputRoute?
     private var translators: [String: AppleEnginePlatform.Translate] = [:]
     /// Feeds silence to their recognizer while board packets pause, so it ends the phrase itself (never
     /// finalized: that corrupts SpeechTranscriber's following utterances, see `BoardSilencePadder`)
@@ -243,23 +253,74 @@ final class AppleVoiceEngine: VoiceEngine {
         guard let home = homeRecognizer, let format = home.audioFormat else {
             throw EngineErrors.notReady("not started")
         }
-        try session.configureForConversation()
-        mic?.stop()
+        let route = InputRoute.plan(mode: inputMode, talkHeld: talkHeld, headsetConnected: session.headsetConnected)
+        // The old mic first: a released "Giữ để nói" finalizes its phrase before the input moves
+        releaseMic()
+        try session.configureForConversation(route)
         let sink = self.sink
-        // DictationTranscriber needs finalizeNow (input stops while the gate is closed). It comes at the gate's
-        // early point (VoiceGate.Config.finalizeAfter, 0.4 s of non-speech), not at its close (0.8 s).
-        let fresh = platform.makeMic(format, voiceGate, { home.feed($0) },
+        let fresh: EngineMic
+        switch route.target {
+        case .mine:
+            // DictationTranscriber needs finalizeNow (input stops while the gate is closed). It comes at the gate's
+            // early point (VoiceGate.Config.finalizeAfter, 0.4 s of non-speech), not at its close (0.8 s); ungated
+            // ("Giữ để nói") at the release.
+            fresh = platform.makeMic(format, route.gated ? voiceGate : nil, { home.feed($0) },
                                      { sink.send(.gate(true)) },
                                      { home.finalizeNow() },
                                      { sink.send(.gate(false)) })
+        case .theirs:
+            // Phone-only: the iPhone mic hears the other person. Never finalized (that corrupts SpeechTranscriber,
+            // see `BoardSilencePadder`); fed on the main actor like board audio, so the padder fills the gap while
+            // "Giữ để nói" holds the input.
+            guard let x = theirRecognizer, let xFormat = x.audioFormat else { throw EngineErrors.notReady("not started") }
+            fresh = platform.makeMic(xFormat, nil, { [weak self] buffer in
+                let box = MicBuffer(buffer: buffer)
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated { self?.feedTheirsFromMic(box.buffer) }
+                }
+            }, {}, {}, {})
+        }
         try fresh.start()
         mic = fresh
+        micRoute = route
         session.stopSilence()
     }
 
     private func releaseMic() {
         mic?.stop()
         mic = nil
+        micRoute = nil
+    }
+
+    // MARK: Input routing (phone-only)
+
+    /// Board or phone-only; a held mic is retaken on the new route at once.
+    func setInputMode(_ mode: InputMode) async throws {
+        guard mode != inputMode else { return }
+        inputMode = mode
+        if mode == .board { talkHeld = false }
+        Diag.log("engine: input mode \(mode.rawValue)")
+        reroute()
+    }
+
+    /// "Giữ để nói" (phone-only only).
+    func setTalkHeld(_ held: Bool) async throws {
+        guard inputMode == .phoneOnly, held != talkHeld else { return }
+        talkHeld = held
+        reroute()
+    }
+
+    /// Retakes a held mic on the current route; a failure leaves the engine idle and reports `interrupted`
+    private func reroute() {
+        guard mic != nil else { return }
+        _ = restartMic(reason: "input route")
+    }
+
+    /// The iPhone mic's audio for their recognizer (phone-only), already in its format
+    private func feedTheirsFromMic(_ buffer: AVAudioPCMBuffer) {
+        guard micRoute?.target == .theirs, recognizers.theirsAlive, let x = theirRecognizer else { return }
+        theirPadder.audioArrived(seconds: Double(buffer.frameLength) / buffer.format.sampleRate)
+        x.feed(buffer)
     }
 
     // MARK: Board audio
@@ -389,4 +450,9 @@ final class AppleVoiceEngine: VoiceEngine {
             return false
         }
     }
+}
+
+/// A mic buffer handed from the audio thread to the main actor; the tap does not touch it after the hand-off
+private struct MicBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
 }

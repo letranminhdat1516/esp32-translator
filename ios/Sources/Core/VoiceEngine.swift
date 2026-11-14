@@ -24,6 +24,13 @@ enum AudioRoute: String, Codable, CaseIterable, Sendable {
     case headset, phoneMic
 }
 
+/// Where the other person's speech comes from (ARCHITECTURE §5). `board`: the board streams it and the phone's mic
+/// hears you. `phoneOnly`: no board; the iPhone mic hears them, and "Giữ để nói" (`setTalkHeld`) gives the input to
+/// you while held.
+enum InputMode: String, Codable, CaseIterable, Sendable {
+    case board, phoneOnly
+}
+
 /// `finalText` is the "final" kind (the name the shared fixtures use).
 enum MineKind: String, Codable, CaseIterable, Sendable {
     case partial, finalText
@@ -86,11 +93,13 @@ struct MineMsg: Codable, Hashable, Sendable {
     var endMs: Int
 }
 
-/// A final result of the other person's speech; `confidence` nil when the recognizer gives none.
+/// A final result of the other person's speech; `confidence` nil when the recognizer gives none. `audio`: the length
+/// of the audio the result covers in seconds (the recognizer's result range), nil when unknown.
 struct TheirsMsg: Codable, Hashable, Sendable {
     var text: String
     var confidence: Double?
     var generation: Int
+    var audio: Double? = nil
 }
 
 struct AudioSessionMsg: Codable, Hashable, Sendable {
@@ -143,6 +152,13 @@ protocol VoiceEngine: AnyObject, Sendable {
     /// No-op where unsupported.
     func setHints(_ hints: [String]) async throws
     func openTtsSettings() async throws
+    /// Board mode or phone-only (`InputMode`); takes effect at once when the mic is held, else at the next `micOn`.
+    /// No-op where unsupported.
+    func setInputMode(_ mode: InputMode) async throws
+    /// Phone-only "Giữ để nói": while held the input is the headset mic (or the iPhone mic without one) and feeds the
+    /// home recognizer; on release the phrase is finalized and the iPhone mic hears the other person again. Ignored
+    /// in board mode.
+    func setTalkHeld(_ held: Bool) async throws
 
     var mine: AsyncStream<MineMsg> { get }
     var theirs: AsyncStream<TheirsMsg> { get }
@@ -166,6 +182,9 @@ struct EngineEvents: Sendable {
 }
 
 extension VoiceEngine {
+    func setInputMode(_ mode: InputMode) async throws {}
+    func setTalkHeld(_ held: Bool) async throws {}
+
     /// Subscribes to all seven event streams now (synchronously); see the race note on `VoiceEngine`.
     func events() -> EngineEvents {
         EngineEvents(mine: mine, theirs: theirs, gate: gate, ttsStart: ttsStart, ttsEnd: ttsEnd,

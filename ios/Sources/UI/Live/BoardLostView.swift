@@ -5,7 +5,8 @@ import SwiftUI
 struct BoardLostView: View {
     let ui: UIState
     let router: AppRouter
-    let now: Date
+    /// The clock for "12 giây trước" (demo mode pins it); read every second.
+    let now: () -> Date
     var forget: () -> Void
 
     var body: some View {
@@ -14,8 +15,11 @@ struct BoardLostView: View {
                 StatusDot(color: DS.Color.warnDot, label: Copy.t("lost.status"), labelColor: DS.Color.warnText)
             } trailing: {
                 if let at = ui.boardLostAt {
-                    Text(Copy.t("lost.ago", ["seconds": String(HistoryFormatting.secondsAgo(at, now: now))]))
-                        .foregroundStyle(DS.Color.muted)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(Copy.t("lost.ago", ["seconds": String(HistoryFormatting.secondsAgo(at, now: now()))]))
+                            .foregroundStyle(DS.Color.muted)
+                            .monospacedDigit()
+                    }
                 }
             }
             BoardDial(ring: .arc(fromDegrees: 300, sweepDegrees: 70, tint: .warn), dimmed: true) {
