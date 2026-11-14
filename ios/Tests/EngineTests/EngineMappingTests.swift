@@ -39,7 +39,7 @@ final class EngineMappingTests: XCTestCase {
 
     func testTheirsCarriesConfidenceAndGeneration() {
         let msg = EngineMapping.theirs(.final("good morning", confidence: 0.81, audio: 1), generation: 7)
-        XCTAssertEqual(msg, TheirsMsg(text: "good morning", confidence: 0.81, generation: 7))
+        XCTAssertEqual(msg, TheirsMsg(text: "good morning", confidence: 0.81, generation: 7, audio: 1))
         XCTAssertEqual(EngineMapping.theirs(.final("hi", confidence: nil, audio: 1), generation: 2)?.confidence, nil)
     }
 

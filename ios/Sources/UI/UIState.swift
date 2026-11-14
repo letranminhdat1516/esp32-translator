@@ -31,6 +31,13 @@ enum TranscriptRowText {
     }
 }
 
+/// What "Sửa" puts in the field: the line's translation (the source while it is still pending).
+enum LineEditText {
+    static func initial(_ line: UILine) -> String {
+        line.target.isEmpty ? line.source : line.target
+    }
+}
+
 /// The state of one language in the language list (Language screen, settings).
 enum PackStatus: Hashable, Sendable {
     /// Ready to use offline.
@@ -197,9 +204,8 @@ final class UIState {
     // MARK: Conversation
 
     var lines: [UILine] = []
-    var theirPartial = ""
-    var myPartial = ""
-    /// The subtitle the board shows now (the dial on the Live screen).
+    // The partial phrases are in `PartialModel` (AppServices.partials), not here: they change several times a second.
+    /// The subtitle last sent to the board (the dial on the Live screen; the top half in phone-only).
     var boardSubtitle = ""
     var listening = false
     var board: BoardState = .off
@@ -231,6 +237,10 @@ final class UIState {
     var boardLostAt: Date?
     /// Battery when the board was lost.
     var boardLostBattery: Int?
+    /// Phone-only mode is on: the iPhone mic hears the other person (ARCHITECTURE §5).
+    var phoneOnly = false
+    /// "Giữ để nói" is held (phone-only): the input is yours.
+    var talkHeld = false
 
     // MARK: Glossary
 
@@ -258,6 +268,22 @@ final class UIState {
     /// Settings switches (persisted by track C).
     var setSaveHistory: (Bool) -> Void = { _ in }
     var setShareToImprove: (Bool) -> Void = { _ in }
+
+    // Line actions and phone-only (track B binds them in the controller)
+    /// "Nghe lại": their line is spoken again; my line's translation is sent to the board again.
+    var replayLine: (UILine) -> Void = { _ in }
+    /// "Sửa": replaces the line's translation with the corrected text (resent to the board for my line).
+    var editLine: (UILine, String) -> Void = { _, _ in }
+    /// Phone-only on/off (RootView follows the screen the router shows).
+    var setPhoneOnly: (Bool) -> Void = { _ in }
+    /// "Giữ để nói" pressed (true) / released (false).
+    var holdToTalk: (Bool) -> Void = { _ in }
+
+    // Feedback hooks (track C implements them; the defaults do nothing)
+    /// A correction made with "Sửa": the line as it was and the corrected translation.
+    var recordCorrection: (UILine, String) -> Void = { _, _ in }
+    /// "Báo dịch sai" on a line.
+    var reportLine: (UILine) -> Void = { _ in }
 
     init() {}
 

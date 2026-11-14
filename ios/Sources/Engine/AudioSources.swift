@@ -60,7 +60,8 @@ private struct WearerLevelReset: @unchecked Sendable {
 final class MicSource {
     private let engine = AVAudioEngine()
     private let converter: BufferConverter
-    private let gate: VoiceGate
+    /// nil: every buffer passes (the other person on the iPhone mic, "Giữ để nói")
+    private let gate: VoiceGate?
     private let sink: (AVAudioPCMBuffer) -> Void
     private let onSpeechStart: () -> Void
     private let onFinalize: () -> Void
@@ -69,7 +70,7 @@ final class MicSource {
     /// Audio was passed since the last `onFinalize`
     private var unfinalized = false
 
-    init(target: AVAudioFormat, gate: VoiceGate = VoiceGate(),
+    init(target: AVAudioFormat, gate: VoiceGate? = VoiceGate(),
          sink: @escaping (AVAudioPCMBuffer) -> Void, onSpeechStart: @escaping () -> Void = {},
          onFinalize: @escaping () -> Void = {}, onSpeechEnd: @escaping () -> Void) {
         converter = BufferConverter(target: target)
@@ -89,11 +90,13 @@ final class MicSource {
         #if os(iOS)
         names.append(AVAudioSession.routeChangeNotification)
         #endif
-        let resetWearerLevel = WearerLevelReset(gate: gate)
-        for name in names {
-            observers.append(center.addObserver(forName: name, object: nil, queue: nil) { _ in
-                resetWearerLevel()
-            })
+        if let gate {
+            let resetWearerLevel = WearerLevelReset(gate: gate)
+            for name in names {
+                observers.append(center.addObserver(forName: name, object: nil, queue: nil) { _ in
+                    resetWearerLevel()
+                })
+            }
         }
         let input = engine.inputNode
         try input.setVoiceProcessingEnabled(true)
@@ -111,6 +114,15 @@ final class MicSource {
     /// does ios/Tools/vi-harness, which runs this exact path on recorded files)
     func handle(_ buffer: AVAudioPCMBuffer) {
         guard let converted = converter.convert(buffer) else { return }
+        guard let gate else {
+            if !gateOpen {
+                gateOpen = true
+                onSpeechStart()
+            }
+            unfinalized = true
+            sink(converted)
+            return
+        }
         for event in gate.process(converted) {
             switch event {
             case .audio(let b):

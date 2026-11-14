@@ -106,6 +106,8 @@ final class ScriptedEngine: VoiceEngine, @unchecked Sendable {
     func stopSpeaking() async throws { try await fake.stopSpeaking() }
     func setHints(_ hints: [String]) async throws { try await fake.setHints(hints) }
     func openTtsSettings() async throws { try await fake.openTtsSettings() }
+    func setInputMode(_ mode: InputMode) async throws { try await fake.setInputMode(mode) }
+    func setTalkHeld(_ held: Bool) async throws { try await fake.setTalkHeld(held) }
 
     var mine: AsyncStream<MineMsg> { fake.mine }
     var theirs: AsyncStream<TheirsMsg> { fake.theirs }
@@ -233,10 +235,10 @@ struct ConversationControllerTests {
         // My side: partial → final → subtitle on the board
         rig.clock.advance(5)
         rig.mine("tôi muốn", final: false)
-        #expect(await eventually { rig.ui.myPartial == "tôi muốn" })
+        #expect(await eventually { rig.controller.partials.mine == "tôi muốn" })
         rig.mine("tôi muốn ăn phở", final: true)
         #expect(await eventually { rig.sent(.subtitle).last == "[en]tôi muốn ăn phở" })
-        #expect(rig.ui.myPartial == "")
+        #expect(rig.controller.partials.mine == "")
         #expect(rig.ui.lines.contains { $0.mine && $0.source == "tôi muốn ăn phở" && $0.target == "[en]tôi muốn ăn phở" })
         #expect(rig.engine.translateCalls.contains { $0.from == "vi" && $0.to == "en" })
 
@@ -261,7 +263,7 @@ struct ConversationControllerTests {
         let rig = try await Rig()
         #expect(await rig.startRunning())
         rig.mine("tôi đang nói", final: false)
-        #expect(await eventually { rig.ui.myPartial == "tôi đang nói" })
+        #expect(await eventually { rig.controller.partials.mine == "tôi đang nói" })
         rig.theirs("echo of me")
         await settle()
         #expect(await rig.spoken().isEmpty)
@@ -405,11 +407,11 @@ struct ConversationControllerTests {
         #expect(await rig.startRunning())
         rig.clock.advance(5)
         rig.mine("tôi đang nó", final: false)
-        #expect(await eventually { rig.ui.myPartial == "tôi đang nó" })
+        #expect(await eventually { rig.controller.partials.mine == "tôi đang nó" })
         rig.engine.killTheirRecognizer()
         rig.boardAudio(seq: 1)
         #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
-        #expect(rig.ui.myPartial == "")
+        #expect(rig.controller.partials.mine == "")
         rig.theirs("Can you hear me")
         #expect(await eventually { await rig.spoken() == ["[vi]Can you hear me"] })
         rig.controller.shutdown()
@@ -422,10 +424,10 @@ struct ConversationControllerTests {
         rig.boardAudio(seq: 1)
         #expect(await eventually { rig.ui.session == .running("en", restarts: 1) })
         rig.mine("tôi đang nó", final: false)
-        #expect(await eventually { rig.ui.myPartial == "tôi đang nó" })
+        #expect(await eventually { rig.controller.partials.mine == "tôi đang nó" })
         rig.boardAudio(seq: 2)
         #expect(await eventually { rig.ui.session == .failed("en", reason: "recognizer stopped") })
-        #expect(rig.ui.myPartial == "")
+        #expect(rig.controller.partials.mine == "")
         rig.controller.shutdown()
     }
 

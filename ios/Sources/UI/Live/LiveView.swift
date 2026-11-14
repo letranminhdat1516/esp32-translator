@@ -22,14 +22,11 @@ struct LiveView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.top, 20)
                     .padding(.bottom, 24)
-                if ui.lines.isEmpty && ui.theirPartial.isEmpty && ui.myPartial.isEmpty {
-                    EmptyHint(listening: ui.listening)
-                    Spacer(minLength: 16)
+                if ui.lines.isEmpty {
+                    // Reads the partials only while there are no lines (the hint gives way to the first partial)
+                    EmptyOrPartials(ui: ui, partials: services.partials, selectedID: $services.selectedLineID)
                 } else {
-                    TranscriptView(lines: ui.lines.sorted { $0.at < $1.at }, ui: ui, selectedID: $services.selectedLineID)
-                        .contextMenu {
-                            Button(Copy.t("menu.clear"), role: .destructive) { router.confirmClear = true }
-                        }
+                    transcript
                 }
             } else {
                 ReadinessView(ui: ui, state: session).padding(.top, 20)
@@ -38,9 +35,51 @@ struct LiveView: View {
                          settings: { router.push(.settings) })
                 .padding(.top, 12)
         }
+        .onChange(of: running) { _, on in if !on { services.selectedLineID = nil } }
         .confirmationDialog(Copy.t("dialog.clearTitle"), isPresented: $router.confirmClear, titleVisibility: .visible) {
             Button(Copy.t("dialog.clearConfirm"), role: .destructive) { ui.clear() }
             Button(Copy.t("dialog.cancel"), role: .cancel) {}
+        }
+    }
+}
+
+extension LiveView {
+    private var transcript: some View {
+        LiveTranscript(ui: ui, lines: ui.lines.sorted { $0.at < $1.at }, partials: services.partials,
+                       selectedID: $services.selectedLineID)
+            .contextMenu {
+                Button(Copy.t("menu.clear"), role: .destructive) { router.confirmClear = true }
+            }
+    }
+}
+
+/// The transcript with the line actions bound to the screen model's intents.
+private struct LiveTranscript: View {
+    let ui: UIState
+    let lines: [UILine]
+    let partials: PartialModel
+    @Binding var selectedID: String?
+
+    var body: some View {
+        TranscriptView(lines: lines, partials: partials, selectedID: $selectedID,
+                       onReplay: { ui.replayLine($0) },
+                       onEdit: { ui.editLine($0, $1) },
+                       onReport: { ui.reportLine($0) })
+    }
+}
+
+/// No finished line yet: the hint, or the transcript as soon as a partial phrase comes in.
+private struct EmptyOrPartials: View {
+    let ui: UIState
+    let partials: PartialModel
+    @Binding var selectedID: String?
+
+    var body: some View {
+        if partials.theirs.isEmpty && partials.mine.isEmpty {
+            EmptyHint(listening: ui.listening)
+            Spacer(minLength: 16)
+        } else {
+            LiveTranscript(ui: ui, lines: [], partials: partials, selectedID: $selectedID)
         }
     }
 }

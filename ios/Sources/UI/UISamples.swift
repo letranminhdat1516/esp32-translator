@@ -63,7 +63,6 @@ extension UIState {
                    at: now - 20),
             UILine(id: "3", mine: false, source: "ありがとう", target: "Cảm ơn", unclear: true, at: now - 10),
         ]
-        ui.theirPartial = "すみません"
         return ui
     }
 

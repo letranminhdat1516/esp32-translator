@@ -23,7 +23,7 @@ struct ESPTranslatorApp: App {
             let link = FakeBoardLink()
             controller = ConversationController(engine: FakeVoiceEngine(), board: link, packs: DemoData.packs,
                                                 glossary: nil, defaults: UserDefaults(suiteName: "demo") ?? .standard,
-                                                ui: ui)
+                                                ui: ui, level: services.level, partials: services.partials)
             router.apply(demo)
             DemoData.seed(demo, ui: ui, services: services)
             _router = State(initialValue: router)
@@ -42,7 +42,8 @@ struct ESPTranslatorApp: App {
             let glyphs = BoardGlyphSets.shared
             let packs = BundledPacks.load()
             controller = ConversationController(engine: AppleVoiceEngine.live(packs: packs), board: link, packs: packs,
-                                                glossary: glossary, boardText: BoardText(glyphs: glyphs), ui: ui)
+                                                glossary: glossary, boardText: BoardText(glyphs: glyphs), ui: ui,
+                                                level: services.level, partials: services.partials)
             ui.forgetBoard = { link.forgetBoard() }   // P9: the link pins the first board; this lets a new one in
             _router = State(initialValue: AppRouter())
             // Midnight, a time zone or daylight-saving change, or a clock set: keep the board's lock-face clock right

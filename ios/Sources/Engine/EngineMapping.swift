@@ -37,8 +37,8 @@ enum EngineMapping {
 
     /// An other-side (board) result: finals only, with the generation of the pair that produced it
     static func theirs(_ event: TranscriptEvent, generation: Int) -> TheirsMsg? {
-        guard case .final(let text, let confidence, _) = event, !text.isEmpty else { return nil }
-        return TheirsMsg(text: text, confidence: confidence, generation: generation)
+        guard case .final(let text, let confidence, let audio) = event, !text.isEmpty else { return nil }
+        return TheirsMsg(text: text, confidence: confidence, generation: generation, audio: audio > 0 ? audio : nil)
     }
 
     private static func millis(_ seconds: TimeInterval) -> Int {

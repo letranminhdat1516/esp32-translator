@@ -21,6 +21,8 @@ actor FakeVoiceEngine: VoiceEngine {
     private(set) var stopCount = 0
     private(set) var stopSpeakingCount = 0
     private(set) var openTtsSettingsCount = 0
+    private(set) var inputModes: [InputMode] = []
+    private(set) var talkHeld: [Bool] = []
 
     private var failTranslate = false
 
@@ -114,4 +116,8 @@ actor FakeVoiceEngine: VoiceEngine {
     func setHints(_ hints: [String]) async throws { self.hints = hints }
 
     func openTtsSettings() async throws { openTtsSettingsCount += 1 }
+
+    func setInputMode(_ mode: InputMode) async throws { inputModes.append(mode) }
+
+    func setTalkHeld(_ held: Bool) async throws { talkHeld.append(held) }
 }
