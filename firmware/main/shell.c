@@ -81,7 +81,8 @@ static void shell_task(void *arg)
         lv_obj_t *target = screen_obj(modes_screen(&next));
         bsp_display_lock((uint32_t)-1);
         bool shutting_down = ui_shutting_down();   /* the power-off / sleep message owns the screen */
-        if (!shutting_down && lv_screen_active() != target) {
+        /* The pairing view stays on top; it loads the shell's screen when it closes */
+        if (!shutting_down && !pair_ui_active() && lv_screen_active() != target) {
             lv_screen_load(target);
         }
         bsp_display_unlock();

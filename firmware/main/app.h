@@ -42,6 +42,8 @@ void ble_link_notify_control(uint8_t state);
 /* Board mic tapped without the iPhone audio role: if an iPhone link waits for the app, take it back (async, NimBLE
  * host task) and request lang again; false: no such link */
 bool ble_link_wake_phone(rec_lang_t lang);
+/* The owner's answer on the pairing view (Đúng = true). LVGL task; posts to the NimBLE host, which injects it. */
+void ble_link_pair_answer(bool yes);
 
 /* audio_in.c */
 void audio_in_start(void);
@@ -79,6 +81,13 @@ bool pmu_usb_powered(void);
 void lock_ui_init(void);
 lv_obj_t *lock_ui_screen(void);
 void lock_ui_set_face(bool visible);                /* LVGL task (screen timer): show/hide the face, run the clock tick */
+
+/* pair_ui.c: full-screen pairing code (pairing.h). show / close take the LVGL lock (not from LVGL callbacks).
+ * ask: numeric comparison with Sai / Đúng buttons; false: a passkey to type on the phone, no buttons. */
+void pair_ui_init(void);
+void pair_ui_show(uint32_t passkey, bool ask);
+void pair_ui_close(void);                           /* back to the screen the shell wants now */
+bool pair_ui_active(void);                          /* the view is up: panel on, the shell leaves the screen alone */
 
 /* shell.c: modes, lock and inputs (see modes.h) */
 void shell_start(void);

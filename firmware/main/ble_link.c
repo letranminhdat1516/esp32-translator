@@ -10,13 +10,19 @@
  *   control ...0004  r/w/notify : 1 byte: 0 = board mic off, 1 = on; the app also writes 0xFF every 20 s as a
  *                              keepalive (phone_idle.h): 60 s without any app write and the board stops streaming
  *
- * Nothing here needs encryption and the board never asks for it. If a phone starts pairing anyway (or still holds a
- * bond from older firmware), Just Works bonding is accepted and kept in NVS; a stale bond is dropped on a MIC failure.
+ *   info    ...0005  read    : open (the app reads it before pairing)
+ *
+ * Pairing by code (pairing.h): LE Secure Connections numeric comparison. Text, control and the audio / control
+ * CCCDs need an encrypted, authenticated link, so iOS shows its pairing dialog with 6 digits on the first access and
+ * the board shows the same 6 digits (pair_ui.c) with Sai / Đúng. Bonds are kept in NVS; a stale bond is dropped on a
+ * MIC failure. A Just Works bond from older firmware encrypts without authentication: the board asks for pairing
+ * once on that link so the comparison runs, and streams nothing until it did.
  */
 #include <string.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -37,6 +43,7 @@ void ble_store_config_init(void);
 #include "glyphs.h"
 #include "clock.h"
 #include "phone_idle.h"
+#include "pairing.h"
 
 static const char *TAG = "ble";
 
@@ -81,6 +88,14 @@ static uint8_t s_own_addr_type;
  * completes (BLE_GAP_EVENT_CONN_UPDATE) */
 static uint16_t s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
 
+/* Pairing request on screen (host task only), its 30 s timer, and the owner's answer posted from the LVGL task */
+static pair_t s_pair;
+static struct ble_npl_callout s_pair_timer;
+static struct ble_npl_event s_pair_answer_ev;
+static volatile bool s_pair_answer_yes;
+/* Links on which the board already asked to upgrade an unauthenticated key (once per link) */
+static uint16_t s_upgrade_asked[CONFIG_BT_NIMBLE_MAX_CONNECTIONS] = { [0 ... CONFIG_BT_NIMBLE_MAX_CONNECTIONS - 1] = BLE_HS_CONN_HANDLE_NONE };
+
 static char s_text_buf[TEXT_MAX + 1];
 static size_t s_text_len;
 
@@ -99,6 +114,16 @@ static void set_fast_pace(uint16_t conn)
     }
 }
 
+/* May this link use chr? (pairing.h: protected ones need the numeric-comparison bond) */
+static bool link_allows(uint16_t conn, pair_chr_t chr)
+{
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) != 0) {
+        return false;
+    }
+    return pair_chr_allowed(chr, desc.sec_state.encrypted, desc.sec_state.authenticated);
+}
+
 /* conn waits for the translator app (restored audio CCCD, or the app went silent) */
 static void set_audio_pending(uint16_t conn)
 {
@@ -112,6 +137,13 @@ static void phone_audio_on(uint16_t conn)
         s_audio_pending_conn = BLE_HS_CONN_HANDLE_NONE;
     }
     if (s_phone_conn == conn) {
+        return;
+    }
+    if (!link_allows(conn, PAIR_CHR_AUDIO)) {
+        /* A CCCD restored from a Just Works bond (old firmware): no audio until the link is paired by code. Wait
+         * for the app's first authenticated write instead (translator_write_from) */
+        ESP_LOGW(TAG, "link %d: not paired by code, no audio until it is", conn);
+        set_audio_pending(conn);
         return;
     }
     if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE) {
@@ -172,6 +204,10 @@ static void on_wake_phone(struct ble_npl_event *ev)
     (void)ev;
     uint16_t conn = s_audio_pending_conn;
     if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE || conn == BLE_HS_CONN_HANDLE_NONE) {
+        return;
+    }
+    if (!link_allows(conn, PAIR_CHR_AUDIO)) {
+        ESP_LOGW(TAG, "board mic tapped: the waiting link %d is not paired by code", conn);
         return;
     }
     ESP_LOGI(TAG, "board mic tapped: iPhone audio back on the waiting link %d", conn);
@@ -256,6 +292,11 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
                             (uint8_t)(sets >> 24) };
         return os_mbuf_append(ctxt->om, info, sizeof(info)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
+    /* NimBLE enforces the ENC / AUTHEN flags before this runs; checked again so nothing slips through */
+    if ((attr_handle == s_ctrl_handle && !link_allows(conn_handle, PAIR_CHR_CTRL)) ||
+        (attr_handle == s_text_handle && !link_allows(conn_handle, PAIR_CHR_TEXT))) {
+        return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    }
     if (attr_handle == s_ctrl_handle) {
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
             uint8_t state = app_get_recording();
@@ -295,19 +336,24 @@ static const struct ble_gatt_svc_def s_services[] = {
             {
                 .uuid = &s_audio_uuid.u,
                 .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .flags = BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC |
+                         BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN,
                 .val_handle = &s_audio_handle,
             },
             {
                 .uuid = &s_text_uuid.u,
                 .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP | BLE_GATT_CHR_F_WRITE_ENC |
+                         BLE_GATT_CHR_F_WRITE_AUTHEN,
                 .val_handle = &s_text_handle,
             },
             {
                 .uuid = &s_ctrl_uuid.u,
                 .access_cb = chr_access,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN |
+                         BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_WRITE_AUTHEN |
+                         BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC |
+                         BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN,
                 .val_handle = &s_ctrl_handle,
             },
             {
@@ -321,6 +367,133 @@ static const struct ble_gatt_svc_def s_services[] = {
     },
     { 0 },
 };
+
+/* ---- pairing by code (host task) ---- */
+
+static void inject_numcmp(uint16_t conn, bool accept)
+{
+    struct ble_sm_io io = { .action = BLE_SM_IOACT_NUMCMP, .numcmp_accept = accept ? 1 : 0 };
+    int rc = ble_sm_inject_io(conn, &io);
+    ESP_LOGI(TAG, "link %d: pairing code %s (rc %d)", conn, accept ? "confirmed" : "rejected", rc);
+}
+
+/* A request ended with outcome: answer the SM (numeric comparison) and close the view */
+static void pair_finish(uint16_t conn, pair_kind_t kind, pair_outcome_t outcome)
+{
+    if (outcome == PAIR_OUT_NONE) {
+        return;
+    }
+    ble_npl_callout_stop(&s_pair_timer);
+    if (outcome == PAIR_OUT_TIMEOUT) {
+        ESP_LOGW(TAG, "link %d: no answer within %d s", conn, (int)(PAIR_TIMEOUT_US / 1000000));
+    }
+    if (kind == PAIR_KIND_NUMCMP) {
+        inject_numcmp(conn, outcome == PAIR_OUT_ACCEPT);
+    }
+    pair_ui_close();
+}
+
+static void on_pair_timer(struct ble_npl_event *ev)
+{
+    (void)ev;
+    int64_t now = esp_timer_get_time();
+    pair_kind_t kind = s_pair.kind;
+    pair_outcome_t out = pair_tick(&s_pair, now);
+    if (out != PAIR_OUT_NONE) {
+        pair_finish(s_pair.conn, kind, out);
+    } else if (s_pair.phase == PAIR_SHOWING) {
+        int64_t left_ms = (s_pair.deadline_us - now + 999) / 1000;
+        ble_npl_callout_reset(&s_pair_timer, ble_npl_time_ms_to_ticks32(left_ms < 10 ? 10 : (uint32_t)left_ms));
+    }
+}
+
+static void on_pair_answer(struct ble_npl_event *ev)
+{
+    (void)ev;
+    pair_kind_t kind = s_pair.kind;
+    pair_finish(s_pair.conn, kind, pair_answer(&s_pair, s_pair_answer_yes, esp_timer_get_time()));
+}
+
+void ble_link_pair_answer(bool yes)
+{
+    s_pair_answer_yes = yes;
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_pair_answer_ev);
+}
+
+static void pair_show(uint16_t conn, pair_kind_t kind, uint32_t passkey)
+{
+    uint16_t replaced = pair_begin(&s_pair, conn, kind, passkey, esp_timer_get_time());
+    if (replaced != PAIR_CONN_NONE) {
+        inject_numcmp(replaced, false);   /* one code on screen at a time: the newer request wins */
+    }
+    ble_npl_callout_reset(&s_pair_timer, ble_npl_time_ms_to_ticks32(PAIR_TIMEOUT_MS));
+    pair_ui_show(passkey, kind == PAIR_KIND_NUMCMP);
+}
+
+static void on_passkey_action(uint16_t conn, const struct ble_gap_passkey_params *params)
+{
+    if (params->action == BLE_SM_IOACT_NUMCMP) {
+        ESP_LOGI(TAG, "link %d: pairing, compare code %06lu", conn, (unsigned long)params->numcmp);
+        pair_show(conn, PAIR_KIND_NUMCMP, params->numcmp);
+    } else if (params->action == BLE_SM_IOACT_DISP) {
+        /* Legacy passkey entry (iOS uses numeric comparison): the board picks the code, the phone types it */
+        struct ble_sm_io io = { .action = BLE_SM_IOACT_DISP, .passkey = esp_random() % 1000000u };
+        int rc = ble_sm_inject_io(conn, &io);
+        ESP_LOGI(TAG, "link %d: pairing, passkey shown (rc %d)", conn, rc);
+        pair_show(conn, PAIR_KIND_DISP, io.passkey);
+    } else {
+        /* Input / OOB: this board has no keypad and no OOB data */
+        ESP_LOGW(TAG, "link %d: pairing action %d not supported, dropping the link", conn, params->action);
+        ble_gap_terminate(conn, BLE_ERR_AUTH_FAIL);
+    }
+}
+
+/* Upgrade bookkeeping: true if conn was already asked once */
+static bool upgrade_asked(uint16_t conn, bool mark)
+{
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+        if (s_upgrade_asked[i] == conn) {
+            return true;
+        }
+    }
+    if (mark) {
+        for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+            if (s_upgrade_asked[i] == BLE_HS_CONN_HANDLE_NONE) {
+                s_upgrade_asked[i] = conn;
+                break;
+            }
+        }
+    }
+    return false;
+}
+
+static void upgrade_forget(uint16_t conn)
+{
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+        if (s_upgrade_asked[i] == conn) {
+            s_upgrade_asked[i] = BLE_HS_CONN_HANDLE_NONE;
+        }
+    }
+}
+
+static void on_enc_change(uint16_t conn, int status)
+{
+    struct ble_gap_conn_desc desc;
+    bool found = ble_gap_conn_find(conn, &desc) == 0;
+    bool enc = found && status == 0 && desc.sec_state.encrypted;
+    bool auth = enc && desc.sec_state.authenticated;
+    ESP_LOGI(TAG, "link %d: encryption %s (status %d)%s%s", conn, enc ? "on" : "failed", status,
+             auth ? ", paired by code" : "", found && desc.sec_state.bonded ? ", bonded" : "");
+    if (pair_end(&s_pair, conn)) {   /* pairing finished either way while its code was up */
+        ble_npl_callout_stop(&s_pair_timer);
+        pair_ui_close();
+    }
+    if (pair_should_upgrade(enc, auth, upgrade_asked(conn, false))) {
+        upgrade_asked(conn, true);
+        int rc = ble_gap_security_initiate(conn);
+        ESP_LOGW(TAG, "link %d: bond without a code (older firmware): asking to pair by code (rc %d)", conn, rc);
+    }
+}
 
 static int gap_event(struct ble_gap_event *event, void *arg)
 {
@@ -352,6 +525,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
              * failing the same way every time */
             ESP_LOGW(TAG, "link %d: stale bond (MIC failure), deleting it", event->disconnect.conn.conn_handle);
             ble_store_util_delete_peer(&event->disconnect.conn.peer_id_addr);
+        }
+        upgrade_forget(event->disconnect.conn.conn_handle);
+        if (pair_end(&s_pair, event->disconnect.conn.conn_handle)) {
+            ble_npl_callout_stop(&s_pair_timer);
+            pair_ui_close();
         }
         if (event->disconnect.conn.conn_handle == s_phone_conn) {
             phone_audio_off();
@@ -418,9 +596,11 @@ static int gap_event(struct ble_gap_event *event, void *arg)
         break;
 
     case BLE_GAP_EVENT_ENC_CHANGE:
-        /* Only when the phone itself encrypts (a bond from older firmware): the translator service works either way */
-        ESP_LOGI(TAG, "link %d: encryption %s (status %d)", event->enc_change.conn_handle,
-                 event->enc_change.status == 0 ? "on" : "failed", event->enc_change.status);
+        on_enc_change(event->enc_change.conn_handle, event->enc_change.status);
+        break;
+
+    case BLE_GAP_EVENT_PASSKEY_ACTION:
+        on_passkey_action(event->passkey.conn_handle, &event->passkey.params);
         break;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -554,13 +734,15 @@ void ble_link_init(void)
     ESP_ERROR_CHECK(nimble_port_init());
     ble_npl_callout_init(&s_phone_idle_timer, nimble_port_get_dflt_eventq(), on_phone_idle_check, NULL);
     ble_npl_event_init(&s_wake_ev, on_wake_phone, NULL);
+    pair_init(&s_pair);
+    ble_npl_callout_init(&s_pair_timer, nimble_port_get_dflt_eventq(), on_pair_timer, NULL);
+    ble_npl_event_init(&s_pair_answer_ev, on_pair_answer, NULL);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
-    /* Just Works bonding (no keypad) if the phone asks for it; the board never initiates security and no
-     * characteristic demands encryption */
-    ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+    /* LE Secure Connections numeric comparison: the screen shows the code, Sai / Đúng answer it */
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_YESNO;
     ble_hs_cfg.sm_bonding = 1;
-    ble_hs_cfg.sm_mitm = 0;
+    ble_hs_cfg.sm_mitm = 1;
     ble_hs_cfg.sm_sc = 1;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;

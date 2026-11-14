@@ -110,6 +110,7 @@ void app_main(void)
     bsp_display_unlock();
     ui_init();
     lock_ui_init();
+    pair_ui_init();
     shell_start();   /* before BLE and the PMU: they post events */
 
     ble_link_init();
@@ -124,7 +125,9 @@ void app_main(void)
                 /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
                  * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;
-                if (pmu_usb_powered() || CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED) {
+                if (pair_ui_active()) {
+                    s_disconnected_since = esp_timer_get_time();   /* never sleep under a pairing code */
+                } else if (pmu_usb_powered() || CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED) {
                     s_disconnected_since = esp_timer_get_time();
                     if (!usb_logged) {
                         ESP_LOGI(TAG, "on USB power: not sleeping while idle");

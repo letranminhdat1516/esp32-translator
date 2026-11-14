@@ -17,6 +17,8 @@
  *   label:<utf8>             language label after the status ("<status> · <label>"; empty clears)
  *   level:<0..100>           level ring (0 hides it)                       V (fake speech on/off)
  *   lock / unlock / face     PWR x1 / PWR x2 / tap on the lock screen      K / U / F
+ *   pair:<6 digits>          an iPhone asks to pair: the code view (numeric comparison, 30 s timeout)
+ *   pair:ok / pair:no        answer it like a tap on Đúng / Sai
  *   sleep                    the deep-sleep message
  *   wait:<ms>                keep rendering
  *   shot:<file.bmp>          save what the screen shows (round, outside the glass dark grey)   P
@@ -41,6 +43,7 @@
 #include "esp_timer.h"
 #include "lvgl.h"
 #include "modes.h"
+#include "pairing.h"
 
 #define SIZE 466
 #define BEZEL 0x202226
@@ -124,8 +127,35 @@ bool pmu_battery(pmu_battery_t *out)
     return true;
 }
 
+/* ---- pairing (ble_link.c's part: the request state machine, the answer, the 30 s timeout) ---- */
+
+#define SIM_CONN 1
+static pair_t s_pair;
+
+static void pair_finish(pair_outcome_t out)
+{
+    if (out == PAIR_OUT_NONE) {
+        return;
+    }
+    printf("pairing %s\n", out == PAIR_OUT_ACCEPT ? "confirmed" : out == PAIR_OUT_REJECT ? "rejected" : "timed out");
+    pair_ui_close();
+}
+
+void ble_link_pair_answer(bool yes)
+{
+    pair_finish(pair_answer(&s_pair, yes, now_us()));
+}
+
+static void pair_timer_cb(lv_timer_t *t)
+{
+    pair_finish(pair_tick(&s_pair, now_us()));
+}
+
 static void apply_screen(void)
 {
+    if (pair_ui_active()) {
+        return;   /* shell.c: the pairing view stays on top until it closes */
+    }
     lv_obj_t *want = modes_screen(&s_modes) == SCREEN_LOCK ? lock_ui_screen() : ui_translator_screen();
     if (lv_screen_active() != want) {
         lv_screen_load(want);
@@ -298,6 +328,16 @@ static void run(char *cmd)
                 finger(x1 + (x2 - x1) * i / 10, y1 + (y2 - y1) * i / 10, true, 30);
             }
             finger(x2, y2, false, 60);
+        }
+    } else if (!strcmp(cmd, "pair") && arg) {
+        if (!strcmp(arg, "ok") || !strcmp(arg, "no")) {
+            ble_link_pair_answer(!strcmp(arg, "ok"));
+        } else if (strlen(arg) == 6 && strspn(arg, "0123456789") == 6) {
+            pair_begin(&s_pair, SIM_CONN, PAIR_KIND_NUMCMP, (uint32_t)atol(arg), now_us());
+            pair_ui_show((uint32_t)atol(arg), true);
+        } else {
+            fprintf(stderr, "pair: 6 digits, ok or no\n");
+            return;
         }
     } else if (!strcmp(cmd, "sleep")) {
         ui_prepare_sleep();
@@ -479,6 +519,9 @@ int main(int argc, char **argv)
     modes_init(&s_modes);
     ui_init();
     lock_ui_init();
+    pair_ui_init();
+    pair_init(&s_pair);
+    lv_timer_create(pair_timer_cb, 250, NULL);
     apply_screen();
     pump(100);
 
