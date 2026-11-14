@@ -26,3 +26,4 @@ sim/*.bmp
 
 # ESP-IDF tool cache (clangd index)
 firmware/.cache/
+.claude/worktrees/
