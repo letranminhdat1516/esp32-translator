@@ -177,12 +177,12 @@ The mouse is the finger (double-click = double tap, drag up on the lock face = s
 Scripted, without a window: `sim/build/board-sim --headless --do "connect;mic:on;text:Hello!;level:80;shot:out.bmp"`
 (all commands are listed at the top of `sim/sim.c`). BLE, audio and the PMU are faked.
 
-### iPhone app preview (no iPhone, no Simulator)
+### iPhone app screens without a board (demo mode)
 
-`ios/Preview/run.sh` compiles the real `ios/Sources/UI/ContentView.swift` into a small Mac app with fake data
-and opens it: an iPhone-sized screen plus a panel that switches the phase, the board state, the mic and
-listening, and adds sample lines. Bluetooth, speech and translation are not in it. (The gear menu looks like a
-Mac pull-down there; on the iPhone it is the round button.)
+Launching the app with `-demo <screen>` swaps in the fake engine and board, seeds the design's sample data and
+opens that screen directly (`welcome`, `permissions`, `pair`, `language`, `live`, `lock`, `phoneonly`,
+`boardlost`, `history`, `glossary`, `settings`, `sharing`). `ios/Tools/snap.sh [screen…]` builds for the iOS
+Simulator (iPhone 17 Pro), launches each screen and saves `docs/ui-redesign/shots/<screen>.png`.
 
 ### iPhone app (Swift)
 

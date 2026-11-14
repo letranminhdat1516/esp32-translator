@@ -5,10 +5,20 @@ final class CopyTests: XCTestCase {
     private let root = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
+    /// Every Swift file under ios/Sources/UI, ios/Sources/Shared and ios/Sources/DesignSystem.
     private var uiFiles: [URL] {
-        ["UIState", "LanguageSheet", "ReadinessView", "GlossaryView", "ContentView"].map {
-            root.appendingPathComponent("ios/Sources/UI/\($0).swift")
+        ["ios/Sources/UI", "ios/Sources/Shared", "ios/Sources/DesignSystem"].flatMap { dir -> [URL] in
+            let base = root.appendingPathComponent(dir)
+            let files = FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []
+            // Copy.swift documents the call (`Copy.t("key", …)`) and holds no copy of its own
+            return files.filter { $0.pathExtension == "swift" && $0.lastPathComponent != "Copy.swift" }
         }
+        .sorted { $0.path < $1.path }
+    }
+
+    /// Sample conversation content (previews, demo mode), not UI copy: exempt from the no-literal rule.
+    private func isSampleData(_ url: URL) -> Bool {
+        ["UISamples.swift", "DemoData.swift"].contains(url.lastPathComponent)
     }
 
     private func text(_ url: URL) throws -> String { try String(contentsOf: url, encoding: .utf8) }
@@ -56,7 +66,8 @@ final class CopyTests: XCTestCase {
     }
 
     func testNoVietnameseLiteralInTheViews() throws {
-        for url in uiFiles {
+        XCTAssertGreaterThan(uiFiles.count, 20)
+        for url in uiFiles where !isSampleData(url) {
             let code = try text(url).split(separator: "\n", omittingEmptySubsequences: false)
                 .map { line -> String in
                     // Comments may quote the copy; string literals may not

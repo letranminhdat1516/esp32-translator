@@ -26,6 +26,13 @@
 	<string>Listens to you through your AirPods to translate into English.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recognizes speech on device for translation.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>SpaceGrotesk.ttf</string>
+		<string>JetBrainsMono.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

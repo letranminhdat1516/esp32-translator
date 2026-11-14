@@ -15,6 +15,32 @@ struct UILine: Identifiable, Hashable, Sendable {
     var unclear = false
     /// When the line was last spoken: orders both sides into one stream.
     var at: Date
+    /// Where the phrase lies on the `AudioClipRecorder` clock (the recognizer's result range), for "Nghe lại" and
+    /// "Báo dịch sai"; nil when unknown.
+    var audioRange: ClosedRange<TimeInterval>? = nil
+
+    /// Which side spoke the line.
+    var side: Side { mine ? .mine : .theirs }
+}
+
+/// The text a transcript row shows: the Vietnamese side (their translation, your own words); their source while the
+/// translation is pending.
+enum TranscriptRowText {
+    static func shown(_ line: UILine) -> String {
+        line.mine ? line.source : (line.target.isEmpty ? line.source : line.target)
+    }
+}
+
+/// The state of one language in the language list (Language screen, settings).
+enum PackStatus: Hashable, Sendable {
+    /// Ready to use offline.
+    case installed
+    /// Being downloaded; 0…1 when the platform reports progress.
+    case downloading(Double?)
+    /// Needs a download of about `megabytes` MB (nil when unknown).
+    case notDownloaded(megabytes: Int?)
+    /// This device cannot recognize it.
+    case unsupported
 }
 
 /// The small marks next to the status line.
@@ -173,6 +199,8 @@ final class UIState {
     var lines: [UILine] = []
     var theirPartial = ""
     var myPartial = ""
+    /// The subtitle the board shows now (the dial on the Live screen).
+    var boardSubtitle = ""
     var listening = false
     var board: BoardState = .off
     var boardMicOn = true
@@ -185,6 +213,24 @@ final class UIState {
     var micRoute: AudioRoute = .headset
     /// The Vietnamese voice is missing: banner with a button to the system TTS settings.
     var ttsVoiceMissing = false
+
+    // MARK: Board and settings (the new screens; tracks wire them)
+
+    /// Board battery in percent while connected; nil when unknown.
+    var boardBattery: Int?
+    var boardCharging = false
+    /// "Lưu lịch sử" (default on).
+    var saveHistory = true
+    /// "Chia sẻ để cải thiện" (default off): gates audio capture for "Báo dịch sai".
+    var shareToImprove = false
+    /// The Vietnamese voice's name ("Linh"); nil when unknown.
+    var voiceName: String?
+    /// Per-language status for the language list; a language with no entry falls back to the session state.
+    var packStatus: [String: PackStatus] = [:]
+    /// When the board was last seen connected (for "12 giây trước" on the lost screen).
+    var boardLostAt: Date?
+    /// Battery when the board was lost.
+    var boardLostBattery: Int?
 
     // MARK: Glossary
 
@@ -209,6 +255,9 @@ final class UIState {
     var glossaryAdd: (String) throws -> Void = { _ in }
     var glossaryUpdate: (String, String) throws -> Void = { _, _ in }
     var glossaryDelete: (String) throws -> Void = { _ in }
+    /// Settings switches (persisted by track C).
+    var setSaveHistory: (Bool) -> Void = { _ in }
+    var setShareToImprove: (Bool) -> Void = { _ in }
 
     init() {}
 
