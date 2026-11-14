@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Từ riêng</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#141414}a:hover{color:#1A5DB8}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; border-radius: 52px; background: #EBE8E2; color: #141414; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; padding: 60px 22px 30px; overflow: hidden;">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 500;">
+    <a href="#" style="height: 44px; display: flex; align-items: center; text-decoration: none;">← Quay lại</a>
+    <span style="color: #5D5A55;">6 từ</span>
+  </div>
+
+  <h1 style="margin: 6px 0 0; font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1;">Từ riêng</h1>
+  <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: #5D5A55;">Tên người, thương hiệu, địa danh sẽ được giữ nguyên khi dịch, và máy cũng nhận ra chúng chính xác hơn.</p>
+
+  <div style="margin-top: 18px; padding: 14px; border-radius: 14px; background: #0D0D0E; color: #EBE8E2; display: flex; flex-direction: column; gap: 10px;">
+    <label style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #9A9893;">Thêm từ</span>
+      <input type="text" value="Phở Thìn Lò Đúc" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #4C8FE8; background: #1A1A1C; color: #FFFFFF; font: 500 16px 'Space Grotesk', sans-serif; outline: none;">
+    </label>
+    <label style="display: flex; flex-direction: column; gap: 6px;">
+      <span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #9A9893;">Bản dịch cố định (không bắt buộc)</span>
+      <input type="text" placeholder="Để trống = giữ nguyên" style="height: 44px; padding: 0 12px; border-radius: 8px; border: 1px solid #3A3A3E; background: #1A1A1C; color: #FFFFFF; font: 400 16px 'Space Grotesk', sans-serif; outline: none;">
+    </label>
+    <button type="button" style="height: 46px; border: none; border-radius: 10px; background: #EBE8E2; color: #141414; font: 600 16px 'Space Grotesk', sans-serif;">Thêm</button>
+  </div>
+
+  <div style="margin-top: 18px; display: flex; flex-direction: column; border-top: 1px solid #141414;">
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-bottom: 1px solid #CFCAC1; align-items: baseline;"><span style="font-size: 17px; font-weight: 700;">Bến Thành</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Giữ nguyên</span></div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-bottom: 1px solid #CFCAC1; align-items: baseline;"><span style="font-size: 17px; font-weight: 700;">bánh xèo</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Vietnamese pancake</span></div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-bottom: 1px solid #CFCAC1; align-items: baseline;"><span style="font-size: 17px; font-weight: 700;">Grab</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Giữ nguyên</span></div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-bottom: 1px solid #CFCAC1; align-items: baseline;"><span style="font-size: 17px; font-weight: 700;">Zalo</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Giữ nguyên</span></div>
+    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 13px 0; border-bottom: 1px solid #CFCAC1; align-items: baseline;"><span style="font-size: 17px; font-weight: 700;">Tân Sơn Nhất</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Giữ nguyên</span></div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

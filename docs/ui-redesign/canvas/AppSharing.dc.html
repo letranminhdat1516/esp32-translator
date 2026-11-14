@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Chia sẻ dữ liệu</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#141414}a:hover{color:#1A5DB8}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; border-radius: 52px; background: #EBE8E2; color: #141414; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; padding: 60px 22px 30px; overflow: hidden;">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 500;">
+    <a href="#" style="height: 44px; display: flex; align-items: center; text-decoration: none;">← Quay lại</a>
+    <span role="switch" aria-checked="true" aria-label="Cho phép chia sẻ" style="display: flex; align-items: center; gap: 8px;">Cho phép<span style="width: 52px; height: 28px; border-radius: 6px; background: #141414; display: flex; align-items: center; justify-content: flex-end; padding: 3px; box-sizing: border-box;"><span style="width: 22px; height: 22px; border-radius: 4px; background: #4C8FE8;"></span></span></span>
+  </div>
+
+  <h1 style="margin: 6px 0 0; font-size: 44px; font-weight: 700; letter-spacing: -0.03em; line-height: 1;">Chia sẻ dữ liệu</h1>
+  <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.45; color: #5D5A55;">Gửi chữ và ghi âm của những câu bị dịch sai để người phát triển sửa lỗi nhận giọng và dịch. Chỉ những câu bạn chọn mới được gửi.</p>
+
+  <div style="margin-top: 14px; padding: 12px; border: 1px solid #A34E12; border-radius: 10px; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start;">
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #8A3F0C;">!</span>
+    <span style="font-size: 13px; line-height: 1.45; color: #6E330A;">Ghi âm có thể có giọng người đối diện. Nên hỏi họ trước khi gửi.</span>
+  </div>
+
+  <span style="margin-top: 20px; font-size: 14px; font-weight: 500;">Câu bạn đã báo sai (3)</span>
+  <div style="margin-top: 8px; display: flex; flex-direction: column; border-top: 1px solid #141414;">
+    <div style="display: grid; grid-template-columns: 24px minmax(0, 1fr) 40px; gap: 12px; padding: 12px 0; border-bottom: 1px solid #CFCAC1; align-items: center;">
+      <span role="checkbox" aria-checked="true" aria-label="Chọn câu này" style="width: 22px; height: 22px; border-radius: 4px; background: #141414; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EBE8E2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span>
+      <span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="font-size: 15px; font-weight: 700;">a mốc xi xi lin → amoxicillin</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Bạn nói · 3 giây</span></span>
+      <button type="button" aria-label="Nghe đoạn ghi âm" style="width: 40px; height: 40px; border: 1px solid #141414; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="#141414" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg></button>
+    </div>
+    <div style="display: grid; grid-template-columns: 24px minmax(0, 1fr) 40px; gap: 12px; padding: 12px 0; border-bottom: 1px solid #CFCAC1; align-items: center;">
+      <span role="checkbox" aria-checked="true" aria-label="Chọn câu này" style="width: 22px; height: 22px; border-radius: 4px; background: #141414; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EBE8E2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></span>
+      <span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="font-size: 15px; font-weight: 700;">Ben Thanh → Bến Thành</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Họ nói · 2 giây</span></span>
+      <button type="button" aria-label="Nghe đoạn ghi âm" style="width: 40px; height: 40px; border: 1px solid #141414; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="#141414" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg></button>
+    </div>
+    <div style="display: grid; grid-template-columns: 24px minmax(0, 1fr) 40px; gap: 12px; padding: 12px 0; border-bottom: 1px solid #CFCAC1; align-items: center;">
+      <span role="checkbox" aria-checked="false" aria-label="Chọn câu này" style="width: 22px; height: 22px; border-radius: 4px; border: 1.5px solid #141414; box-sizing: border-box;"></span>
+      <span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="font-size: 15px; font-weight: 700;">mật khẩu hoa phay → Wi-Fi</span><span style="font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #8A3F0C;">Bạn nói · có thể chứa mật khẩu</span></span>
+      <button type="button" aria-label="Nghe đoạn ghi âm" style="width: 40px; height: 40px; border: 1px solid #141414; border-radius: 10px; background: transparent; display: flex; align-items: center; justify-content: center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="#141414" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="margin-top: auto; display: flex; flex-direction: column; gap: 10px;">
+    <button type="button" style="height: 60px; border: none; border-radius: 14px; background: #141414; color: #EBE8E2; font: 600 16px 'Space Grotesk', sans-serif;">Gửi 2 câu</button>
+    <button type="button" style="height: 44px; border: none; background: transparent; color: #8A3F0C; font: 600 16px 'Space Grotesk', sans-serif; text-decoration: underline;">Xoá dữ liệu đã gửi</button>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

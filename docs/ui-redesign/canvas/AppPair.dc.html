@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Ghép board bằng mã</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#1A5DB8}a:hover{color:#123F7D}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; border-radius: 52px; background: #EBE8E2; color: #141414; font-family: 'Space Grotesk', system-ui, sans-serif; display: flex; flex-direction: column; padding: 60px 22px 30px; overflow: hidden;">
+
+  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 500;">
+    <span>Bước 2/3</span>
+    <span style="display: flex; gap: 4px;" aria-hidden="true"><span style="width: 28px; height: 6px; background: #141414;"></span><span style="width: 28px; height: 6px; background: #141414;"></span><span style="width: 28px; height: 6px; border: 1px solid #141414; box-sizing: border-box;"></span></span>
+  </div>
+
+  <div style="margin-top: 34px; align-self: center; width: 250px; height: 250px; border-radius: 50%; background: #0D0D0E; box-shadow: 0 0 0 10px #DEDAD3, 0 0 0 11px #C9C4BB; position: relative; display: flex; align-items: center; justify-content: center;">
+    <div style="position: absolute; inset: 0; border-radius: 50%; background-image: radial-gradient(#26262A 1.2px, transparent 1.4px); background-size: 9px 9px;" aria-hidden="true"></div>
+    <div style="position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #8E8C88;">Mã ghép</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 46px; font-weight: 700; letter-spacing: 0.06em; color: #FFFFFF;">4729</span>
+    </div>
+  </div>
+  <span style="margin-top: 22px; align-self: center; font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: #5D5A55;">Mã đang hiện trên màn hình board</span>
+
+  <h1 style="margin: 26px 0 0; font-size: 40px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.02;">Ghép board</h1>
+  <p style="margin: 10px 0 0; font-size: 15px; line-height: 1.45; color: #5D5A55;">Kiểm tra xem board có hiện đúng mã 4729 không. Chỉ cần ghép một lần.</p>
+
+  <div style="margin-top: 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px 0; border-top: 1px solid #141414; border-bottom: 1px solid #CFCAC1; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; font-weight: 700;">ESP-Translator</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #5D5A55;">Pin 88%</span></div>
+    
+  </div>
+
+  <div style="margin-top: auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px;">
+    <button type="button" style="height: 60px; border: 1px solid #141414; border-radius: 14px; background: transparent; color: #141414; font: 600 16px 'Space Grotesk', sans-serif;">Không đúng</button>
+    <button type="button" style="height: 60px; border: none; border-radius: 14px; background: #141414; color: #EBE8E2; font: 600 16px 'Space Grotesk', sans-serif;">Đúng, ghép board</button>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
