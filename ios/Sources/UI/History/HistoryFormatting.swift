@@ -53,4 +53,12 @@ enum HistoryFormatting {
 
     /// Whole seconds between `then` and `now`, never negative ("12 giây trước").
     static func secondsAgo(_ then: Date, now: Date) -> Int { max(0, Int(now.timeIntervalSince(then))) }
+
+    /// "12 giây trước" under a minute, "3 phút trước" under an hour, then "2 giờ trước" (the Board Lost top bar).
+    static func ago(_ then: Date, now: Date) -> String {
+        let s = secondsAgo(then, now: now)
+        if s < 60 { return Copy.t("lost.ago", ["seconds": String(s)]) }
+        if s < 3600 { return Copy.t("lost.agoMinutes", ["minutes": String(s / 60)]) }
+        return Copy.t("lost.agoHours", ["hours": String(s / 3600)])
+    }
 }

@@ -64,6 +64,21 @@ import Testing
         #expect(HistoryFormatting.secondsAgo(now, now: now.addingTimeInterval(-5)) == 0)
     }
 
+    @Test func agoLabelSwitchesUnits() {
+        let now = DemoData.now
+        func ago(_ s: TimeInterval) -> String { HistoryFormatting.ago(now.addingTimeInterval(-s), now: now) }
+        #expect(ago(0) == "0 giây trước")
+        #expect(ago(12) == "12 giây trước")
+        #expect(ago(59.9) == "59 giây trước")
+        #expect(ago(60) == "1 phút trước")
+        #expect(ago(125) == "2 phút trước")
+        #expect(ago(3599) == "59 phút trước")
+        #expect(ago(3600) == "1 giờ trước")
+        #expect(ago(5 * 3600 + 59 * 60) == "5 giờ trước")
+        #expect(ago(30 * 3600) == "30 giờ trước")
+        #expect(HistoryFormatting.ago(now.addingTimeInterval(10), now: now) == "0 giây trước", "a clock skew is never negative")
+    }
+
     @Test func feedbackQueue() async throws {
         let q = InMemoryFeedbackQueue(DemoData.feedback)
         #expect(InMemoryFeedbackQueue.selectedCount(await q.items()) == 2)

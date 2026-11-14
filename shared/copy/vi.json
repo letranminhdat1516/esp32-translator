@@ -156,6 +156,8 @@
   "phoneOnly.wait": "One moment…",
   "lost.status": "Mất kết nối",
   "lost.ago": "{seconds} giây trước",
+  "lost.agoMinutes": "{minutes} phút trước",
+  "lost.agoHours": "{hours} giờ trước",
   "lost.reconnecting": "Đang kết nối lại",
   "lost.title": "Mất kết nối board",
   "lost.body": "Board có thể đã hết pin hoặc ở quá xa. Trong lúc chờ, app dùng micro iPhone để nghe người đối diện.",

@@ -16,7 +16,7 @@ struct BoardLostView: View {
             } trailing: {
                 if let at = ui.boardLostAt {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(Copy.t("lost.ago", ["seconds": String(HistoryFormatting.secondsAgo(at, now: now()))]))
+                        Text(HistoryFormatting.ago(at, now: now()))
                             .foregroundStyle(DS.Color.muted)
                             .monospacedDigit()
                     }
