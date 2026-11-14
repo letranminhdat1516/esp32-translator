@@ -583,6 +583,24 @@ still pending).
 - My side is always Vietnamese; the other language is picked from the packs in `shared/languages/`. Languages are offered only when the phone has a recognizer and offline translation both ways for them.
 - The multi-language flow is not yet proven on devices (the Note 9 and the iPhone parity runs are the next step); the native brand spellings in the ja/ko/th packs have not been reviewed by native speakers.
 
+## Not done / next (iOS code review, 2026-11-14)
+
+Fixed in that review: ADPCM header index clamp, the four missing Swift fixture suites, a dead Vietnamese recognizer, zh-Hans locale mapping, board pinning ("Quên board"), and the glossary excluded from iCloud backup. Still open:
+
+- A dead Vietnamese recognizer is noticed only when board audio arrives (or at the next start or mic-on). Catching it with no board audio needs a new engine event in the `VoiceEngine` contract.
+- Board pinning is trust-on-first-use. A phone that never pairs a Mac for the relay never subscribes to the encrypted `…0012` characteristic, so it never pins the board. Fixing that needs a firmware characteristic that can only be read over an encrypted link.
+- Switching to a language that needs a download leaves the old pair running: the board keeps getting subtitles in the old language while the screen asks to download the new one. Turn the mic off when entering `needsDownload` from a switch (R1, R5).
+- Small race between the generation check and `engine.speak` (`ConversationController.say`): one phrase from the old pair could still be spoken right after a switch. Pass the generation into the engine (R4).
+- The one-restart budget in `SessionMachine` never resets, so a second recognizer death hours later goes straight to `failed`. Reset it after a healthy period (P6).
+- The failure screen shows the raw error code (`notReady`) under "Không khởi động được". Map error codes to Vietnamese copy.
+- The label and subtitles share one replaceable BLE queue, so a subtitle can replace a label that has not been sent yet. The label's script is also chosen once at `running`, which is too early for a board that connects later with CJK fonts (R5).
+- Per-buffer diagnostics on the audio path (`LiveTranscriber`: string keys, a lock and an RMS per buffer, a log line per result) while nothing reads the counters any more. Board audio is also decoded on the main actor.
+- `Speaker` prints spoken text to stdout. Gate it behind debug builds.
+- A glossary that was set aside after corruption, or that went read-only, is never shown to the user (`recoveredFromCorruption` is unused).
+- Leftovers: `BoardVoiceTranscriber` hard-codes `vi-VN` (R16); the mic usage text in `Info.plist` says "translate into English"; the relay UI is English only.
+- Pack regexes are only checked for compiling. There is no adversarial-string time-bound test (ARCHITECTURE §7).
+- The app builds in Swift language mode 5 with a fair amount of `@unchecked Sendable`. Move to Swift 6 mode.
+
 ## License
 
 Code: MIT. Be Vietnam Pro font: SIL Open Font License 1.1 (`fonts/OFL.txt`).
