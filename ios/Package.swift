@@ -18,7 +18,8 @@ let package = Package(
                       "Translate/Translator.swift", "Engine/AudioSession.swift", "Engine/Speaker.swift",
                       "Engine/TranslationSheet.swift", "Engine/AppleVoiceEngine+Live.swift",
                       "UI/Root/RootView.swift", "UI/Onboarding/WelcomeView.swift", "UI/Onboarding/PermissionsView.swift",
-                      "UI/Onboarding/PairView.swift", "UI/Onboarding/LanguageView.swift", "UI/Live",
+                      "UI/Onboarding/PairView.swift", "UI/Onboarding/LanguageView.swift",
+                      "UI/Onboarding/LivePermissions.swift", "UI/Onboarding/SwipeBack.swift", "UI/Live",
                       "UI/History/HistoryView.swift", "UI/History/HistoryDetailView.swift", "UI/Glossary",
                       "UI/Settings", "UI/Sharing", "Shared/TranslatorIntents.swift", "Shared/ActivityViews.swift"],
             // Language mode 5 as in the app; complete concurrency checking so data-race diagnostics show up here

@@ -1,10 +1,13 @@
 import SwiftUI
+import UIKit
 
-/// 1.2 Cấp quyền. Track A wires the real permission state and requests (`request`).
+/// 1.2 Cấp quyền: the real state of the three permissions; "Cho phép" shows the system prompt. "Tiếp tục" is
+/// enabled only once all are granted; after a refusal (iOS asks only once) the button opens the app's Settings.
 struct PermissionsView: View {
     let router: AppRouter
     let permissions: PermissionsSnapshot
-    var request: (PermissionsSnapshot.Kind) -> Void = { _ in }
+    var actions = PermissionActions()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         InstrumentScreen {
@@ -17,14 +20,26 @@ struct PermissionsView: View {
                 ForEach(PermissionsSnapshot.Kind.allCases, id: \.self) { kind in row(kind) }
             }
             .padding(.top, 28)
-            Text(Copy.t("perm.noAirPods")).ds(.monoNote).foregroundStyle(DS.Color.muted)
+            Text(Copy.t(permissions.anyDenied ? "perm.deniedNote" : "perm.noAirPods")).ds(.monoNote)
+                .foregroundStyle(permissions.anyDenied ? DS.Color.warnText : DS.Color.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
             Spacer(minLength: 16)
-            Button(Copy.t("perm.continue")) { router.next() }
+            switch permissions.primary {
+            case .openSettings:
+                Button(Copy.t("perm.openSettings")) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
                 .buttonStyle(.instrument())
-                .disabled(!permissions.canContinue)
+            case .continueOn, .waiting:
+                Button(Copy.t("perm.continue")) { router.next() }
+                    .buttonStyle(.instrument())
+                    .disabled(!permissions.canContinue)
+            }
         }
+        .onAppear { actions.refresh() }
+        // Back from the Settings app (or a system prompt): read the state again
+        .onChange(of: scenePhase) { _, phase in if phase == .active { actions.refresh() } }
     }
 
     private func row(_ kind: PermissionsSnapshot.Kind) -> some View {
@@ -55,7 +70,7 @@ struct PermissionsView: View {
         case .denied:
             StatusDot(color: DS.Color.warnDot, label: Copy.t("perm.denied"), labelColor: DS.Color.warnText)
         case .notDetermined:
-            Button(Copy.t("perm.allow")) { request(kind) }
+            Button(Copy.t("perm.allow")) { actions.request(kind) }
                 .buttonStyle(.instrumentCompact(permissions.next == kind ? .primary : .secondary))
         }
     }

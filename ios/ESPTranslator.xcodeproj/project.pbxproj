@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		002B1674AE978945A59DFEE2 /* SwipeBack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C3F8015FDD8E0B0D8C5933E /* SwipeBack.swift */; };
 		02486F5EB1F5D6A464567D5B /* VietnameseFixup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */; };
 		025FDF585376A660D76D5733 /* EngineMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D6F8ED68676431B024E4E24 /* EngineMapping.swift */; };
 		03A084A0E7876AC97885C3AF /* ADPCMDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */; };
@@ -34,6 +35,7 @@
 		37CFB6F181E1582387F7B70A /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5269971219B8813685959DFF /* LiveActivityController.swift */; };
 		38C4F75AB3EC318B2DACCC72 /* ReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B35E13856359A933EAD22328 /* ReadinessView.swift */; };
 		3F9C431F4493846D0E5BA6F5 /* ActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967E6B11A49087ED395A0F45 /* ActivityViews.swift */; };
+		41499F3689B19A36782CFA61 /* LivePermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F1AEB7A674F3D779F90BA6 /* LivePermissions.swift */; };
 		44550F720815B37734136827 /* TranslationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A2444940233161E3F68060D /* TranslationSheet.swift */; };
 		4694C23B056CF0160E0DA64D /* BoardLostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2FA2A909D240F750B52046E /* BoardLostView.swift */; };
 		46A4BE586B8DDED38F2F3DFC /* PhoneOnlyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275056630A9F71541A6A655E /* PhoneOnlyView.swift */; };
@@ -179,6 +181,7 @@
 		49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslatorActivityAttributes.swift; sourceTree = "<group>"; };
 		4AB9BD37D30C217E578928C5 /* JetBrainsMono.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = JetBrainsMono.ttf; sourceTree = "<group>"; };
 		4ACF0036B5AFF03ABF7F19EC /* BoardDial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardDial.swift; sourceTree = "<group>"; };
+		4C3F8015FDD8E0B0D8C5933E /* SwipeBack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwipeBack.swift; sourceTree = "<group>"; };
 		4EC3A6C992C02F2DAE7BA1F8 /* OnboardingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingModel.swift; sourceTree = "<group>"; };
 		4F16EE5FAE56D2A685D3B9A0 /* SharingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharingView.swift; sourceTree = "<group>"; };
 		5269971219B8813685959DFF /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
@@ -225,6 +228,7 @@
 		B43C4770768D6E78E32BB0C6 /* PairingModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingModel.swift; sourceTree = "<group>"; };
 		BAC1E69067916FDF04269240 /* Tile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tile.swift; sourceTree = "<group>"; };
 		BD1DA4BEC6969DB76946CDF2 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
+		C1F1AEB7A674F3D779F90BA6 /* LivePermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePermissions.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
 		C97CE2685BA5739EE0CE32F3 /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
 		CCE663DBD016E3693CB14BD7 /* DemoMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMode.swift; sourceTree = "<group>"; };
@@ -424,9 +428,11 @@
 			isa = PBXGroup;
 			children = (
 				CF5B33424E36CAA447B3D862 /* LanguageView.swift */,
+				C1F1AEB7A674F3D779F90BA6 /* LivePermissions.swift */,
 				4EC3A6C992C02F2DAE7BA1F8 /* OnboardingModel.swift */,
 				B26AF4079FDFBC3E0FE4E5F3 /* PairView.swift */,
 				BD1DA4BEC6969DB76946CDF2 /* PermissionsView.swift */,
+				4C3F8015FDD8E0B0D8C5933E /* SwipeBack.swift */,
 				0A83AD767A9BD61C013067C0 /* WelcomeView.swift */,
 			);
 			path = Onboarding;
@@ -727,6 +733,7 @@
 				9206E39230C5F6B7E52E73D9 /* LanguageView.swift in Sources */,
 				950B92364372F6B045C35AE4 /* LevelModel.swift in Sources */,
 				37CFB6F181E1582387F7B70A /* LiveActivityController.swift in Sources */,
+				41499F3689B19A36782CFA61 /* LivePermissions.swift in Sources */,
 				5DA2B9AE44FC4CEA79CF85CF /* LiveTranscriber.swift in Sources */,
 				DA03AF510533CA90AE9DF2C4 /* LiveView.swift in Sources */,
 				8BF708516B90E1BF3B6D10F1 /* LockScreenPreview.swift in Sources */,
@@ -750,6 +757,7 @@
 				28B83F2DC9A0ED3B3653557C /* StatusDot.swift in Sources */,
 				5ECB781413B0FAB4A8888484 /* StepBar.swift in Sources */,
 				0C17A579D555319DA52503AA /* SubtitleTranslator.swift in Sources */,
+				002B1674AE978945A59DFEE2 /* SwipeBack.swift in Sources */,
 				18BAF55CF343218E372F0520 /* TableRow.swift in Sources */,
 				628B98C4DED00457C05E2580 /* TermProtector.swift in Sources */,
 				B0D403A27FCDE3DBDB913258 /* TextPipeline.swift in Sources */,

@@ -100,7 +100,7 @@ enum DemoData {
         services.glossaryDraft = glossaryDraft
         services.permissions = PermissionsSnapshot(microphone: .granted, bluetooth: .notDetermined, speech: .notDetermined)
         if let pairing = services.pairing as? FakePairingModel {
-            pairing.state = .confirming(name: "ESP-Translator", battery: 88, code: "4729")
+            pairing.state = .confirming(name: "ESP-Translator", battery: 88)
         }
         services.level.push(0.9, at: .distantFuture)
 

@@ -275,6 +275,7 @@ final class ConversationController {
         case .downloading:
             downloadMissing()
         case .preparing(let code, let restarts):
+            ui.packStatus[code] = .installed   // nothing missing any more (track A: the language list)
             prepare(code, restarts: restarts)
         case .running(let code, let restarts):
             running(code, restarts: restarts)
@@ -302,6 +303,24 @@ final class ConversationController {
         ui.ttsVoiceMissing = !caps.vietnameseVoice
         let saved = defaults.string(forKey: Self.pickKey) ?? Self.defaultPick
         apply(.catalogReady(saved: saved, offered: Set(ui.offeredPacks.map(\.code))))
+        refreshPackStatus()
+    }
+
+    /// The language list's "Đã tải" / "Tải": what each offered language still misses (the Vietnamese voice aside).
+    /// Track A (onboarding language step); the picked language's download shows over this.
+    private func refreshPackStatus() {
+        let codes = ui.offeredPacks.map(\.code), engine = self.engine, generation = session.generation
+        oneOff { [weak self] in
+            for code in codes {
+                let pair = PairMsg(home: LanguageCatalog.homeCode, other: code, generation: generation)
+                guard let missing = try? await engine.missing(pair: pair) else { continue }
+                guard let self else { return }
+                let blocking = missing.filter { $0.kind != .ttsVoice }
+                if ui.packStatus[code] != .installed {
+                    ui.packStatus[code] = blocking.isEmpty ? .installed : .notDownloaded(megabytes: nil)
+                }
+            }
+        }
     }
 
     private func applyCapabilities(_ caps: Capabilities) {

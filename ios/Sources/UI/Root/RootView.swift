@@ -41,11 +41,23 @@ struct RootView: View {
         }
     }
 
-    @ViewBuilder
+    /// Welcome at the root, the steps pushed (swipe back works with the bar hidden: `SwipeBack.swift`).
     private var onboarding: some View {
-        switch router.onboardingStep {
+        NavigationStack(path: $router.onboardingPath) {
+            onboardingScreen(.welcome)
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: OnboardingStep.self) { step in
+                    onboardingScreen(step).toolbar(.hidden, for: .navigationBar)
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func onboardingScreen(_ step: OnboardingStep) -> some View {
+        switch step {
         case .welcome: WelcomeView(router: router)
-        case .permissions: PermissionsView(router: router, permissions: services.permissions)
+        case .permissions:
+            PermissionsView(router: router, permissions: services.permissions, actions: services.permissionActions)
         case .pair: PairView(router: router, pairing: services.pairing)
         case .language: LanguageView(ui: ui, router: router, mode: .onboarding)
         }
