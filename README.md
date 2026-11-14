@@ -57,7 +57,7 @@ renders the board logo back.
 
 | Where | What | Why |
 |---|---|---|
-| Board | Energy VAD (adaptive noise floor, 300 ms pre-roll, 800 ms hangover) | Silence is never transmitted: no radio time, no recognition work on the phone |
+| Board | Energy VAD (adaptive noise floor, 300 ms pre-roll, 400 ms hangover) | Silence is never transmitted: no radio time, no recognition work on the phone |
 | Board | Screen off after 30 s without speech, subtitles or touch; a tap only wakes it | AMOLED power scales with lit pixels and brightness |
 | Board | Lock (PWR ×1): panel off, the 5 s lock face is a static logo | No lit pixels, clock timer paused while locked |
 | Board | Deep sleep on battery 3 min after the translator app's link goes away (or after boot without one); touch screen or BOOT wakes it. Never while linked, on USB power, or with the dev stay-on option (`CONFIG_TRANSLATOR_DEV_STAY_ON`) | Near-zero drain when you walk away |

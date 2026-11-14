@@ -28,7 +28,7 @@ static const char *TAG = "audio";
 #define WARMUP_FRAMES 10           /* drop the first 200 ms: codec start-up pop */
 
 #define VAD_PREROLL_FRAMES  15     /* 300 ms sent before the detected start */
-#define VAD_HANGOVER_FRAMES 40     /* keep streaming 800 ms after the last speech frame */
+#define VAD_HANGOVER_FRAMES 20     /* keep streaming 400 ms after the last speech frame (latency harness: the app pads silence, so 800 ms only cost airtime) */
 #define VAD_START_FRAMES    2      /* 40 ms above threshold to open */
 #define VAD_MARGIN_DB       10.0f  /* speech must be this far above the noise floor */
 #define VAD_MIN_DB          -58.0f /* and above this absolute level */
