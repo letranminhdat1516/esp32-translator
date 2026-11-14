@@ -515,7 +515,7 @@ static void on_passkey_action(uint16_t conn, const struct ble_gap_passkey_params
     case PAIR_BEGIN_REJECT_RATE:
         ESP_LOGW(TAG, "link %d: pairing requests too often from this peer (or overall), rejected", conn);
         inject_numcmp(conn, false);
-        /* never over a code being compared; at most once a minute */
+        /* never over a code being compared; at most once a minute and PAIR_NOTICE_MAX per window */
         if (s_pair.phase != PAIR_SHOWING && pair_notice_due(&s_pair, PAIR_NOTICE_RATE, now)) {
             lock_ui_notice("Quá nhiều yêu cầu ghép", PAIR_NOTICE_MS);
         }

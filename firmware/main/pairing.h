@@ -29,8 +29,12 @@
 #define PAIR_ARM_US       (1000LL * 1000)          /* answers ignored this long after a code appears */
 #define PAIR_ARM_MS       ((uint32_t)(PAIR_ARM_US / 1000))
 #define PAIR_NOTICE_MS    2000u                    /* "unlock to pair" / "too many requests" notice */
-#define PAIR_LOCKED_NOTICE_GAP_US (10LL * 1000 * 1000)   /* "unlock to pair" at most every 10 s */
+/* Each notice wakes the panel, so a nearby device must not be able to keep it lit: a minimum gap between two, and
+ * at most PAIR_NOTICE_MAX per PAIR_RATE_WINDOW_US (all peers together; a history separate from pairing attempts).
+ * Refusals beyond that are silent and light nothing. */
+#define PAIR_LOCKED_NOTICE_GAP_US (30LL * 1000 * 1000)   /* "unlock to pair" at most every 30 s */
 #define PAIR_RATE_NOTICE_GAP_US   (60LL * 1000 * 1000)   /* "too many requests" at most once a minute */
+#define PAIR_NOTICE_MAX           5                      /* per notice, per PAIR_RATE_WINDOW_US */
 #define PAIR_CONN_NONE    0xFFFF                   /* = BLE_HS_CONN_HANDLE_NONE */
 #define PAIR_ID_NONE      0u
 
@@ -82,8 +86,8 @@ typedef struct {
     pair_peer_t peers[PAIR_RATE_PEERS];
     uint8_t global_n;
     int64_t global_t[PAIR_GLOBAL_MAX];   /* newest last */
-    bool notice_shown[PAIR_NOTICE_COUNT];
-    int64_t notice_us[PAIR_NOTICE_COUNT];   /* when each notice was last shown */
+    uint8_t notice_n[PAIR_NOTICE_COUNT];
+    int64_t notice_t[PAIR_NOTICE_COUNT][PAIR_NOTICE_MAX];   /* when each notice was shown, newest last */
 } pair_t;
 
 static inline void pair_init(pair_t *p)
@@ -177,16 +181,21 @@ static inline pair_begin_t pair_begin(pair_t *p, uint16_t conn, const uint8_t ad
     return PAIR_BEGIN_SHOW;
 }
 
-/* A refusal wants its notice drawn: true (and noted) when that notice was not shown within its gap
- * (PAIR_LOCKED_NOTICE_GAP_US, PAIR_RATE_NOTICE_GAP_US); false: stay silent this time. */
+/* A refusal wants its notice drawn (and the panel lit): true (and noted) when that notice was not shown within its
+ * gap (PAIR_LOCKED_NOTICE_GAP_US, PAIR_RATE_NOTICE_GAP_US) and fewer than PAIR_NOTICE_MAX times within
+ * PAIR_RATE_WINDOW_US; false: stay silent, light nothing. */
 static inline bool pair_notice_due(pair_t *p, pair_notice_t which, int64_t now_us)
 {
     int64_t gap = which == PAIR_NOTICE_RATE ? PAIR_RATE_NOTICE_GAP_US : PAIR_LOCKED_NOTICE_GAP_US;
-    if (p->notice_shown[which] && now_us - p->notice_us[which] < gap) {
+    int64_t *t = p->notice_t[which];
+    uint8_t *n = &p->notice_n[which];
+    if (*n > 0 && now_us - t[*n - 1] < gap) {
         return false;
     }
-    p->notice_shown[which] = true;
-    p->notice_us[which] = now_us;
+    if (!pair_hist_room(t, *n, PAIR_NOTICE_MAX, now_us)) {
+        return false;
+    }
+    pair_hist_push(t, n, PAIR_NOTICE_MAX, now_us);
     return true;
 }
 
