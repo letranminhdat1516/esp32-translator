@@ -1,7 +1,7 @@
 import Foundation
 
 // Small Unicode helpers shared by the text modules (RuleEngine, TermProtector, BoardText, Glossary), so the Swift core
-// answers "is this a letter / whitespace / …" the same way the Dart reference and the TypeScript core do.
+// answers "is this a letter / whitespace / …" the same way the shared fixtures expect (Dart / JavaScript semantics).
 
 extension Unicode.Scalar {
     /// `\p{L}`.

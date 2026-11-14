@@ -3,7 +3,7 @@ import Testing
 @testable import TranslatorCore
 
 // ConversationController (P2.2) against FakeVoiceEngine + FakeBoardLink and a scripted translator: the behavioural
-// spec is the Flutter plan's P2.1 brief and ARCHITECTURE §2, §3 and §6.
+// spec is ARCHITECTURE §2, §3 and §6.
 
 // MARK: - Test doubles
 

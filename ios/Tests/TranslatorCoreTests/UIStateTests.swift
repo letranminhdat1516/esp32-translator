@@ -64,8 +64,7 @@ final class UIStateTests: XCTestCase {
 
     func testFooterText() {
         XCTAssertNil(LanguageFooterText.why(missing: []))
-        let fr = LanguagePack(code: "fr", appleLocale: "fr-FR", androidLocale: "fr-FR", whisperCode: "fr",
-                              label: "Français", labelLatin: "Français", script: .latin)
+        let fr = LanguagePack(code: "fr", appleLocale: "fr-FR", label: "Français", labelLatin: "Français", script: .latin)
         XCTAssertTrue(LanguageFooterText.why(missing: [fr])?.contains("Français") == true)
     }
 

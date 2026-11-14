@@ -1,5 +1,5 @@
 {
-  "description": "RuleEngine (app/lib/core/rule_engine.dart). Replaces Swift VietnameseFixup: every VietnameseFixupTests case is here (engine vi). Each case runs fn on input with the named engine and compares to expected exactly.",
+  "description": "RuleEngine (ios/Sources/Core/RuleEngine.swift). Replaces Swift VietnameseFixup: every VietnameseFixupTests case is here (engine vi). Each case runs fn on input with the named engine and compares to expected exactly.",
   "engines": {
     "vi": {
       "pack": "vi"

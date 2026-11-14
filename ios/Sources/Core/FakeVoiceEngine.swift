@@ -1,7 +1,5 @@
 import Foundation
 
-// Port of app/lib/engine/fake_voice_engine.dart.
-
 /// In-memory `VoiceEngine` for tests: every response is scriptable, every call is recorded, and tests push events
 /// with the `emit…` functions (synchronous, from any context).
 actor FakeVoiceEngine: VoiceEngine {

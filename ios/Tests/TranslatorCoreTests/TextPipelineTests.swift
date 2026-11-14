@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/text_pipeline_test.dart, driven by shared/fixtures/text_pipeline.json.
+// Driven by shared/fixtures/text_pipeline.json.
 
 private let pipelineFixture = Fixtures.load("text_pipeline")
 

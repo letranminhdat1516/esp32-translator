@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/model_test.dart, driven by shared/fixtures/model.json, plus Swift-only edge cases.
+// Driven by shared/fixtures/model.json, plus Swift-only edge cases.
 
 /// The language packs every app loads (`shared/languages`), read in place from the repository.
 let languagesDirectory = Fixtures.sharedDirectory.appendingPathComponent("languages")
@@ -46,8 +46,6 @@ private let model = Fixtures.load("model")
         let p = try LanguagePack.parse(packJSON(code))
         #expect(p.code == e["code"] as! String)
         #expect(p.appleLocale == e["appleLocale"] as! String)
-        #expect(p.androidLocale == e["androidLocale"] as! String)
-        #expect(p.whisperCode == e["whisperCode"] as! String)
         #expect(p.label == e["label"] as! String)
         #expect(p.labelLatin == e["labelLatin"] as! String)
         #expect(p.script.rawValue == e["script"] as! String)

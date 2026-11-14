@@ -3,9 +3,7 @@ import Translation
 import XCTest
 @testable import TranslatorCore
 
-// Moved from app/ios/RunnerTests/CapabilitiesTests.swift, with the async capabilities(home) cache of the
-// never-merged P2.0a change (branch worktree-agent-a2a8ea34f2a9a1746). CapabilitiesLiveTests ask the real
-// frameworks on the Mac.
+// Capabilities, with the async capabilities(home) cache. CapabilitiesLiveTests ask the real frameworks on the Mac.
 
 final class CapabilitiesAssemblyTests: XCTestCase {
     func testOnDeviceRecognizersPerLanguageFromBothTranscribers() {
@@ -55,7 +53,7 @@ final class CapabilitiesAssemblyTests: XCTestCase {
 /// reports Chinese as zh_CN / zh_TW speech locales and zh / zh-TW translation languages.
 final class PackCodeCapabilitiesTests: XCTestCase {
     private func pack(_ code: String, _ appleLocale: String) -> LanguagePack {
-        LanguagePack(code: code, appleLocale: appleLocale, androidLocale: "", whisperCode: "", label: code,
+        LanguagePack(code: code, appleLocale: appleLocale, label: code,
                      labelLatin: code, script: .latin)
     }
 
@@ -73,7 +71,7 @@ final class PackCodeCapabilitiesTests: XCTestCase {
         XCTAssertEqual(caps.recognizers.map(\.language), ["en", "vi", "zh-Hans"])
         XCTAssertEqual(caps.translatable, ["en", "vi", "zh-Hans"])
         let catalog = LanguageCatalog(packs: [pack("vi", "vi-VN"), pack("en", "en-US"), pack("zh-Hans", "zh-CN")],
-                                      caps: try XCTUnwrap(caps.toModel()), platform: .ios)
+                                      caps: try XCTUnwrap(caps.toModel()))
         XCTAssertEqual(catalog.offered.map(\.code).sorted(), ["en", "zh-Hans"])
     }
 

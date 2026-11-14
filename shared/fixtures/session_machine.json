@@ -1,5 +1,5 @@
 {
-  "description": "Session state machine (app/lib/engine/session_machine.dart, ARCHITECTURE section 3): next(state, event) and advance(session, event).",
+  "description": "Session state machine (ios/Sources/Core/SessionMachine.swift, ARCHITECTURE section 3): next(state, event) and advance(session, event).",
   "missingKinds": [
     "speechModel",
     "translation",

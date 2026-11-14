@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Vietnamese UI copy, shared with the Android app: `shared/copy/vi.json` (flat keys, placeholders `{name}`).
+/// The Vietnamese UI copy: `shared/copy/vi.json` (flat keys, placeholders `{name}`).
 /// Views never contain a Vietnamese literal; they call `Copy.t("key", ["name": value])`.
 enum Copy {
     private final class Anchor {}

@@ -1,5 +1,5 @@
 {
-  "description": "TurnAssembler (app/lib/core/turn_assembler.dart): builds the 'You say' turns from recognizer events. Times are ms from an arbitrary t0.",
+  "description": "TurnAssembler (ios/Sources/App/TurnAssembler.swift): builds the 'You say' turns from recognizer events. Times are ms from an arbitrary t0.",
   "defaults": {
     "turnGapMs": 2000,
     "staleGapMs": 10000,

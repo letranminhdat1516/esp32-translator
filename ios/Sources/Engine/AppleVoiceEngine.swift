@@ -2,9 +2,8 @@ import AVFAudio
 import Foundation
 import os
 
-// The iOS `VoiceEngine` (ARCHITECTURE "Revision 2026-10-29" R3), reshaped from the Flutter app's
-// app/ios/Runner/Native/VoiceEngineHost.swift: the same engine, called in-process (async functions) with its
-// events on the Core `Broadcast` streams instead of a pigeon channel.
+// The iOS `VoiceEngine` (ARCHITECTURE R3): called in-process (async functions), with its events on the Core
+// `Broadcast` streams.
 
 /// Audio session changes the engine reacts to
 enum AudioSessionChange {

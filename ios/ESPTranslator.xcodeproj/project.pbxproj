@@ -19,11 +19,9 @@
 		2C0FBB059547B92688D07BB0 /* LanguageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB71FD8973D12C48BE26D70 /* LanguageSheet.swift */; };
 		2CE863EF151D2B13E62DB271 /* FakeVoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DEB35E5AD6AB7A6FEF5BDF5 /* FakeVoiceEngine.swift */; };
 		2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A95279E4169D54A6DBEF7 /* ContentView.swift */; };
-		329375E9E815700DBFC7C047 /* ClaudeRelay in Frameworks */ = {isa = PBXBuildFile; productRef = 54025D36B309B58EC5EDB7D9 /* ClaudeRelay */; };
 		44550F720815B37734136827 /* TranslationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A2444940233161E3F68060D /* TranslationSheet.swift */; };
 		50B85CFA2E31D9021C5CED5B /* copy in Resources */ = {isa = PBXBuildFile; fileRef = 2502D98B095CE8A272D6237C /* copy */; };
 		540A201D37D9BD48E02887A9 /* BoardGlyphSets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D01EB81CF1F5A34D959AA6 /* BoardGlyphSets.swift */; };
-		56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */; };
 		5C39A3CE1256810DD946BCB3 /* BoardLinkLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE56656C566B221B3B60D46 /* BoardLinkLogic.swift */; };
 		5DA2B9AE44FC4CEA79CF85CF /* LiveTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE16ADC6EC045CFBB6900A87 /* LiveTranscriber.swift */; };
 		628B98C4DED00457C05E2580 /* TermProtector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DE02E90E9DCE249F07A7967 /* TermProtector.swift */; };
@@ -37,13 +35,11 @@
 		8D8DD48FA63E8955CD982577 /* SessionMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A11B6BF22488CF35326ACF /* SessionMachine.swift */; };
 		90CE569D6FB4F2E0750A72C5 /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E63E61E081954788E29BE1 /* GlossaryView.swift */; };
 		91DE047C9A4301A298CE4136 /* board_glyphs in Resources */ = {isa = PBXBuildFile; fileRef = 5749C4DE7E75307DF032EE45 /* board_glyphs */; };
-		938B0BAE72B3BDE145BF127B /* ClaudeRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */; };
 		957C6FF8C8080391541CDBDC /* Copy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDC91B52214BD7B194139A2 /* Copy.swift */; };
 		9A8934E28F548B0E488F7DFC /* ConversationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB582AC4013911623BCB7A9E /* ConversationController.swift */; };
 		9BA32CA9B8FF35E76CBF54B9 /* Capabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */; };
 		9C52F34A3F00885788BB0A90 /* ReadinessView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */; };
 		A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA56EAB5FB91A561FBBF15AB /* Model.swift */; };
-		AD7E43FD2E68E6630F1396B9 /* BoardVoiceTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */; };
 		ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1746279919516ABC5EF3518 /* Translator.swift */; };
 		B0D403A27FCDE3DBDB913258 /* TextPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDA6DB65733535938AD2B0E /* TextPipeline.swift */; };
 		B822E2794A5E5177939B83EF /* VoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22F135961F8511A66D39EAD6 /* VoiceEngine.swift */; };
@@ -52,7 +48,6 @@
 		D924465D8B48A7554B8A99A5 /* Translit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B74F774CC1C2A43CEB87415 /* Translit.swift */; };
 		DA424CA0F7C4791F54AEEBCD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD72E60F341261CD5B3377A9 /* Assets.xcassets */; };
 		DA6E8748FA7DD091183AAE53 /* Downloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = C97CE2685BA5739EE0CE32F3 /* Downloads.swift */; };
-		DB0E8D30749EB97DF109410F /* RelayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A795C7252F826D75749124A8 /* RelayView.swift */; };
 		DD7E159DAD01943DDE2223B1 /* ESPTranslatorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79EF1EA1CC2FA2967CC08484 /* ESPTranslatorApp.swift */; };
 		DD82C5F5395E496CA135AF2A /* BoardProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA90FE55BAE42F8267CD97AC /* BoardProtocol.swift */; };
 		E727AF31332C2F982DD696DF /* AudioSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2784B4C12E897950E30D015B /* AudioSources.swift */; };
@@ -101,16 +96,11 @@
 		7DDC91B52214BD7B194139A2 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
 		88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADPCMDecoder.swift; sourceTree = "<group>"; };
 		8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessView.swift; sourceTree = "<group>"; };
-		8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayKeychain.swift; sourceTree = "<group>"; };
 		8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capabilities.swift; sourceTree = "<group>"; };
 		9CDC138628E302CED4D5C192 /* FakeBoardLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeBoardLink.swift; sourceTree = "<group>"; };
-		9FA9545B10B7FAC6140533DD /* relay */ = {isa = PBXFileReference; lastKnownFileType = folder; name = relay; path = ../relay; sourceTree = SOURCE_ROOT; };
-		A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardVoiceTranscriber.swift; sourceTree = "<group>"; };
 		A1746279919516ABC5EF3518 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A6CACC952B345A7F7DDD1115 /* UISamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UISamples.swift; sourceTree = "<group>"; };
-		A795C7252F826D75749124A8 /* RelayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayView.swift; sourceTree = "<group>"; };
-		B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeRelayService.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
 		C97CE2685BA5739EE0CE32F3 /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
 		CE16ADC6EC045CFBB6900A87 /* LiveTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriber.swift; sourceTree = "<group>"; };
@@ -126,17 +116,6 @@
 		FD72E60F341261CD5B3377A9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		6992F01A61E7BAA22AE48A47 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				329375E9E815700DBFC7C047 /* ClaudeRelay in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXGroup section */
 		09F554D40861340489772A4A /* BLE */ = {
 			isa = PBXGroup;
@@ -145,16 +124,6 @@
 				C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */,
 			);
 			path = BLE;
-			sourceTree = "<group>";
-		};
-		2BB015C65D1FAF8EA6D41C0D /* Relay */ = {
-			isa = PBXGroup;
-			children = (
-				A1042809E44FFEED052BB3C1 /* BoardVoiceTranscriber.swift */,
-				B277A8B441D6E091E8B27C6E /* ClaudeRelayService.swift */,
-				8B2B5C4C91EB52132A324258 /* RelayKeychain.swift */,
-			);
-			path = Relay;
 			sourceTree = "<group>";
 		};
 		2DC146458E462EF74CD720E4 /* Sources */ = {
@@ -167,19 +136,10 @@
 				09F554D40861340489772A4A /* BLE */,
 				9798074EFCAC4F0BE551FCDB /* Core */,
 				5F9F6B8177982B5BF87E95FB /* Engine */,
-				2BB015C65D1FAF8EA6D41C0D /* Relay */,
 				B0B96D28065C85B471C0EF6E /* Translate */,
 				86A414C5E026FECA97C56431 /* UI */,
 			);
 			path = Sources;
-			sourceTree = "<group>";
-		};
-		41360630A56A531F43F8751D /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-				9FA9545B10B7FAC6140533DD /* relay */,
-			);
-			name = Packages;
 			sourceTree = "<group>";
 		};
 		5F9F6B8177982B5BF87E95FB /* Engine */ = {
@@ -208,7 +168,6 @@
 				77E63E61E081954788E29BE1 /* GlossaryView.swift */,
 				6DB71FD8973D12C48BE26D70 /* LanguageSheet.swift */,
 				8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */,
-				A795C7252F826D75749124A8 /* RelayView.swift */,
 				A6CACC952B345A7F7DDD1115 /* UISamples.swift */,
 				D252157535003A9CC36E356B /* UIState.swift */,
 			);
@@ -253,7 +212,6 @@
 				5749C4DE7E75307DF032EE45 /* board_glyphs */,
 				2502D98B095CE8A272D6237C /* copy */,
 				2551CC07D9F0E6EF6BE454E4 /* languages */,
-				41360630A56A531F43F8751D /* Packages */,
 				2DC146458E462EF74CD720E4 /* Sources */,
 				8CEF243BB827E8AED3997EC4 /* Products */,
 			);
@@ -299,7 +257,6 @@
 			buildPhases = (
 				CFA403D512B908841B94DC67 /* Sources */,
 				15E433274BD47389B4DC6A1F /* Resources */,
-				6992F01A61E7BAA22AE48A47 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -307,7 +264,6 @@
 			);
 			name = ESPTranslator;
 			packageProductDependencies = (
-				54025D36B309B58EC5EDB7D9 /* ClaudeRelay */,
 			);
 			productName = ESPTranslator;
 			productReference = 15691D33531FFAA79141FCBC /* ESPTranslator.app */;
@@ -337,9 +293,6 @@
 			);
 			mainGroup = AEE11D9ABE720B39C9F5595A;
 			minimizedProjectReferenceProxies = 1;
-			packageReferences = (
-				37EA08705C2D4A2ED025E2C9 /* XCLocalSwiftPackageReference "../relay" */,
-			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8CEF243BB827E8AED3997EC4 /* Products */;
 			projectDirPath = "";
@@ -379,9 +332,7 @@
 				5C39A3CE1256810DD946BCB3 /* BoardLinkLogic.swift in Sources */,
 				DD82C5F5395E496CA135AF2A /* BoardProtocol.swift in Sources */,
 				29C3A28D96C8063A314064A3 /* BoardText.swift in Sources */,
-				AD7E43FD2E68E6630F1396B9 /* BoardVoiceTranscriber.swift in Sources */,
 				9BA32CA9B8FF35E76CBF54B9 /* Capabilities.swift in Sources */,
-				938B0BAE72B3BDE145BF127B /* ClaudeRelayService.swift in Sources */,
 				2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */,
 				1D5105016B834931A5A0B3F3 /* ConversationActivity.swift in Sources */,
 				9A8934E28F548B0E488F7DFC /* ConversationController.swift in Sources */,
@@ -401,8 +352,6 @@
 				A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */,
 				9C52F34A3F00885788BB0A90 /* ReadinessView.swift in Sources */,
 				1FA5C2E846CB729AA387F9D3 /* RecognizerPair.swift in Sources */,
-				56C504C40C140C8005C5E9E6 /* RelayKeychain.swift in Sources */,
-				DB0E8D30749EB97DF109410F /* RelayView.swift in Sources */,
 				F272FEC31B5E010444E119DF /* RuleEngine.swift in Sources */,
 				8D8DD48FA63E8955CD982577 /* SessionMachine.swift in Sources */,
 				F4D6AA350EC81E77F0632A10 /* SharedResources.swift in Sources */,
@@ -609,20 +558,6 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		37EA08705C2D4A2ED025E2C9 /* XCLocalSwiftPackageReference "../relay" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../relay;
-		};
-/* End XCLocalSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		54025D36B309B58EC5EDB7D9 /* ClaudeRelay */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = ClaudeRelay;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 3E3DB52DA1B11C078460F36C /* Project object */;
 }

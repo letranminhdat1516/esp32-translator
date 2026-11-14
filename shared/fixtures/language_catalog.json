@@ -1,14 +1,6 @@
 {
-  "description": "LanguageCatalog (app/lib/core/language_catalog.dart): which other languages are offered for a given device capability report, and the recognizer chain per language.",
+  "description": "LanguageCatalog (ios/Sources/Core/LanguageCatalog.swift): which other languages are offered for a given device capability report, and the recognizer chain per language. `online` (default false) allows the OS online recognizer; the app never sets it.",
   "homeCode": "vi",
-  "platforms": [
-    "ios",
-    "android"
-  ],
-  "invalidPlatforms": [
-    "web",
-    ""
-  ],
   "chainOrder": [
     "osOnDevice",
     "whisper",
@@ -65,7 +57,7 @@
           "de"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "de",
         "en",
@@ -88,7 +80,7 @@
           "en"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "en"
       ]
@@ -111,7 +103,7 @@
           "fr"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "en"
       ]
@@ -129,7 +121,7 @@
           "ja"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "en"
       ]
@@ -150,7 +142,7 @@
           "en"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "en"
       ]
@@ -171,7 +163,7 @@
           "en"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": [
         "en"
       ]
@@ -192,7 +184,7 @@
           "ja"
         ]
       },
-      "platform": "android",
+      "online": true,
       "expected": []
     },
     {
@@ -211,7 +203,7 @@
           "ja"
         ]
       },
-      "platform": "android",
+      "online": true,
       "consent": [
         "en"
       ],
@@ -235,7 +227,7 @@
           "ja"
         ]
       },
-      "platform": "android",
+      "online": true,
       "consent": [
         "en",
         "ja"
@@ -257,7 +249,6 @@
           "en"
         ]
       },
-      "platform": "ios",
       "consent": [
         "en"
       ],
@@ -269,7 +260,7 @@
         "recognizers": {},
         "translatable": []
       },
-      "platform": "android",
+      "online": true,
       "expected": []
     },
     {
@@ -298,7 +289,6 @@
           "b"
         ]
       },
-      "platform": "ios",
       "expected": [
         "a",
         "b"
@@ -308,7 +298,6 @@
   "chain": [
     {
       "name": "order is on-device OS, Whisper, online OS",
-      "platform": "android",
       "consent": [
         "en"
       ],
@@ -340,11 +329,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
       "name": "online OS only with consent (none)",
-      "platform": "android",
       "code": "en",
       "expected": [
         "osOnDevice",
@@ -372,11 +361,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
       "name": "online OS only with consent for that language (other language consented)",
-      "platform": "android",
       "consent": [
         "ja"
       ],
@@ -407,11 +396,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
       "name": "online OS with consent for that language",
-      "platform": "android",
       "consent": [
         "ja"
       ],
@@ -442,11 +431,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
       "name": "on iOS the chain never has the online recognizer (en)",
-      "platform": "ios",
       "consent": [
         "en",
         "ja"
@@ -482,7 +471,6 @@
     },
     {
       "name": "on iOS the chain never has the online recognizer (ja)",
-      "platform": "ios",
       "consent": [
         "ja"
       ],
@@ -516,7 +504,6 @@
     },
     {
       "name": "a language with no recognizers gives an empty chain",
-      "platform": "android",
       "code": "de",
       "expected": [],
       "caps": {
@@ -541,11 +528,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
       "name": "an unknown language gives an empty chain",
-      "platform": "android",
       "code": "zz",
       "expected": [],
       "caps": {
@@ -570,10 +557,11 @@
           "fr",
           "de"
         ]
-      }
+      },
+      "online": true
     },
     {
-      "name": "the Note 9 case: Whisper first, online last, no on-device",
+      "name": "no on-device recognizer: Whisper first, online last",
       "caps": {
         "recognizers": {
           "en": [
@@ -585,7 +573,7 @@
           "en"
         ]
       },
-      "platform": "android",
+      "online": true,
       "consent": [
         "en"
       ],

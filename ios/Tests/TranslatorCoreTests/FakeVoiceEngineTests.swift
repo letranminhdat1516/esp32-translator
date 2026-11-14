@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/engine/fake_voice_engine_test.dart (the pigeon codec cases have no Swift counterpart:
-// the Swift engine is in-process).
+// FakeVoiceEngine, the scripted engine the controller tests drive.
 
 @Suite struct FakeVoiceEngineTests {
     @Test func recordsSpeakCallsInOrder() async throws {

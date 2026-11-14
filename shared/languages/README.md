@@ -1,9 +1,8 @@
 # Language packs
 
-One JSON file per language, parsed by the three cores (Dart `LanguagePack`,
-Swift `Model.swift`, TypeScript `model.ts`). The schema is in
-`shared/fixtures/README.md` (model.json, rules.json). `app/assets/languages` is
-a byte-identical copy (`app/test/shared_assets_test.dart`).
+One JSON file per language, parsed by the iPhone app (`ios/Sources/Core/Model.swift`)
+and bundled as a folder reference (`ios/project.yml`). The schema is in
+`shared/fixtures/README.md` (model.json, rules.json).
 
 The schema has no `names`, `placeholder` or `notes` field: the Vietnamese display
 name of a language and the `Zorvik{n}` placeholder shape live in the app (copy
@@ -14,8 +13,7 @@ and settings), so the packs carry only `label` (the language's own name) and
 
 `ja`, `ko`, `zh-Hans`, `th`, `fr`, `de`, `es`. `script`: ja and zh-Hans `cjk`,
 ko `hangul`, th `thai`, fr/de/es `latin`. `minConfidence` is `null` (no
-per-language threshold known). `zh-Hans` uses `whisperCode` `zh` and locale
-`zh-CN`.
+per-language threshold known). `zh-Hans` uses the Apple locale `zh-CN`.
 
 ### Terms (all seven packs)
 

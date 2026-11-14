@@ -1,13 +1,13 @@
 # Term corpus and harness cases (P2.5, R10)
 
 R10: names, brands, places and glossary entries come through translation unchanged, or as their fixed
-translation, in at least 95 % of outputs, for each platform's translator. This folder holds the corpus
-that measures it and the cases that pin the harness logic on both platforms.
+translation, in at least 95 % of outputs, with Apple Translation. This folder holds the corpus
+that measures it and the cases that pin the harness logic.
 
 | File | What |
 |---|---|
 | `<lang>.tsv` | The corpus for one language paired with Vietnamese: `en`, `fr`, `de`, `es`, `ja`, `ko`, `zh-Hans`, `th`. Each has 42 sentences per direction (`<lang>>vi` and `vi><lang>`). |
-| `harness.json` | Cases for parsing, scoring, the scripted fake, the report and the pack update. `ios/Tools/term-harness` (`swift test`) and `android/__tests__/termHarness.test.ts` (`npm test`) must both pass them. |
+| `harness.json` | Cases for parsing, scoring, the scripted fake, the report and the pack update. `ios/Tools/term-harness` (`swift test`) must pass them. |
 
 ## Corpus format
 
@@ -42,9 +42,9 @@ Vietnamese places have fixed translations into CJK and Thai (and `Hà Nội`, `T
 or digit at a word boundary, and in its regex a kana, Hangul or Thai letter is a letter. So `Grabを`
 and `Grab을` are not masked (fixture case "Latin term glued to kana is not masked"). In real speech
 this is the usual way to write these, so the result on such text will be worse than the corpus shows.
-The corpus tests in both suites check that every term is masked with every shape.
+The corpus tests check that every term is masked with every shape.
 
-## Scoring rule (identical in Swift and TypeScript)
+## Scoring rule
 
 For each line and each placeholder shape in `Zorvik{n}`, `[[{n}]]`, `TERM{n}`, `⟦{n}⟧` and `__{n}__`:
 
@@ -65,17 +65,15 @@ shape in the list above. Percentages are in tenths, rounded half up.
 
 ## Running it
 
-| Platform | Smoke test (no device) | Real run |
-|---|---|---|
-| Apple | `cd ios/Tools/term-harness && swift run term-harness --fake` (or `--fake scripted`) | `swift run term-harness [--lang en,ja] [--out results.md]`. This uses Apple Translation on the Mac (the iOS 26 frameworks) and needs the language pairs installed: System Settings › General › Language & Region › Translation Languages. |
-| Android | `cd android && node scripts/term-harness.mjs --translator fake` (or `scripted`) | `android/tool/term_harness.sh [--lang en,ja]` with the Note 9 connected. It runs ML Kit on the phone in `TermHarnessTest`, and the TS core masks and scores on the Mac. |
+- Smoke test (no device): `cd ios/Tools/term-harness && swift run term-harness --fake` (or `--fake scripted`).
+- Real run: `swift run term-harness [--lang en,ja] [--out results.md]`. This uses Apple Translation on the
+  Mac (the iOS 26 frameworks) and needs the language pairs installed: System Settings › General ›
+  Language & Region › Translation Languages.
 
 `--fake scripted` halves `[[`/`]]` and `__`. This makes those two shapes lose every placeholder, so the
 table, the fallback path and the best-shape choice can all be checked without a translator.
 
 `--write-packs` (off by default, real runs only) writes the best shape into
-`shared/languages/<lang>.json`: `applePlaceholder` from the Swift harness, `androidPlaceholder` from
-the Android one. ARCHITECTURE D2 chooses the shape per platform translator, so there is one key per
-platform, mirroring `appleLocale`/`androidLocale`. The line goes after `"whisperCode"`, or replaces
-the existing value. Afterwards, run `npm run sync-shared` in `android/` and both test suites. The pack
-parsers ignore these keys until the app reads them.
+`shared/languages/<lang>.json` as `applePlaceholder` (the shape for Apple Translation, ARCHITECTURE D2).
+The line goes after `"appleLocale"`, or replaces the existing value. Afterwards, run `swift test` in
+`ios/`. The pack parser ignores this key until the app reads it.

@@ -1,4 +1,4 @@
-// Port of app/lib/engine/session_machine.dart: the session state machine of ARCHITECTURE §3. Pure and immutable.
+// The session state machine of ARCHITECTURE §3. Pure and immutable.
 
 enum SessionState: Hashable, Sendable {
     case loading

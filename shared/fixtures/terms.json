@@ -1,5 +1,5 @@
 {
-  "description": "TermProtector (app/lib/core/term_protector.dart): mask(text, terms, target, placeholder) then restore(translated). Review Focus 3.",
+  "description": "TermProtector (ios/Sources/Core/TermProtector.swift): mask(text, terms, target, placeholder) then restore(translated). Review Focus 3.",
   "defaultPlaceholder": "Zorvik{n}",
   "cases": [
     {

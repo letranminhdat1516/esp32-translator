@@ -27,22 +27,3 @@ ios/Preview/build/
 
 # ESP-IDF tool cache (clangd index)
 firmware/.cache/
-
-# Flutter app
-app/build/
-app/.dart_tool/
-app/ios/Pods/
-app/android/.gradle/
-app/android/local.properties
-
-# React Native app (android/)
-node_modules/
-android/node_modules/
-android/android/.gradle/
-android/android/build/
-android/android/app/build/
-android/android/local.properties
-android/android/app/.cxx/
-build/
-.cxx/
-local.properties

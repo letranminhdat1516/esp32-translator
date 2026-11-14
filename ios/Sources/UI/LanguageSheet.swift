@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Port of app/lib/ui/language_sheet.dart, plus the footer of ARCHITECTURE §6 (why a language is missing, and the
+// Plus the footer of ARCHITECTURE §6 (why a language is missing, and the
 // online opt-in).
 
 /// Bottom sheet content: the offered languages, the current one ticked. Persisting the pick is the caller's job.

@@ -1,7 +1,7 @@
 import Foundation
 
-// Term harness (P2.5, R10): corpus, scoring, report and pack update, all pure. The twin of
-// android/src/harness/termHarness.ts; both pass shared/fixtures/terms/harness.json. Format and scoring rule:
+// Term harness (P2.5, R10): corpus, scoring, report and pack update, all pure; cases in
+// shared/fixtures/terms/harness.json. Format and scoring rule:
 // shared/fixtures/terms/README.md. TermProtector, Term and the Unicode helpers are the app's own files (Linked/).
 
 /// One corpus sentence: translate `source` from `from` to `to`; `expected` must be in the output.
@@ -246,7 +246,7 @@ public enum Harness {
     }
 
     /// Sets the top-level string `key` of a pack file to `shape`, keeping the rest of the text as is: replaces the value
-    /// of an existing `"key": ...` line, or inserts the line after `"whisperCode"`.
+    /// of an existing `"key": ...` line, or inserts the line after `"appleLocale"`.
     public static func setPlaceholder(_ packText: String, key: String, shape: String) throws -> String {
         if shape.contains(where: { $0 == "\"" || $0 == "\\" || $0 == "\n" }) {
             throw HarnessError(description: "placeholder \(shape) cannot be written")
@@ -262,8 +262,8 @@ public enum Harness {
             lines[i] = "\(indent)\"\(key)\": \"\(shape)\"\(comma)"
             return lines.joined(separator: "\n")
         }
-        guard let a = lines.firstIndex(where: { split($0).rest.hasPrefix("\"whisperCode\":") }) else {
-            throw HarnessError(description: "no \"whisperCode\" line to insert the placeholder after")
+        guard let a = lines.firstIndex(where: { split($0).rest.hasPrefix("\"appleLocale\":") }) else {
+            throw HarnessError(description: "no \"appleLocale\" line to insert the placeholder after")
         }
         lines.insert("\(split(lines[a]).indent)\"\(key)\": \"\(shape)\",", at: a + 1)
         return lines.joined(separator: "\n")

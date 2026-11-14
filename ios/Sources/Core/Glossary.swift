@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of app/lib/core/glossary.dart; contract: shared/fixtures/glossary.json (validation and load cases).
+// Contract: shared/fixtures/glossary.json (validation and load cases).
 
 /// Why a glossary change was refused or failed. Each case names the offending field (`text`, `variants[2]`,
 /// `fixed.en`, or `fixed` for an empty language code) where it has one.

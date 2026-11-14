@@ -1,6 +1,6 @@
 import Foundation
 
-// Port of app/lib/board/board_link.dart. ESPLink (Sources/BLE) adopts this protocol in S2.
+// The board link contract. ESPLink (Sources/BLE) adopts it; FakeBoardLink stands in for it in tests.
 
 /// Connection state of the board link.
 enum BoardState: Hashable, Sendable {

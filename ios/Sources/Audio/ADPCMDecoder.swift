@@ -21,7 +21,7 @@ struct ADPCMDecoder {
         let bytes = [UInt8](packet)
         let seq = UInt16(bytes[0]) | UInt16(bytes[1]) << 8
         var predictor = Int(Int16(bitPattern: UInt16(bytes[2]) | UInt16(bytes[3]) << 8))
-        // The index byte comes straight from BLE: clamp it to the step table (as the Dart reference) so a bad
+        // The index byte comes straight from BLE: clamp it to the step table so a bad
         // header cannot trap
         var index = min(88, Int(bytes[4]))
         let samplesPerPacket = (bytes.count - 5) * 2

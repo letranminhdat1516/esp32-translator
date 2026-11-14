@@ -1,5 +1,5 @@
 {
-  "description": "SubtitleTranslator (app/lib/core/subtitle_translator.dart). The fake translator records every request, waits delayMs, then throws for texts in `failing` or returns the text upper-cased. Steps run in order; consecutive non-wait steps are one synchronous burst.",
+  "description": "SubtitleTranslator (ios/Sources/Translate/SubtitleTranslator.swift). The fake translator records every request, waits delayMs, then throws for texts in `failing` or returns the text upper-cased. Steps run in order; consecutive non-wait steps are one synchronous burst.",
   "scenarios": [
     {
       "name": "finals are translated once and joined",

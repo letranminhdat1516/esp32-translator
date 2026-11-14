@@ -3,21 +3,17 @@ options:
   bundleIdPrefix: dev.personal
   deploymentTarget:
     iOS: "26.0"
-packages:
-  ClaudeRelay:
-    path: ../relay
 targets:
   ESPTranslator:
     type: application
     platform: iOS
     sources:
       - Sources
-      # Shared with the Android app, loaded at run time (SharedResources / Copy): folder references keep
+      # Loaded at run time (SharedResources / Copy): folder references keep
       # the languages/, board_glyphs/ and copy/ directories in the bundle
       - {path: ../shared/languages, type: folder, buildPhase: resources}
       - {path: ../shared/board_glyphs, type: folder, buildPhase: resources}
       - {path: ../shared/copy, type: folder, buildPhase: resources}
-    dependencies: [{ package: ClaudeRelay }]
     info:
       path: Sources/Info.plist
       properties:
@@ -30,8 +26,6 @@ targets:
         NSMicrophoneUsageDescription: Listens to you through your AirPods to translate into English.
         NSSpeechRecognitionUsageDescription: Recognizes speech on device for translation.
         NSBluetoothAlwaysUsageDescription: Connects to the ESP32 display to receive audio and show subtitles.
-        NSCameraUsageDescription: Scans the pairing QR code that claude-board prints on your Mac.
-        NSLocalNetworkUsageDescription: Reaches your Mac over Tailscale to relay Claude Code requests to the board.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.esptranslator

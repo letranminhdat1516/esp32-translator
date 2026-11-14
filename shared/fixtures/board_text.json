@@ -1,5 +1,5 @@
 {
-  "description": "BoardText (app/lib/core/board_text.dart + translit.dart) and BoardGlyphSets (board_glyphs.dart). Unless a case has `glyphs`, the glyph lists are shared/board_glyphs/{cjk,hangul,thai}.txt. fontSets is the board's bit mask: latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16.",
+  "description": "BoardText (ios/Sources/Core/BoardText.swift + Translit.swift) and BoardGlyphSets (BoardGlyphSets.swift). Unless a case has `glyphs`, the glyph lists are shared/board_glyphs/{cjk,hangul,thai}.txt. fontSets is the board's bit mask: latinVI 1, latinExtA 2, cjk 4, hangul 8, thai 16.",
   "ranges": [
     {
       "name": "latinVI | latinExtA",

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/board_text_test.dart, driven by shared/fixtures/board_text.json, and checks that the Swift
+// Driven by shared/fixtures/board_text.json, and checks that the Swift
 // transliteration tables are exactly shared/fixtures/translit.json (the export of translit.dart).
 
 private let translitFixture = Fixtures.load("translit")

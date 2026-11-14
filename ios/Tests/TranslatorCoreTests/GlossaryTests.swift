@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TranslatorCore
 
-// Port of app/test/core/glossary_test.dart: validation and load cases from shared/fixtures/glossary.json, plus the
+// Validation and load cases from shared/fixtures/glossary.json, plus the
 // storage tests the README leaves to each platform (file round trip, change stream, corrupt file set aside, write
 // failure).
 

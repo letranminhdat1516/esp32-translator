@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Port of app/lib/ui/readiness_view.dart: the part of the session that comes before the conversation: choosing a
+// The part of the session that comes before the conversation: choosing a
 // language, checking, missing downloads, downloading, failure.
 
 struct ReadinessView: View {

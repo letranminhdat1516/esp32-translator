@@ -52,7 +52,6 @@ private func previewState(demo: Bool) -> UIState {
 @main
 struct PhonePreviewApp: App {
     @State private var ui = previewState(demo: CommandLine.arguments.contains("--demo"))
-    private let relay = RelayModel()
 
     init() {
         NSApplication.shared.setActivationPolicy(.regular)
@@ -62,7 +61,7 @@ struct PhonePreviewApp: App {
     var body: some Scene {
         WindowGroup("Live Translator · iPhone preview") {
             HStack(spacing: 0) {
-                ContentView(ui: ui, relay: relay)
+                ContentView(ui: ui)
                     .frame(width: 393, height: 852)
                     .clipShape(RoundedRectangle(cornerRadius: 44))
                     .padding(16)

@@ -1,8 +1,6 @@
 {
   "code": "zh-Hans",
   "appleLocale": "zh-CN",
-  "androidLocale": "zh-CN",
-  "whisperCode": "zh",
   "label": "中文",
   "labelLatin": "ZH",
   "script": "cjk",

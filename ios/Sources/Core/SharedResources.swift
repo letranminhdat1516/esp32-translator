@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// The data shared with the Android app (`shared/languages/*.json`, `shared/board_glyphs/*.txt`), loaded, never
+/// The shared data (`shared/languages/*.json`, `shared/board_glyphs/*.txt`), loaded, never
 /// copied. The app bundle holds them as folder references (`languages/`, `board_glyphs/`, see ios/project.yml); under
 /// `swift test` (debug builds on the Mac) they are read in place from the repository.
 enum SharedResources {

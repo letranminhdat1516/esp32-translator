@@ -5,7 +5,6 @@ import XCTest
 /// AppleVoiceEngine on fakes (no mic, speech model, audio session or speech output): the guards before `start`,
 /// start/stop re-entrancy, the warm-up order, a mic failure surfaced as an event, translation, speech events,
 /// capabilities with the passed home, downloads, board audio and the audio-session reactions.
-/// The first three tests come from app/ios/RunnerTests/VoiceEngineTests.swift.
 @MainActor
 final class AppleVoiceEngineTests: XCTestCase {
     private let enVi = PairMsg(home: "vi", other: "en", generation: 1)
