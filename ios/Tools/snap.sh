@@ -12,7 +12,7 @@
 # The simulator: SNAP_DEVICE names it (default "Snap iPhone 17 Pro"). If no simulator has that name it is created
 # from SNAP_DEVICE_TYPE (default iPhone 17 Pro) on the newest iOS runtime, so your own simulators are never touched.
 # Only that dedicated simulator is shut down at the end (if this script booted it) or deleted (--delete-sim).
-# SNAP_WAIT sets the seconds to wait per screen (default 3).
+# SNAP_WAIT sets the seconds to wait per screen (default 3), SNAP_WARMUP the first launch's (default 10).
 #
 # `simctl io screenshot` may not be allowed to write into the repository (sandboxed shells): every shot is taken
 # into a temporary folder and moved into place. Errors are shown, never swallowed.
@@ -93,6 +93,15 @@ xcrun simctl status_bar "$UDID" override --time 9:41 --dataNetwork wifi --wifiMo
 
 echo "==> install"
 xcrun simctl install "$UDID" "$APP"
+
+# A fresh simulator shows system banners ("Ready for Apple Intelligence"…) for a few seconds after boot: let them
+# pass on a throwaway launch so they never cover a shot. SNAP_WARMUP=0 skips it.
+WARMUP="${SNAP_WARMUP:-10}"
+if [ "$WARMUP" != 0 ]; then
+    echo "==> warm-up (${WARMUP}s)"
+    xcrun simctl launch "$UDID" "$BUNDLE_ID" -demo welcome >/dev/null
+    sleep "$WARMUP"
+fi
 
 for s in $SCREENS; do
     xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true

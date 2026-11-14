@@ -72,7 +72,8 @@ struct LanguageRows: View {
         } label: {
             TableRow(verticalPadding: padding, fill: selected ? DS.Color.ink : nil, horizontalBleed: 12) {
                 HStack(spacing: 10) {
-                    MonoCell(code.uppercased(), type: .monoCode, color: selected ? DS.Color.stone : DS.Color.ink)
+                    MonoCell(code.uppercased(), type: .monoCode,
+                             color: selected ? DS.Color.stone : st == .unsupported ? DS.Color.muted : DS.Color.ink)
                         .tableColumn(40)
                     HStack(spacing: 6) {
                         Text(label).ds(selected ? .rowTitle : .rowName)
@@ -89,8 +90,10 @@ struct LanguageRows: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(st == .unsupported)
+        // Not `.disabled`: that fades the row below the canvas' muted #5D5A55
+        .allowsHitTesting(st != .unsupported)
         .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityRemoveTraits(st == .unsupported ? .isButton : [])
     }
 
     @ViewBuilder
