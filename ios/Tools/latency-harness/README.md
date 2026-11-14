@@ -27,8 +27,8 @@ TTS_MODES=speak,write ./latency-harness tts-bench out/tts.tsv
 
 | | Wiring (app code in **bold**) |
 |---|---|
-| Them → You | board VAD (port of `translator_step`, 300 ms pre-roll, 800 ms hangover) → ADPCM encoder (port of `firmware/main/adpcm.c`), 20 ms packets → **ADPCMDecoder** → **EngineMapping.pcm16Buffer** → **BufferConverter** → **LiveTranscriber** (SpeechTranscriber en-US) with **finalizeNow** 0.25 s after packets pause (as `AppleVoiceEngine.feedTheirAudio`) → final phrase → in-order worker: **TextPipeline**(.theirs) over Translator en→vi → TTS vi-VN |
-| You → Them | 341-frame float buffers (the mic tap) → **MicSource.handle** (**BufferConverter** → **VoiceGate**) → **LiveTranscriber** (DictationTranscriber vi-VN), **finalizeNow** on gate close → **TurnAssembler** → **SubtitleTranslator**(**TextPipeline**(.mine) over Translator vi→en) → `onResult` = the text sent to the board |
+| Them → You | board VAD (port of `translator_step`, 300 ms pre-roll, 800 ms hangover) → ADPCM encoder (port of `firmware/main/adpcm.c`), 20 ms packets → **ADPCMDecoder** → **EngineMapping.pcm16Buffer** → **BufferConverter** → **LiveTranscriber** (SpeechTranscriber en-US) with **finalizeNow** 0.25 s after packets pause (the app before `BoardSilencePadder`; the app now matches `PAD=silence FINALIZE=0`) → final phrase → in-order worker: **TextPipeline**(.theirs) over Translator en→vi → TTS vi-VN |
+| You → Them | 341-frame float buffers (the mic tap) → **MicSource.handle** (**BufferConverter** → **VoiceGate**) → **LiveTranscriber** (DictationTranscriber vi-VN), **finalizeNow** on the gate's early `.finalize` (`VoiceGate.Config.finalizeAfter` 0.4 s; `FINALIZE_AFTER=0.8` = on gate close, the old app) → **TurnAssembler** → **SubtitleTranslator**(**TextPipeline**(.mine) over Translator vi→en) → `onResult` = the text sent to the board |
 
 Not the app's code, and why:
 - `Speaker.swift` sets `usesApplicationAudioSession` (iOS only), so `TTS.swift` mirrors its utterance setup
@@ -76,7 +76,9 @@ white noise at -65 dBFS (`NOISE_DB`, `off` for digital silence) so the gates see
   `REC=exp` is `ExpTranscriber` in `Experiment.swift`, a configurable mirror of LiveTranscriber's session;
   `REC=exp` alone is the control and reproduces the app.
 - You → Them: `GATE_HANG` (VoiceGate hangover), `EARLY_FINALIZE=<s>` (finalizeNow when a shadow gate with that
-  hangover closes; the real gate still decides what is fed).
+  hangover closes; the real gate still decides what is fed; combine with `FINALIZE_AFTER=0.8` to reproduce the
+  measurement, since the app's gate now finalizes at 0.4 s itself), `FINALIZE_AFTER=<s>` (the gate's own
+  early finalize point).
 
 Damaged = a run of punctuation in place of words (`,....`) or WER > 0.3 against the script (numbers normalized).
 

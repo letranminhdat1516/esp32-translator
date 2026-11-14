@@ -21,6 +21,8 @@ Latency design:
 - **Models stay warm**: analyzers run for the whole session (`modelRetention: .processLifetime`), and the TTS voice is preloaded at launch.
 - **Subtitles follow your speech**: volatile (partial) results are translated immediately. `SubtitleTranslator` translates each finalized phrase once and keeps it, and re-translates only the current volatile phrase (latest wins), so requests stay one phrase long however long you talk.
 - **Phrase-level speech**: each phrase is spoken as soon as the recognizer finalizes it (`fastResults`), without waiting for the end of the turn.
+- **Their phrase ends by itself**: when board packets pause, the English (or other) recognizer is fed 20 ms frames of digital silence (`BoardSilencePadder`, up to 3 s) and ends the phrase with its own endpointing. It is never `finalize`d: in `ios/Tools/latency-harness` any finalize turned 10 of 12 following utterances into punctuation (`,......`), while padding damaged none and gave the final phrase about 200 ms sooner.
+- **Your phrase is finalized early**: the own-voice gate asks for `finalizeNow` after 0.4 s of non-speech and stays open until 0.8 s, so the Vietnamese final arrives about 0.42 s after you stop instead of 0.82 s (12/12 exact in the harness).
 - **BLE**: 2M PHY, 15–30 ms connection interval, MTU 247. Audio uses notifications and text uses write-without-response. Each ADPCM packet is self-contained, so a lost packet costs only 20 ms of silence.
 
 Measured on the board (Mac acting as the iPhone): about 245 packets in 5 s with 0 lost, and speech is about 30 dB above the noise floor.
@@ -65,7 +67,7 @@ renders the board logo back.
 | iPhone | Own-voice gate on the AirPods mic (`VoiceGate`): opens only on voiced frames well above the background and near your learned voice level | The Vietnamese recognizer runs only while *you* talk, not while the café does (gate: about 0.05 % of one core) |
 | iPhone | Runs with the screen locked (`audio` + `bluetooth-central` background modes) | Keep the phone in your pocket, just wear the AirPods |
 | iPhone | Holds the AirPods mic only during a conversation (`ConversationActivity`), see below | YouTube, TikTok and music keep playing; idle, the AirPods stay in music-quality A2DP |
-| iPhone | Phrase finalization on pause (`SpeechAnalyzer.finalize`) | Gating input must not delay the last phrase |
+| iPhone | Your phrase: `finalizeNow` 0.4 s into a pause. Theirs: silence padding while packets pause, at most 3 s | Gating input must not delay the last phrase; padding stops so silence costs no recognition work |
 
 Measured end-to-end: a phrase is spoken in Vietnamese about 1 s after the English speaker stops (translation itself 24–27 ms).
 Battery life has not been measured yet.
@@ -85,7 +87,7 @@ The app takes the AirPods mic only while a conversation is going on, so it does 
 
 The Vietnamese dictation model ignores contextual strings and custom language models; what decides its accuracy is the audio it gets. Speech from people around you, heard before or after your own words, gets transcribed and translated as if you said it. So:
 
-- **Own-voice gate** (`ios/Sources/Audio/VoiceGate.swift`). Your mouth is a few centimetres from the AirPods mics, so your voice is much louder there than anyone nearby. A 20 ms frame opens the gate only if it is at least 8 dB above the background (5th percentile of the last 3 s, so it follows café noise within seconds), periodic at a speech pitch (autocorrelation), and within 8 dB of your own level. Your level is learned per utterance (a median over your last five, weighted by length, so one shout does not shut out normal speech), forgotten when the audio route changes, and relearned when the mic gain drops (your voice and the background fall together). A sentence that trails off is kept as long as it continues without a gap. 300 ms pre-roll, 0.8 s hangover, then the phrase is finalized.
+- **Own-voice gate** (`ios/Sources/Audio/VoiceGate.swift`). Your mouth is a few centimetres from the AirPods mics, so your voice is much louder there than anyone nearby. A 20 ms frame opens the gate only if it is at least 8 dB above the background (5th percentile of the last 3 s, so it follows café noise within seconds), periodic at a speech pitch (autocorrelation), and within 8 dB of your own level. Your level is learned per utterance (a median over your last five, weighted by length, so one shout does not shut out normal speech), forgotten when the audio route changes, and relearned when the mic gain drops (your voice and the background fall together). A sentence that trails off is kept as long as it continues without a gap. 300 ms pre-roll; the phrase is finalized after 0.4 s of non-speech and the gate closes at 0.8 s.
 - **Fix-ups** (`ios/Sources/Translate/VietnameseFixup.swift`). Recurring loanword mishearings are corrected in the recognized text ("giữa lo" → Zalo, "hoa phay" → Wi-Fi, "C nga co" → Singapore, …). Before translation only, vocatives are dropped and a few service phrases and idioms are spelled out ("Em ơi, tính tiền!" → "Cho tôi thanh toán!" → "Let me pay!" instead of "Baby, charge!"). The "You say" panel shows what was recognized.
 - **Turns** (`ios/Sources/App/TurnAssembler.swift`). A new subtitle screen starts only after a finalized phrase and a 2 s pause, never in the middle of a phrase that is still being recognized.
 
@@ -277,7 +279,8 @@ Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one T
 | Setting | File | Default | Effect |
 |---|---|---|---|
 | `turnGap` | `ios/Sources/App/TurnAssembler.swift` | 2 s | A pause longer than this (after a finalized phrase) starts a fresh subtitle screen |
-| `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device |
+| `VoiceGate.Config` | `ios/Sources/Audio/VoiceGate.swift` | 8 dB open margin, 8 dB own-voice margin, 0.3 s pre-roll, 0.4 s `finalizeAfter`, 0.8 s hangover | Lower margins pass quieter speech but also nearby voices. Check the `gate: open … background … voice …` log lines on the device. `finalizeAfter` sets how soon your phrase is finalized in a pause (at or past the hangover = on close) |
+| `BoardSilencePadder.Config` | `ios/Sources/Engine/BoardSilencePadder.swift` | 20 ms frames, 0.1 s BLE grace, 3 s limit | Silence fed to their recognizer while board packets pause so it ends the phrase itself (no finalize) |
 | `rate` | `ios/Sources/Engine/Speaker.swift` | 0.54 | Speaking rate of the Vietnamese voice |
 | `idleTimeout` | `ios/Sources/App/ConversationActivity.swift` | 10 min | Silence after which the app releases the AirPods mic and other apps' audio returns to full volume |
 | `MIC_GAIN_DB` | `firmware/main/audio_in.c` | 36 dB | Board microphone gain |

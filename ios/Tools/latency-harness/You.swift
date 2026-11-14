@@ -1,6 +1,7 @@
 // You → Them, wired like AppleVoiceEngine.takeMic + ConversationController.handleMine/makeSubtitles:
 //   mic-tap-sized float buffers (341 frames, real time) → MicSource.handle (BufferConverter → VoiceGate) →
-//   LiveTranscriber(DictationTranscriber vi-VN), finalizeNow() when the gate closes →
+//   LiveTranscriber(DictationTranscriber vi-VN), finalizeNow() on the gate's .finalize (VoiceGate.Config.finalizeAfter,
+//   0.4 s of non-speech, as the app since EARLY_FINALIZE=0.4 was measured; FINALIZE_AFTER=0.8 = the old close) →
 //   TurnAssembler → SubtitleTranslator(TextPipeline(.mine) over Translator vi→en) → "board text" (onResult).
 // Experiments (harness only): GATE_HANG sets VoiceGate.Config.hangover (0.8 s); EARLY_FINALIZE=<s> runs a
 // shadow VoiceGate with that hangover on the same audio and calls finalizeNow when it closes, while the real gate
@@ -71,10 +72,11 @@ final class YouRun {
         // Same gate and hand-off as the app: MicSource with the app's default VoiceGate
         var config = VoiceGate.Config()
         if let h = env["GATE_HANG"].flatMap(Double.init) { config.hangover = h }
+        if let f = env["FINALIZE_AFTER"].flatMap(Double.init) { config.finalizeAfter = f }
         let mic = MicSource(target: format, gate: VoiceGate(config: config), sink: { home.feed($0) },
                             onSpeechStart: { [weak self] in MainActor.assumeIsolated { self?.gateOpens.append(self!.rel()) } },
+                            onFinalize: { [weak self] in if self?.finalize == true { home.finalizeNow() } },
                             onSpeechEnd: { [weak self] in
-                                if self?.finalize == true { home.finalizeNow() }
                                 MainActor.assumeIsolated { self?.gateCloses.append(self!.rel()) }
                             })
         let converter = BufferConverter(target: format)
@@ -82,6 +84,7 @@ final class YouRun {
         if let early = env["EARLY_FINALIZE"].flatMap(Double.init) {
             var c = config
             c.hangover = early
+            c.finalizeAfter = early
             shadow = MicSource(target: format, gate: VoiceGate(config: c), sink: { _ in },
                                onSpeechEnd: { [weak self] in
                                    home.finalizeNow()

@@ -54,24 +54,29 @@ private struct WearerLevelReset: @unchecked Sendable {
 }
 
 /// AirPods mic (or the iPhone mic without earbuds), with echo cancellation of the spoken output.
-/// Only the wearer's speech reaches the recognizer (see `VoiceGate`); `onSpeechStart` fires when the gate opens
-/// and `onSpeechEnd` when they pause (both on the audio thread).
+/// Only the wearer's speech reaches the recognizer (see `VoiceGate`); `onSpeechStart` fires when the gate opens,
+/// `onFinalize` when they pause (`VoiceGate.Config.finalizeAfter`, possibly more than once per opening, always
+/// before the close) and `onSpeechEnd` when the gate closes (all on the audio thread).
 final class MicSource {
     private let engine = AVAudioEngine()
     private let converter: BufferConverter
     private let gate: VoiceGate
     private let sink: (AVAudioPCMBuffer) -> Void
     private let onSpeechStart: () -> Void
+    private let onFinalize: () -> Void
     private let onSpeechEnd: () -> Void
     private var gateOpen = false
+    /// Audio was passed since the last `onFinalize`
+    private var unfinalized = false
 
     init(target: AVAudioFormat, gate: VoiceGate = VoiceGate(),
          sink: @escaping (AVAudioPCMBuffer) -> Void, onSpeechStart: @escaping () -> Void = {},
-         onSpeechEnd: @escaping () -> Void) {
+         onFinalize: @escaping () -> Void = {}, onSpeechEnd: @escaping () -> Void) {
         converter = BufferConverter(target: target)
         self.gate = gate
         self.sink = sink
         self.onSpeechStart = onSpeechStart
+        self.onFinalize = onFinalize
         self.onSpeechEnd = onSpeechEnd
     }
 
@@ -113,7 +118,11 @@ final class MicSource {
                     gateOpen = true
                     onSpeechStart()
                 }
+                unfinalized = true
                 sink(b)
+            case .finalize:
+                unfinalized = false
+                onFinalize()
             case .ended:
                 gateOpen = false
                 onSpeechEnd()
@@ -128,8 +137,10 @@ final class MicSource {
         engine.stop()
         if gateOpen {
             gateOpen = false
+            if unfinalized { onFinalize() }
             onSpeechEnd()
         }
+        unfinalized = false
     }
 }
 

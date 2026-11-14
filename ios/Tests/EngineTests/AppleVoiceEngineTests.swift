@@ -112,9 +112,11 @@ final class AppleVoiceEngineTests: XCTestCase {
         let mic = try XCTUnwrap(r.mics.last)
         XCTAssertTrue(mic.started)
         mic.onSpeechStart()
+        mic.onFinalize()
+        XCTAssertEqual(home.finalized, 1, "the gate's early finalize point finalizes the phrase")
         mic.onSpeechEnd()
         await until { recorder.all.count >= 2 }
-        XCTAssertEqual(home.finalized, 1, "the gate closing finalizes the phrase")
+        XCTAssertEqual(home.finalized, 1, "the gate closing does not finalize again")
         XCTAssertEqual(recorder.all.filter { if case .gate = $0 { return true } else { return false } },
                        [.gate(true), .gate(false)])
         try await r.engine.micOn(false)
@@ -363,14 +365,48 @@ final class AppleVoiceEngineTests: XCTestCase {
 
     // MARK: Board audio
 
-    func testBoardAudioIsFedToTheirRecognizerAndFinalizedOnAPause() async throws {
+    /// A pause in board audio is filled with digital silence so SpeechTranscriber ends the phrase itself:
+    /// finalize corrupts its following utterances (ios/Tools/latency-harness, PAD=silence)
+    func testBoardAudioIsFedToTheirRecognizerAndPaddedWithSilenceOnAPauseNeverFinalized() async throws {
+        let x = FakeRecognizer("en"), home = FakeRecognizer("vi")
+        let r = rig(en: [x], vi: [home])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.feedTheirAudio([Int16](repeating: 100, count: 320), sampleRate: 16_000)
+        XCTAssertEqual(x.fedFrames, 320)
+        await until { x.fedFrames >= 320 + 16_000 / 5 }
+        XCTAssertGreaterThanOrEqual(x.fedFrames, 320 + 16_000 / 5, "silence follows the last packet")
+        XCTAssertEqual(x.finalized, 0, "their recognizer is never finalized on a pause")
+        XCTAssertEqual(home.fedFrames, 0, "only their recognizer is padded")
+    }
+
+    func testPaddingStopsWithTheEngine() async throws {
         let x = FakeRecognizer("en")
         let r = rig(en: [x])
         try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
-        try await r.engine.feedTheirAudio([Int16](repeating: 100, count: 320), sampleRate: 16_000)
-        XCTAssertGreaterThan(x.fedFrames, 0)
-        await until { x.finalized >= 1 }
-        XCTAssertEqual(x.finalized, 1, "a pause in board audio finalizes the phrase")
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        await until { x.fedFrames > 320 }
+        try await r.engine.stop()
+        let fed = x.fedFrames
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(x.fedFrames, fed)
+        XCTAssertEqual(x.finalized, 0)
+    }
+
+    /// Padding does not count as board audio: a dead recognizer is still reported by the next real packet, and
+    /// padding stops feeding it
+    func testPaddingDoesNotMaskADeadRecognizer() async throws {
+        let x = FakeRecognizer("en")
+        let r = rig(en: [x])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.feedTheirAudio(pcm, sampleRate: 16_000)
+        await until { x.fedFrames > 320 }
+        x.failFatally()
+        try? await Task.sleep(for: .milliseconds(60))
+        let fed = x.fedFrames
+        try? await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(x.fedFrames, fed, "a dead recognizer is not padded")
+        let error = await engineError { try await r.engine.feedTheirAudio(self.pcm, sampleRate: 16_000) }
+        XCTAssertEqual(error, .notReady)
     }
 
     // MARK: Board audio while their recognizer is not running (the controller's "recognizer died" signal)
