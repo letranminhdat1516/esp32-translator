@@ -9,44 +9,49 @@ enum RecognizerKinds {
     static let onDevice = RecognizerKind.osOnDevice.rawValue
 }
 
-/// `capabilities(home)` from what the device reports (R2): per language code, the on-device recognizers
+/// `capabilities(home)` from what the device reports (R2): per pack code, the on-device recognizers
 /// (SpeechTranscriber or DictationTranscriber support the locale), the languages that translate both ways with
-/// home (LanguageAvailability, installed or downloadable), and whether home has a TTS voice.
-/// Whisper is not offered on iOS in Phase 1.
+/// home (LanguageAvailability, installed or downloadable), and whether home has a TTS voice. Device locales and
+/// languages are keyed by pack code through `EngineLocales` ("zh_CN" and "zh" are "zh-Hans"), the key
+/// `LanguageCatalog` looks up. Whisper is not offered on iOS in Phase 1.
 enum CapabilitiesAssembly {
     typealias Directions = (toHome: LanguageAvailability.Status, fromHome: LanguageAvailability.Status)
 
+    /// `translation` is keyed by the language identifiers the framework reports ("zh", "zh-TW", "en"); several
+    /// that map to one pack code translate when any of them does both ways.
     static func assemble(home: String, speechLocales: [Locale], dictationLocales: [Locale],
-                         translation: [String: Directions], voices: [String]) -> CapabilitiesMsg {
-        let languages = Set((speechLocales + dictationLocales).map(EngineMapping.languageCode))
+                         translation: [String: Directions], voices: [String],
+                         locales: EngineLocales = EngineLocales()) -> CapabilitiesMsg {
+        let languages = Set((speechLocales + dictationLocales).map { locales.code(for: $0) })
         let recognizers = languages.sorted().map {
             RecognizerEntryMsg(language: $0, kinds: [RecognizerKinds.onDevice])
         }
-        var translatable = translation
-            .filter { $0.key != home && $0.value.toHome != .unsupported && $0.value.fromHome != .unsupported }
-            .map(\.key)
-        if !translatable.isEmpty { translatable.append(home) }
+        var translatable = Set(translation
+            .filter { $0.value.toHome != .unsupported && $0.value.fromHome != .unsupported }
+            .map { locales.code(for: Locale.Language(identifier: $0.key)) })
+        translatable.remove(home)
+        if !translatable.isEmpty { translatable.insert(home) }
         let homeCode = EngineMapping.languageCode(Locale(identifier: home))
         let voice = voices.contains { EngineMapping.languageCode(Locale(identifier: $0)) == homeCode }
         return CapabilitiesMsg(recognizers: recognizers, translatable: translatable.sorted(), vietnameseVoice: voice)
     }
 
     /// Asks the frameworks; no downloads. Safe off the main thread.
-    static func gather(home: String) async -> CapabilitiesMsg {
+    static func gather(home: String, locales: EngineLocales = EngineLocales()) async -> CapabilitiesMsg {
         let speech = SpeechTranscriber.isAvailable ? await SpeechTranscriber.supportedLocales : []
         let dictation = await DictationTranscriber.supportedLocales
         let availability = LanguageAvailability()
-        let homeLanguage = Locale.Language(identifier: home)
-        let homeCode = EngineMapping.languageCode(Locale(identifier: home))
+        let homeLanguage = locales.translationLanguage(home)
         var translation: [String: Directions] = [:]
         for language in await availability.supportedLanguages {
-            guard let code = language.languageCode?.identifier, code != homeCode, translation[code] == nil else { continue }
-            translation[code] = (toHome: await availability.status(from: language, to: homeLanguage),
-                                 fromHome: await availability.status(from: homeLanguage, to: language))
+            let id = language.maximalIdentifier
+            guard locales.code(for: language) != home, translation[id] == nil else { continue }
+            translation[id] = (toHome: await availability.status(from: language, to: homeLanguage),
+                               fromHome: await availability.status(from: homeLanguage, to: language))
         }
         let voices = AVSpeechSynthesisVoice.speechVoices().map(\.language)
         return assemble(home: home, speechLocales: speech, dictationLocales: dictation, translation: translation,
-                        voices: voices)
+                        voices: voices, locales: locales)
     }
 }
 
@@ -72,14 +77,14 @@ enum MissingAssembly {
     }
 
     /// Asks the frameworks; no downloads. Safe off the main thread.
-    static func gather(_ pair: PairMsg) async -> [MissingMsg] {
+    static func gather(_ pair: PairMsg, locales: EngineLocales = EngineLocales()) async -> [MissingMsg] {
         var speech: [(language: String, status: AssetInventory.Status?)] = []
         for language in [pair.other, pair.home] {
-            let recognizer = await LiveTranscriber.resolve(language)
+            let recognizer = await LiveTranscriber.resolve(locales.speechLocale(language).identifier)
             speech.append((language, await recognizer?.assetStatus))
         }
         let availability = LanguageAvailability()
-        let other = Locale.Language(identifier: pair.other), home = Locale.Language(identifier: pair.home)
+        let other = locales.translationLanguage(pair.other), home = locales.translationLanguage(pair.home)
         let translation = [
             (from: pair.other, to: pair.home, status: await availability.status(from: other, to: home)),
             (from: pair.home, to: pair.other, status: await availability.status(from: home, to: other)),

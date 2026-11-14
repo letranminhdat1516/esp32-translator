@@ -72,6 +72,62 @@ enum EngineMapping {
     }
 }
 
+/// Pack code ↔ the locales the Apple frameworks use (R1, R16). The engine contract (`PairMsg`, capabilities,
+/// `MissingMsg`) speaks pack codes ("en", "zh-Hans"); the frameworks get:
+/// - the recognizer: the pack's `appleLocale` ("zh-CN"), the code itself when it is empty or there is no pack;
+/// - Translation: `Locale.Language(identifier: code)` ("zh-Hans", distinct from "zh-Hant").
+/// What the device reports (speech locales, translation languages) maps back to the pack with the same language
+/// and script; with no such pack, to the bare language code (plus the script when it is not that language's
+/// default one, so "zh_TW" is "zh-Hant", never "zh"/"zh-Hans").
+struct EngineLocales: Sendable {
+    private struct Key: Hashable {
+        let language: String
+        let script: String?
+    }
+
+    private let appleLocales: [String: String]
+    private let codes: [Key: String]
+
+    init(packs: [LanguagePack] = []) {
+        var apple: [String: String] = [:], codes: [Key: String] = [:]
+        for pack in packs {
+            if !pack.appleLocale.isEmpty { apple[pack.code] = pack.appleLocale }
+            if let key = Self.key(Locale.Language(identifier: pack.code)), codes[key] == nil { codes[key] = pack.code }
+        }
+        appleLocales = apple
+        self.codes = codes
+    }
+
+    /// The locale to ask the recognizers for
+    func speechLocale(_ code: String) -> Locale {
+        Locale(identifier: appleLocales[code] ?? code)
+    }
+
+    /// The language to give Translation
+    func translationLanguage(_ code: String) -> Locale.Language {
+        Locale.Language(identifier: code)
+    }
+
+    /// The pack code of a device-reported locale
+    func code(for locale: Locale) -> String { code(for: locale.language) }
+
+    /// The pack code of a device-reported language
+    func code(for language: Locale.Language) -> String {
+        guard let key = Self.key(language) else { return language.minimalIdentifier }
+        if let code = codes[key] { return code }
+        let defaultScript = Self.key(Locale.Language(identifier: key.language))?.script
+        guard let script = key.script, script != defaultScript else { return key.language }
+        return "\(key.language)-\(script)"
+    }
+
+    /// Language and (likely) script: "zh_CN", "zh" and "zh-Hans" are one key, "zh_TW" and "zh-Hant" another
+    private static func key(_ language: Locale.Language) -> Key? {
+        let full = Locale.Language(identifier: language.maximalIdentifier)
+        guard let code = full.languageCode?.identifier ?? language.languageCode?.identifier else { return nil }
+        return Key(language: code, script: full.script?.identifier ?? language.script?.identifier)
+    }
+}
+
 /// One engine event, as the `VoiceEngine` streams carry them
 enum EngineEvent: Sendable, Equatable {
     case mine(MineMsg)

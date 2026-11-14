@@ -51,6 +51,83 @@ final class CapabilitiesAssemblyTests: XCTestCase {
     }
 }
 
+/// Capabilities are keyed by PACK code ("zh-Hans"), the key `LanguageCatalog` looks up (R1, R2, R16). The device
+/// reports Chinese as zh_CN / zh_TW speech locales and zh / zh-TW translation languages.
+final class PackCodeCapabilitiesTests: XCTestCase {
+    private func pack(_ code: String, _ appleLocale: String) -> LanguagePack {
+        LanguagePack(code: code, appleLocale: appleLocale, androidLocale: "", whisperCode: "", label: code,
+                     labelLatin: code, script: .latin)
+    }
+
+    private var locales: EngineLocales {
+        EngineLocales(packs: [pack("vi", "vi-VN"), pack("en", "en-US"), pack("ja", "ja-JP"), pack("zh-Hans", "zh-CN")])
+    }
+
+    func testSimplifiedChineseIsOfferedUnderItsPackCode() throws {
+        let caps = CapabilitiesAssembly.assemble(
+            home: "vi", speechLocales: [Locale(identifier: "zh_CN"), Locale(identifier: "en_US")],
+            dictationLocales: [Locale(identifier: "vi_VN")],
+            translation: ["zh": (toHome: .installed, fromHome: .supported),
+                          "en": (toHome: .installed, fromHome: .installed)],
+            voices: [], locales: locales)
+        XCTAssertEqual(caps.recognizers.map(\.language), ["en", "vi", "zh-Hans"])
+        XCTAssertEqual(caps.translatable, ["en", "vi", "zh-Hans"])
+        let catalog = LanguageCatalog(packs: [pack("vi", "vi-VN"), pack("en", "en-US"), pack("zh-Hans", "zh-CN")],
+                                      caps: try XCTUnwrap(caps.toModel()), platform: .ios)
+        XCTAssertEqual(catalog.offered.map(\.code).sorted(), ["en", "zh-Hans"])
+    }
+
+    func testTraditionalChineseDoesNotMasqueradeAsSimplified() {
+        let caps = CapabilitiesAssembly.assemble(
+            home: "vi", speechLocales: [Locale(identifier: "zh_TW"), Locale(identifier: "zh_HK")],
+            dictationLocales: [Locale(identifier: "vi_VN")],
+            translation: ["zh-Hant": (toHome: .installed, fromHome: .installed),
+                          "zh-TW": (toHome: .installed, fromHome: .installed)],
+            voices: [], locales: locales)
+        XCTAssertFalse(caps.recognizers.contains { $0.language == "zh-Hans" }, "\(caps.recognizers)")
+        XCTAssertFalse(caps.translatable.contains("zh-Hans"), "\(caps.translatable)")
+        XCTAssertEqual(caps.recognizers.map(\.language), ["vi", "zh-Hant"])
+        XCTAssertEqual(caps.translatable, ["vi", "zh-Hant"])
+    }
+
+    func testSimplifiedAndTraditionalSideBySideStayApart() {
+        let caps = CapabilitiesAssembly.assemble(
+            home: "vi", speechLocales: [Locale(identifier: "zh_TW")], dictationLocales: [Locale(identifier: "zh_CN")],
+            translation: ["zh-Hans": (toHome: .supported, fromHome: .unsupported),
+                          "zh-Hant": (toHome: .installed, fromHome: .installed)],
+            voices: [], locales: locales)
+        XCTAssertEqual(caps.recognizers.map(\.language), ["zh-Hans", "zh-Hant"])
+        XCTAssertEqual(caps.translatable, ["vi", "zh-Hant"], "Simplified translates one way only")
+    }
+
+    func testOtherPacksKeepTheirBareCodes() {
+        let caps = CapabilitiesAssembly.assemble(
+            home: "vi", speechLocales: [Locale(identifier: "en_GB"), Locale(identifier: "ja_JP")],
+            dictationLocales: [Locale(identifier: "vi_VN"), Locale(identifier: "ko_KR")],
+            translation: ["en": (toHome: .installed, fromHome: .installed), "ko": (toHome: .supported, fromHome: .supported)],
+            voices: [], locales: locales)
+        XCTAssertEqual(caps.recognizers.map(\.language), ["en", "ja", "ko", "vi"])
+        XCTAssertEqual(caps.translatable, ["en", "ko", "vi"])
+    }
+
+    /// Pack code → what the frameworks get: the recognizer the pack's appleLocale (the code when it is empty),
+    /// Translation the pack code as a Locale.Language
+    func testEngineLocalesFromThePacks() {
+        let locales = EngineLocales(packs: [pack("zh-Hans", "zh-CN"), pack("en", "en-US"), pack("fr", "")])
+        XCTAssertEqual(locales.speechLocale("zh-Hans").identifier, "zh-CN")
+        XCTAssertEqual(locales.speechLocale("en").identifier, "en-US")
+        XCTAssertEqual(locales.speechLocale("fr").identifier, "fr", "empty appleLocale falls back to the code")
+        XCTAssertEqual(locales.speechLocale("de").identifier, "de", "no pack: the code itself")
+        XCTAssertEqual(locales.translationLanguage("zh-Hans"), Locale.Language(identifier: "zh-Hans"))
+        XCTAssertNotEqual(locales.translationLanguage("zh-Hans").maximalIdentifier,
+                          Locale.Language(identifier: "zh-Hant").maximalIdentifier)
+        XCTAssertEqual(locales.translationLanguage("en"), Locale.Language(identifier: "en"))
+        XCTAssertEqual(locales.code(for: Locale.Language(identifier: "zh")), "zh-Hans")
+        XCTAssertEqual(locales.code(for: Locale(identifier: "zh_TW")), "zh-Hant")
+        XCTAssertEqual(locales.code(for: Locale(identifier: "en_GB")), "en")
+    }
+}
+
 final class MissingAssemblyTests: XCTestCase {
     private let pair = PairMsg(home: "vi", other: "en", generation: 3)
 

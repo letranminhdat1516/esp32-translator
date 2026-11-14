@@ -21,7 +21,8 @@ struct ESPTranslatorApp: App {
         }
         // The board's CJK/Hangul/Thai glyph lists, loaded before any subtitle is encoded
         let glyphs = BoardGlyphSets.shared
-        controller = ConversationController(engine: AppleVoiceEngine.live(), board: link, packs: BundledPacks.load(),
+        let packs = BundledPacks.load()
+        controller = ConversationController(engine: AppleVoiceEngine.live(packs: packs), board: link, packs: packs,
                                             glossary: glossary, boardText: BoardText(glyphs: glyphs), ui: ui)
         _ui = State(initialValue: ui)
         _relay = State(initialValue: RelayModel(link: link))   // starts relaying if a Mac is paired
