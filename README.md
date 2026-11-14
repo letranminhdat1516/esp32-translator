@@ -133,25 +133,30 @@ link), `pair:passkey`, `wait:1000`, then `pair:ok` / `pair:no`.
 
 **The iPhone app talks to one board only.** From the moment a board is pinned the app reconnects only that board,
 by its CoreBluetooth identifier, and never connects another device advertising the board service. With a new
-board, turn the old one off and pick **Quên board** in the settings menu: the pin is cleared and the app looks for a
+board, turn the old one off and pick **Quên board này** in Settings: the pin is cleared and the app looks for a
 board again.
 
 ### BLE pairing (pinning)
 
-The pin is stored with a security level (`BoardPin`, `ios/Sources/BLE/BoardLinkLogic.swift`):
+The app never pins a board on connect. After board info it reads control `…0004`; on new firmware that read is what
+makes iOS show the 6-digit dialog, and **the pin follows that authenticated read** (it is saved only once the read
+succeeded and the setup finished). The pin is stored with a security level (`BoardPin`,
+`ios/Sources/BLE/BoardLinkLogic.swift`):
 
 - **secure**: the board's info reports version ≥ 2 (pairing by code enforced) and the protected read of control
   `…0004` succeeded, which on such firmware means iOS paired with the 6-digit comparison.
 - **legacy**: the board cannot authenticate (board info < 2, unreadable, or no control characteristic: old
   firmware lets anyone read) and the user said it is theirs. The Pair screen shows "Board này dùng firmware cũ nên
   không xác thực được. Chỉ ghép nếu đây đúng là board của bạn." with **Vẫn ghép** / **Huỷ**; nothing is pinned
-  without **Vẫn ghép**, and **Huỷ** skips that board until **Thử lại**. A pin saved by an app version without
-  levels loads as legacy.
+  without **Vẫn ghép**, and **Huỷ** skips that board until **Thử lại**. The question is bound to the peripheral
+  and the link it was asked on: the answer carries the peripheral identifier and a link generation, and an answer
+  that arrives after a reconnect (to another board, or the same one again) is ignored. A pin saved by an app
+  version without levels loads as legacy.
 
 On reconnect, a **secure** pin is refused (disconnected, never ready, "Board không còn xác thực được") when the board
 reports version < 2, lacks the control characteristic, or its read succeeds while it reports < 2; the pin is never
 downgraded. A **legacy** pin becomes secure as soon as the board reports ≥ 2 and its read succeeds (after a firmware
-update). Flashing old firmware onto a board pinned as secure therefore needs **Quên board** and a new pairing.
+update). Flashing old firmware onto a board pinned as secure therefore needs **Quên board này** and a new pairing.
 
 **Limitation.** CoreBluetooth does not tell the app whether a link is encrypted or how it was paired. A peripheral
 that claims version 2 but lets the protected read through without asking for pairing looks the same to the app as
@@ -164,6 +169,12 @@ board was pinned.
 
 > **Update the iOS app and the board firmware together.** The board drops the app's audio role after 60 s
 > without the app's 20 s keepalive, and older firmware shows the time and label messages as subtitles.
+
+> **Firmware with pairing by code (board info v2) is committed but not flashed yet.** After flashing it, an iPhone
+> that was already paired has to pair once more: the old bond (Just Works) no longer counts, so the board shows a
+> 6-digit code and iOS its dialog; confirm both. A board pinned as legacy upgrades to secure on that pairing. If
+> the app keeps refusing the board ("Board không còn xác thực được…"), or iOS still holds a stale bond, use
+> **Quên board này** in Settings (and forget the device in iOS Settings > Bluetooth), then pair again.
 
 ### Firmware
 
@@ -200,16 +211,45 @@ The mouse is the finger (double-click = double tap, drag up on the lock face = s
 Scripted, without a window: `sim/build/board-sim --headless --do "connect;mic:on;text:Hello!;level:80;shot:out.bmp"`
 (all commands are listed at the top of `sim/sim.c`). BLE, audio and the PMU are faked.
 
-### iPhone app screens without a board (demo mode)
+### iPhone app screens
+
+The UI follows the "Nhạc cụ" design (`docs/ui-redesign/`, canvas in `docs/ui-redesign/canvas/`, shots in
+`docs/ui-redesign/shots/`):
+
+| Screen | What it is |
+|---|---|
+| Welcome, Permissions, Pair, Language | Onboarding in three steps; Pair compares the board's 6-digit code with the iOS dialog |
+| Live | The board dial with the current subtitle, the transcript, line actions **Nghe lại** / **Sửa** / **Báo dịch sai** |
+| Lock screen | Live Activity and Dynamic Island (language, board battery, last phrase, **Tắt mic board** / **Dừng**) |
+| Phone-only | No board: the top half shows the subtitle upside down for the other person, **Giữ để nói** for you |
+| Board lost | The board went away: reconnecting, **Dùng iPhone trong lúc chờ**, **Quên board này** |
+| History, Glossary, Settings, Sharing | Saved sessions (this iPhone only), custom terms, switches, the feedback queue |
+
+**Phone-only limits** (temporary, ARCHITECTURE §5). iOS has one input route, so the iPhone's built-in mic listens to
+the other person and you speak only while holding **Giữ để nói** (the input moves to the AirPods or headset mic
+while held). You cannot talk over each other, and the built-in mic also hears you when you speak without holding
+the button. A dead recognizer is noticed by a check every second and handled as with the board (one restart, then
+the failure screen).
+
+**Data export, no server.** "Chia sẻ để cải thiện" is off by default. With it on, **Báo dịch sai** and **Sửa** queue
+the line on the iPhone (heard text, translation, your correction, and a short clip from a 20 s in-memory audio
+ring). Settings › Chia sẻ để cải thiện opens the queue; **Gửi n câu** builds a folder `feedback-<date>/` (`items.json` +
+`NN.wav`) from the lines you picked and opens the share sheet. The app uploads nothing itself.
+
+### Demo mode and screenshots (no board)
 
 Launching the app with `-demo <screen>` swaps in the fake engine and board, seeds the design's sample data and
 opens that screen directly (`welcome`, `permissions`, `pair`, `language`, `live`, `lock`, `phoneonly`,
-`boardlost`, `history`, `glossary`, `settings`, `sharing`). `ios/Tools/snap.sh [screen…]` builds for the iOS
-Simulator (iPhone 17 Pro), launches each screen and saves `docs/ui-redesign/shots/<screen>.png`.
+`boardlost`, `history`, `glossary`, `settings`, `sharing`; `lockactivity` also starts a real Live Activity).
+
+`ios/Tools/snap.sh [screen…]` builds for the iOS Simulator, boots a dedicated simulator ("Snap iPhone 17 Pro",
+created if missing; `SNAP_DEVICE` picks another), launches each screen and saves
+`docs/ui-redesign/shots/<screen>.png` (all 12 without arguments). Only that simulator is ever shut down, and
+`snap.sh --delete-sim` deletes it.
 
 ### iPhone app (Swift)
 
-Requires Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) and an iPhone on iOS 26. No Simulator is used.
+Requires Xcode 26, [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`) and an iPhone on iOS 26 (the Simulator is used only for the demo screenshots).
 
 1. `cd ios && xcodegen generate`, then open `ESPTranslator.xcodeproj`. `project.yml` bundles `shared/languages`, `shared/board_glyphs` and `shared/copy` as resources.
 2. Under Signing & Capabilities, set your own **Team** and a unique **Bundle Identifier**.
@@ -335,8 +375,8 @@ Word error rate of `DictationTranscriber` vi-VN on 25 synthetic sentences (one T
 
 Fixed in that review: ADPCM header index clamp, the four missing Swift fixture suites, a dead Vietnamese recognizer, zh-Hans locale mapping, board pinning ("Quên board"), and the glossary excluded from iCloud backup. Still open:
 
-- A dead Vietnamese recognizer is noticed only when board audio arrives (or at the next start or mic-on). Catching it with no board audio needs a new engine event in the `VoiceEngine` contract.
-- Board pinning: pairing by code (numeric comparison) and security levels on the pin replaced trust on first use (see "BLE pairing (pinning)"). Still open: a peripheral that claims board info version 2 without enforcing encryption cannot be told apart by CoreBluetooth; only the missing iOS pairing dialog gives it away. A challenge-response with a key agreed at pairing would close it.
+- A dead recognizer is noticed when board audio arrives, and in phone-only by a check every second (`VoiceEngine.checkRecognizers`). In board mode with a silent board it waits for the next audio; an engine event would be faster than polling.
+- Board pinning: pairing by code (numeric comparison) and security levels on the pin replaced trust on first use (see "BLE pairing (pinning)"). Still open: a board that claims board info v2 but does not enforce encryption cannot be told apart by CoreBluetooth (only the missing iOS pairing dialog gives it away). A full fix needs an app-layer challenge-response with a key established at pairing.
 - Switching to a language that needs a download leaves the old pair running: the board keeps getting subtitles in the old language while the screen asks to download the new one. Turn the mic off when entering `needsDownload` from a switch (R1, R5).
 - Small race between the generation check and `engine.speak` (`ConversationController.say`): one phrase from the old pair could still be spoken right after a switch. Pass the generation into the engine (R4).
 - The one-restart budget in `SessionMachine` never resets, so a second recognizer death hours later goes straight to `failed`. Reset it after a healthy period (P6).
@@ -346,7 +386,6 @@ Fixed in that review: ADPCM header index clamp, the four missing Swift fixture s
 - `Speaker` prints spoken text to stdout. Gate it behind debug builds.
 - A glossary that was set aside after corruption, or that went read-only, is never shown to the user (`recoveredFromCorruption` is unused).
 - Leftover: the mic usage text in `Info.plist` says "translate into English".
-- Pack regexes are only checked for compiling. There is no adversarial-string time-bound test (ARCHITECTURE §7).
 - The app builds in Swift language mode 5 with a fair amount of `@unchecked Sendable`. Move to Swift 6 mode.
 
 ## License
