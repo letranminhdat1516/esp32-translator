@@ -23,7 +23,6 @@ __pycache__/
 # Board simulator
 sim/build/
 sim/*.bmp
-ios/Preview/build/
 
 # ESP-IDF tool cache (clangd index)
 firmware/.cache/

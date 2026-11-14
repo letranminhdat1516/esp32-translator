@@ -1,151 +1,161 @@
 import SwiftUI
 
-// "Từ điển riêng", terms that are kept as they are when translating. The
-// view holds no list of its own: after a closure returns, the controller has updated `ui.glossaryTerms`.
+// 3.3 Từ riêng: terms that are kept as they are when translating. The view holds no list of its own: after a
+// closure returns, the controller has updated `ui.glossaryTerms`. Validation messages come from the store.
 
 struct GlossaryView: View {
     var ui: UIState
-    @Environment(\.dismiss) private var dismiss
-    @State private var addText = ""
+    let router: AppRouter
+    @State private var addText: String
+    @State private var fixedText = ""
     @State private var addError: String?
     @State private var editText = ""
     @State private var editError: String?
     /// A refused delete: shown on the row, not under the add field
     @State private var rowError: (id: String, message: String)?
     @State private var editingId: String?
-    @FocusState private var editFocused: Bool
+    @FocusState private var focus: Field?
 
-    private static let errorColor = Color(red: 0xE5 / 255, green: 0x64 / 255, blue: 0x5A / 255)
+    private enum Field: Hashable { case add, fixed, edit }
+
+    init(ui: UIState, router: AppRouter, draft: String = "") {
+        self.ui = ui
+        self.router = router
+        _addText = State(initialValue: draft)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(Copy.t("glossary.title")).font(.system(size: 18, weight: .semibold))
-                Spacer()
-                Button(Copy.t("language.close")) { dismiss() }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Palette.accentLight)
+        InstrumentScreen {
+            TopBar { BackLink(title: Copy.t("nav.back")) { router.pop() } } trailing: {
+                Text(Copy.t("glossary.count", ["count": String(ui.glossaryTerms.count)])).foregroundStyle(DS.Color.muted)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 8)
-            addRow
-            if ui.glossaryTerms.isEmpty {
-                Spacer()
-                Text(Copy.t("glossary.empty")).font(.system(size: 15)).foregroundStyle(Palette.muted)
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
+            ScreenTitle(Copy.t("glossary.screenTitle")).padding(.top, 6)
+            Text(Copy.t("glossary.intro")).ds(.small).foregroundStyle(DS.Color.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 10)
+            addCard.padding(.top, 18)
+            ScrollView {
+                if ui.glossaryTerms.isEmpty {
+                    Text(Copy.t("glossary.empty")).ds(.small).foregroundStyle(DS.Color.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14)
+                } else {
+                    RuledList {
                         ForEach(ui.glossaryTerms, id: \.id) { term in
                             if term.id == editingId { editRow(term) } else { row(term) }
                         }
                     }
-                    .padding(.vertical, 8)
                 }
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .padding(.top, 18)
         }
-        .foregroundStyle(Palette.text)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.ground.ignoresSafeArea())
-        .preferredColorScheme(.dark)
     }
 
-    private var addRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            field(Copy.t("glossary.addHint"), text: $addText, error: addError ?? ui.glossaryError)
+    // MARK: Add
+
+    private var addCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            darkField(Copy.t("glossary.addLabel"), text: $addText, field: .add, prompt: Copy.t("glossary.addHint"),
+                      error: addError ?? ui.glossaryError)
                 .onSubmit(add)
                 .onChange(of: addText) { addError = nil }
-            Button(action: add) {
-                Text(Copy.t("glossary.add"))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 22)
-                    .frame(height: 48)
-                    .background(Palette.accent, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
+            darkField(Copy.t("glossary.fixedLabel"), text: $fixedText, field: .fixed, prompt: Copy.t("glossary.fixedHint"),
+                      error: nil)
+                .onSubmit(add)
+            Button(Copy.t("glossary.add"), action: add)
+                .buttonStyle(InstrumentButtonStyle(kind: .inverse, height: 46, radius: DS.Radius.smallButton))
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(14)
+        .background(DS.Color.board, in: RoundedRectangle(cornerRadius: DS.Radius.tile, style: .continuous))
     }
 
-    private func field(_ hint: String, text: Binding<String>, error: String?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            TextField("", text: text, prompt: Text(hint).foregroundStyle(Palette.faint))
-                .accessibilityLabel(hint.isEmpty ? Copy.t("glossary.editLabel") : hint)
+    private func darkField(_ label: String, text: Binding<String>, field: Field, prompt: String, error: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).ds(.caption).foregroundStyle(DS.Color.tileLabel)
+            TextField("", text: text, prompt: Text(prompt).foregroundStyle(DS.Color.muted))
+                .ds(text.wrappedValue.isEmpty ? DSType.body : DSType.body.with(weight: 500))
+                .foregroundStyle(DS.Color.white)
                 .modifier(PlainTextInput())
                 .submitLabel(.done)
-                .padding(.horizontal, 16)
-                .frame(height: 48)
-                .background(Palette.surface, in: Capsule())
+                .focused($focus, equals: field)
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .background(DS.Color.field, in: RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous)
+                    .strokeBorder(focus == field || !text.wrappedValue.isEmpty ? DS.Color.lightBlue : DS.Color.fieldEdge, lineWidth: 1))
+                .accessibilityLabel(label)
             if let error {
-                Text(error).font(.system(size: 12)).foregroundStyle(Self.errorColor).padding(.horizontal, 16)
+                Text(error).ds(.caption).foregroundStyle(DS.Color.warnDot)
                     .accessibilityLabel(Copy.t("glossary.errorLabel", ["error": error]))
             }
         }
-        .padding(.top, 4)
+    }
+
+    // MARK: Rows
+
+    private func fixedTranslation(_ term: Term) -> String {
+        if let code = ui.languageCode, let f = term.fixed[code], !f.isEmpty { return f }
+        return Copy.t("glossary.keep")
     }
 
     private func row(_ term: Term) -> some View {
-        HStack(spacing: 4) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(term.text).font(.system(size: 17, weight: .semibold))
-                if !term.variants.isEmpty {
-                    Text(term.variants.joined(separator: ", ")).font(.system(size: 14)).foregroundStyle(Palette.muted)
+        TableRow(verticalPadding: 13) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: DS.Space.column) {
+                    Text(term.text).ds(.rowTitle).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(fixedTranslation(term)).ds(.caption).foregroundStyle(DS.Color.muted)
+                }
+                if let e = rowError, e.id == term.id {
+                    Text(e.message).ds(.caption).foregroundStyle(DS.Color.warnText)
                 }
             }
-            Spacer()
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
             if term.origin == .user {
-                iconButton("pencil", label: Copy.t("glossary.edit", ["term": term.text])) {
+                Button(Copy.t("glossary.edit", ["term": term.text])) {
                     editingId = term.id
                     editError = nil
                     editText = term.text
-                    editFocused = true
+                    focus = .edit
                 }
-                iconButton("trash", label: Copy.t("glossary.delete", ["term": term.text])) { delete(term.id) }
+                Button(Copy.t("glossary.delete", ["term": term.text]), role: .destructive) { delete(term.id) }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottomLeading) {
-            if let e = rowError, e.id == term.id {
-                Text(e.message).font(.system(size: 12)).foregroundStyle(Self.errorColor).padding(.horizontal, 20)
-            }
-        }
+        .accessibilityElement(children: .combine)
     }
 
     private func editRow(_ term: Term) -> some View {
-        VStack(alignment: .trailing, spacing: 0) {
-            field("", text: $editText, error: editError)
-                .focused($editFocused)
-                .onSubmit { save(term.id) }
-                .onChange(of: editText) { editError = nil }
-            HStack(spacing: 16) {
-                Button(Copy.t("glossary.cancel")) {
-                    editingId = nil
-                    editError = nil
+        TableRow(verticalPadding: 10) {
+            VStack(alignment: .trailing, spacing: 8) {
+                TextField("", text: $editText)
+                    .ds(.body)
+                    .modifier(PlainTextInput())
+                    .focused($focus, equals: .edit)
+                    .onSubmit { save(term.id) }
+                    .onChange(of: editText) { editError = nil }
+                    .padding(.horizontal, 12)
+                    .frame(height: 44)
+                    .overlay(RoundedRectangle(cornerRadius: DS.Radius.field, style: .continuous).strokeBorder(DS.Color.ink, lineWidth: 1))
+                    .accessibilityLabel(Copy.t("glossary.editLabel"))
+                if let editError {
+                    Text(editError).ds(.caption).foregroundStyle(DS.Color.warnText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Button(Copy.t("glossary.save")) { save(term.id) }.fontWeight(.semibold)
+                HStack(spacing: 16) {
+                    Button(Copy.t("glossary.cancel")) {
+                        editingId = nil
+                        editError = nil
+                    }
+                    Button(Copy.t("glossary.save")) { save(term.id) }.fontWeight(.semibold)
+                }
+                .ds(.label)
+                .buttonStyle(.plain)
             }
-            .font(.system(size: 16))
-            .foregroundStyle(Palette.accentLight)
-            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 6)
     }
 
-    private func iconButton(_ name: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: name).font(.system(size: 18)).foregroundStyle(Palette.muted).frame(width: 44, height: 44)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
+    // MARK: Actions
 
     private func message(_ error: Error) -> String {
         (error as? GlossaryValidationError)?.message ?? Copy.t("glossary.saveFailed")
@@ -155,6 +165,7 @@ struct GlossaryView: View {
         do {
             try ui.glossaryAdd(addText)
             addText = ""
+            fixedText = ""
             addError = nil
         } catch {
             addError = message(error)
@@ -181,31 +192,7 @@ struct GlossaryView: View {
     }
 }
 
-#if DEBUG
-#Preview("Glossary") {
-    GlossaryView(ui: .sampleGlossary())
-}
-
-#Preview("Glossary, empty") {
-    GlossaryView(ui: UIState())
-}
-
-#Preview("Glossary, validation error") {
-    GlossaryView(ui: .sampleGlossary(rejecting: GlossaryMessages.tooLong), addText: String(repeating: "a", count: 70))
-}
-
-extension GlossaryView {
-    /// For previews: starts with text typed and the add button already pressed.
-    init(ui: UIState, addText: String) {
-        self.init(ui: ui)
-        _addText = State(initialValue: addText)
-        _addError = State(initialValue: GlossaryMessages.tooLong)
-    }
-}
-
-#endif
-
-/// No capitalisation or autocorrect for terms (iOS only, so the Mac preview still compiles).
+/// No capitalisation or autocorrect for terms.
 private struct PlainTextInput: ViewModifier {
     func body(content: Content) -> some View {
         #if os(iOS)
