@@ -77,6 +77,11 @@ static void shell_task(void *arg)
         taskEXIT_CRITICAL(&s_mux);
 
         ESP_LOGI(TAG, "%s -> %s", EV_NAMES[ev], next.locked ? "locked" : "translator");
+        if (next.locked) {
+            /* No code may stay up for approval on a locked board: reject and close it (nothing if none; also
+             * covers a request the host was just about to show) */
+            ble_link_pair_cancel();
+        }
         /* Load first, then wake: the panel never lights on the previous screen */
         lv_obj_t *target = screen_obj(modes_screen(&next));
         bsp_display_lock((uint32_t)-1);

@@ -5,6 +5,26 @@
 #include "pairing.h"
 
 #define SEC 1000000LL
+#define MIN (60 * SEC)
+
+static const uint8_t A[PAIR_ADDR_LEN] = { 1, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6 };
+static const uint8_t B[PAIR_ADDR_LEN] = { 1, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6 };
+
+static void addr_n(uint8_t out[PAIR_ADDR_LEN], int n)
+{
+    memset(out, 0, PAIR_ADDR_LEN);
+    out[0] = 1;
+    out[1] = (uint8_t)n;
+    out[2] = (uint8_t)(n >> 8);
+}
+
+/* Shows request on conn from addr at now (unlocked, numeric comparison); returns its id */
+static uint32_t show(pair_t *p, uint16_t conn, const uint8_t *addr, uint32_t passkey, int64_t now)
+{
+    assert(pair_begin(p, conn, addr, true, false, passkey, now) == PAIR_BEGIN_SHOW);
+    assert(p->phase == PAIR_SHOWING && p->conn == conn);
+    return p->id;
+}
 
 static void starts_idle(void)
 {
@@ -12,9 +32,12 @@ static void starts_idle(void)
     pair_init(&p);
     assert(p.phase == PAIR_IDLE);
     assert(p.conn == PAIR_CONN_NONE);
-    /* no request: taps and ticks do nothing */
-    assert(pair_answer(&p, true, 0) == PAIR_OUT_NONE);
+    assert(p.id == PAIR_ID_NONE);
+    /* no request: taps, ticks and cancels do nothing */
+    assert(pair_answer(&p, 1, PAIR_ID_NONE, true, 0) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, 1, true, 10 * SEC) == PAIR_OUT_NONE);
     assert(pair_tick(&p, 100 * SEC) == PAIR_OUT_NONE);
+    assert(pair_cancel(&p) == PAIR_OUT_NONE);
     assert(!pair_end(&p, 1));
 }
 
@@ -22,27 +45,59 @@ static void accept_and_reject(void)
 {
     pair_t p;
     pair_init(&p);
-    assert(pair_begin(&p, 1, PAIR_KIND_NUMCMP, 482913, 10 * SEC) == PAIR_CONN_NONE);
-    assert(p.phase == PAIR_SHOWING && p.conn == 1 && p.passkey == 482913);
-    assert(pair_answer(&p, true, 15 * SEC) == PAIR_OUT_ACCEPT);
+    uint32_t id = show(&p, 1, A, 482913, 10 * SEC);
+    assert(p.passkey == 482913 && id != PAIR_ID_NONE);
+    assert(pair_answer(&p, 1, id, true, 15 * SEC) == PAIR_OUT_ACCEPT);
     assert(p.phase == PAIR_IDLE);
     /* a second tap after the answer is ignored */
-    assert(pair_answer(&p, false, 16 * SEC) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, id, false, 16 * SEC) == PAIR_OUT_NONE);
 
-    pair_begin(&p, 1, PAIR_KIND_NUMCMP, 7, 20 * SEC);
-    assert(pair_answer(&p, false, 21 * SEC) == PAIR_OUT_REJECT);
+    uint32_t id2 = show(&p, 1, A, 7, 30 * SEC);
+    assert(id2 != id);   /* every request gets a fresh id */
+    assert(pair_answer(&p, 1, id2, false, 31 * SEC + 1) == PAIR_OUT_REJECT);
     assert(p.phase == PAIR_IDLE);
+}
+
+static void answer_bound_to_its_request(void)
+{
+    pair_t p;
+    pair_init(&p);
+    uint32_t id = show(&p, 1, A, 111111, 0);
+    /* an answer for another link or another (older) request is dropped; the code stays up */
+    assert(pair_answer(&p, 2, id, true, 5 * SEC) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, id + 1, true, 5 * SEC) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, id - 1, true, 5 * SEC) == PAIR_OUT_NONE);
+    assert(p.phase == PAIR_SHOWING && p.id == id);
+
+    /* the same link asks again (its old procedure is gone): new id, an answer for the old code no longer counts */
+    uint32_t id2 = show(&p, 1, A, 222222, 20 * SEC);
+    assert(id2 != id && p.passkey == 222222);
+    assert(p.deadline_us == 20 * SEC + PAIR_TIMEOUT_US);
+    assert(pair_answer(&p, 1, id, true, 22 * SEC) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, id2, true, 22 * SEC) == PAIR_OUT_ACCEPT);
+}
+
+static void taps_ignored_first_second(void)
+{
+    pair_t p;
+    pair_init(&p);
+    uint32_t id = show(&p, 1, A, 123456, 10 * SEC);
+    /* a tap within 1.0 s of the code appearing was meant for something else */
+    assert(pair_answer(&p, 1, id, true, 10 * SEC) == PAIR_OUT_NONE);
+    assert(pair_answer(&p, 1, id, true, 10 * SEC + PAIR_ARM_US - 1) == PAIR_OUT_NONE);
+    assert(p.phase == PAIR_SHOWING);
+    assert(pair_answer(&p, 1, id, true, 10 * SEC + PAIR_ARM_US) == PAIR_OUT_ACCEPT);
 }
 
 static void times_out_after_30s(void)
 {
     pair_t p;
     pair_init(&p);
-    pair_begin(&p, 2, PAIR_KIND_NUMCMP, 123456, 0);
+    show(&p, 2, A, 123456, 0);
     assert(pair_tick(&p, 29 * SEC) == PAIR_OUT_NONE);
     assert(p.phase == PAIR_SHOWING);
     assert(pair_tick(&p, PAIR_TIMEOUT_US) == PAIR_OUT_TIMEOUT);
-    assert(p.phase == PAIR_IDLE);
+    assert(p.phase == PAIR_IDLE && p.id == PAIR_ID_NONE);
     assert(pair_tick(&p, PAIR_TIMEOUT_US + SEC) == PAIR_OUT_NONE);   /* only once */
 }
 
@@ -50,49 +105,133 @@ static void late_tap_counts_as_timeout(void)
 {
     pair_t p;
     pair_init(&p);
-    pair_begin(&p, 2, PAIR_KIND_NUMCMP, 123456, 0);
-    assert(pair_answer(&p, true, 31 * SEC) == PAIR_OUT_TIMEOUT);
+    uint32_t id = show(&p, 2, A, 123456, 0);
+    assert(pair_answer(&p, 2, id, true, 31 * SEC) == PAIR_OUT_TIMEOUT);
     assert(p.phase == PAIR_IDLE);
 }
 
-static void disp_has_nothing_to_answer(void)
+static void only_numeric_comparison(void)
 {
     pair_t p;
     pair_init(&p);
-    pair_begin(&p, 1, PAIR_KIND_DISP, 999999, 0);
-    assert(pair_answer(&p, true, SEC) == PAIR_OUT_NONE);
-    assert(p.phase == PAIR_SHOWING);       /* stays up until pairing ends or the timeout */
-    assert(pair_end(&p, 1));
+    /* passkey entry / OOB: refused before anything else, nothing shown, not even counted */
+    assert(pair_begin(&p, 1, A, false, false, 999999, 0) == PAIR_BEGIN_REJECT_METHOD);
     assert(p.phase == PAIR_IDLE);
+    show(&p, 1, A, 1, SEC);   /* the rate limit did not see the refused one */
 }
 
-static void new_request_replaces_old(void)
+static void newcomer_loses(void)
 {
     pair_t p;
     pair_init(&p);
-    pair_begin(&p, 1, PAIR_KIND_NUMCMP, 111111, 0);
-    /* another link asks: the first one must be rejected by the caller */
-    assert(pair_begin(&p, 2, PAIR_KIND_NUMCMP, 222222, 5 * SEC) == 1);
-    assert(p.conn == 2 && p.passkey == 222222);
-    assert(p.deadline_us == 5 * SEC + PAIR_TIMEOUT_US);   /* fresh 30 s */
-    /* the same link asking again: nothing to reject */
-    assert(pair_begin(&p, 2, PAIR_KIND_NUMCMP, 333333, 6 * SEC) == PAIR_CONN_NONE);
-    /* a DISP request being replaced has nothing to reject either */
-    pair_begin(&p, 1, PAIR_KIND_DISP, 1, 7 * SEC);
-    assert(pair_begin(&p, 2, PAIR_KIND_NUMCMP, 2, 8 * SEC) == PAIR_CONN_NONE);
+    uint32_t id = show(&p, 1, A, 111111, 0);
+    /* another link asks while the first code is up: it is rejected, the shown request is untouched */
+    assert(pair_begin(&p, 2, B, true, false, 222222, 5 * SEC) == PAIR_BEGIN_REJECT_BUSY);
+    assert(p.phase == PAIR_SHOWING && p.conn == 1 && p.id == id && p.passkey == 111111);
+    assert(p.deadline_us == PAIR_TIMEOUT_US);   /* no fresh 30 s for anyone */
+    assert(pair_answer(&p, 1, id, true, 6 * SEC) == PAIR_OUT_ACCEPT);
+}
+
+static void locked_board_refuses(void)
+{
+    pair_t p;
+    pair_init(&p);
+    assert(pair_begin(&p, 1, A, true, true, 482913, 0) == PAIR_BEGIN_REJECT_LOCKED);
+    assert(p.phase == PAIR_IDLE && p.id == PAIR_ID_NONE);
+    /* unlocked, after the per-peer gap: shown */
+    show(&p, 1, A, 482913, 10 * SEC);
+}
+
+static void cancel_when_locked_while_showing(void)
+{
+    pair_t p;
+    pair_init(&p);
+    uint32_t id = show(&p, 3, A, 482913, 0);
+    assert(pair_cancel(&p) == PAIR_OUT_REJECT);
+    assert(p.phase == PAIR_IDLE && p.conn == 3);   /* conn kept: the caller rejects that link */
+    assert(pair_answer(&p, 3, id, true, 5 * SEC) == PAIR_OUT_NONE);   /* a tap racing the cancel */
+    assert(pair_cancel(&p) == PAIR_OUT_NONE);
+}
+
+static void rate_limit_per_peer(void)
+{
+    pair_t p;
+    pair_init(&p);
+    /* one attempt per 10 s */
+    assert(pair_begin(&p, 1, A, true, false, 1, 0) == PAIR_BEGIN_SHOW);
+    pair_end(&p, 1);
+    assert(pair_begin(&p, 1, A, true, false, 1, 9 * SEC) == PAIR_BEGIN_REJECT_RATE);
+    assert(p.phase == PAIR_IDLE);   /* a refused attempt never touches the screen */
+    /* refused attempts are not recorded: 10 s after the first one it works */
+    assert(pair_begin(&p, 1, A, true, false, 1, 10 * SEC) == PAIR_BEGIN_SHOW);
+    pair_end(&p, 1);
+    /* another peer is not affected */
+    assert(pair_begin(&p, 2, B, true, false, 1, 10 * SEC + 1) == PAIR_BEGIN_SHOW);
+    pair_end(&p, 2);
+
+    /* at most 5 per 10 min: attempts 3..5 at 20, 30, 40 s, the 6th is refused until the first leaves the window */
+    for (int i = 2; i < PAIR_RATE_MAX; i++) {
+        assert(pair_begin(&p, 1, A, true, false, 1, (int64_t)i * 10 * SEC) == PAIR_BEGIN_SHOW);
+        pair_end(&p, 1);
+    }
+    assert(pair_begin(&p, 1, A, true, false, 1, 50 * SEC) == PAIR_BEGIN_REJECT_RATE);
+    assert(pair_begin(&p, 1, A, true, false, 1, 9 * MIN) == PAIR_BEGIN_REJECT_RATE);
+    assert(pair_begin(&p, 1, A, true, false, 1, PAIR_RATE_WINDOW_US) == PAIR_BEGIN_SHOW);   /* first one (t=0) is out */
+    pair_end(&p, 1);
+    assert(pair_begin(&p, 1, A, true, false, 1, PAIR_RATE_WINDOW_US + 10 * SEC) == PAIR_BEGIN_SHOW);   /* t=10 s out */
+    pair_end(&p, 1);
+
+    /* busy and locked refusals still count as attempts */
+    pair_t q;
+    pair_init(&q);
+    show(&q, 1, A, 1, 0);
+    assert(pair_begin(&q, 2, B, true, false, 1, SEC) == PAIR_BEGIN_REJECT_BUSY);
+    assert(pair_begin(&q, 2, B, true, false, 1, 2 * SEC) == PAIR_BEGIN_REJECT_RATE);
+    pair_end(&q, 1);
+    assert(pair_begin(&q, 2, B, true, true, 1, 20 * SEC) == PAIR_BEGIN_REJECT_LOCKED);
+    assert(pair_begin(&q, 2, B, true, true, 1, 25 * SEC) == PAIR_BEGIN_REJECT_RATE);   /* no notice spam */
+}
+
+static void rate_limit_global_and_lru(void)
+{
+    pair_t p;
+    pair_init(&p);
+    uint8_t a[PAIR_ADDR_LEN];
+    /* an attacker changing its address: each new address passes the per-peer check, the global cap stops it */
+    for (int i = 0; i < PAIR_GLOBAL_MAX; i++) {
+        addr_n(a, i);
+        assert(pair_begin(&p, (uint16_t)i, a, true, false, 1, (int64_t)i * SEC) == PAIR_BEGIN_SHOW);
+        pair_end(&p, (uint16_t)i);
+    }
+    addr_n(a, 100);
+    assert(pair_begin(&p, 100, a, true, false, 1, 20 * SEC) == PAIR_BEGIN_REJECT_RATE);
+    assert(pair_begin(&p, 100, a, true, false, 1, PAIR_RATE_WINDOW_US) == PAIR_BEGIN_SHOW);   /* the oldest left */
+    pair_end(&p, 100);
+
+    /* the table keeps the most recently seen peers: 10 addresses went through 8 slots, so the oldest (0, 1, 2) were
+     * dropped; address 100 is still remembered and limited */
+    assert(pair_begin(&p, 100, a, true, false, 1, PAIR_RATE_WINDOW_US + SEC) == PAIR_BEGIN_REJECT_RATE);
+    int used = 0;
+    for (int i = 0; i < PAIR_RATE_PEERS; i++) {
+        used += p.peers[i].used;
+        uint8_t old[PAIR_ADDR_LEN];
+        addr_n(old, 0);
+        assert(!p.peers[i].used || memcmp(p.peers[i].addr, old, PAIR_ADDR_LEN) != 0);
+    }
+    assert(used == PAIR_RATE_PEERS);
 }
 
 static void end_closes_only_its_own_link(void)
 {
     pair_t p;
     pair_init(&p);
-    pair_begin(&p, 1, PAIR_KIND_NUMCMP, 111111, 0);
+    uint32_t id = show(&p, 1, A, 111111, 0);
     assert(!pair_end(&p, 2));                 /* another link disconnecting */
     assert(p.phase == PAIR_SHOWING);
     assert(pair_end(&p, 1));                  /* this link disconnected / pairing completed */
     assert(p.phase == PAIR_IDLE);
     assert(!pair_end(&p, 1));
-    assert(pair_answer(&p, true, SEC) == PAIR_OUT_NONE);   /* a tap racing the close */
+    assert(pair_answer(&p, 1, id, true, 5 * SEC) == PAIR_OUT_NONE);   /* a tap racing the close */
 }
 
 static void code_text_is_six_digits(void)
@@ -110,37 +249,84 @@ static void code_text_is_six_digits(void)
 
 static void access_rules(void)
 {
+    const pair_sec_t none = { false, false, 0, false };
+    const pair_sec_t just_works = { true, false, 16, true };
+    const pair_sec_t legacy_mitm = { true, true, 16, false };   /* legacy passkey bond: not SC */
+    const pair_sec_t short_key = { true, true, 7, true };
+    const pair_sec_t sc_mitm = { true, true, 16, true };
+    const pair_sec_t not_enc = { false, true, 16, true };       /* not a real state, still no */
+
     /* board info: always (read before pairing) */
-    assert(pair_chr_allowed(PAIR_CHR_INFO, false, false));
+    assert(pair_chr_allowed(PAIR_CHR_INFO, &none));
     pair_chr_t prot[] = { PAIR_CHR_AUDIO, PAIR_CHR_TEXT, PAIR_CHR_CTRL };
     for (unsigned i = 0; i < sizeof(prot) / sizeof(prot[0]); i++) {
-        assert(!pair_chr_allowed(prot[i], false, false));
-        assert(!pair_chr_allowed(prot[i], true, false));   /* Just Works bond: not enough */
-        assert(!pair_chr_allowed(prot[i], false, true));   /* not a real state, still no */
-        assert(pair_chr_allowed(prot[i], true, true));
+        assert(!pair_chr_allowed(prot[i], &none));
+        assert(!pair_chr_allowed(prot[i], &just_works));
+        assert(!pair_chr_allowed(prot[i], &legacy_mitm));
+        assert(!pair_chr_allowed(prot[i], &short_key));
+        assert(!pair_chr_allowed(prot[i], &not_enc));
+        assert(pair_chr_allowed(prot[i], &sc_mitm));
     }
 }
 
-static void upgrade_once_for_unauthenticated_link(void)
+static void upgrade_once_for_weak_link(void)
 {
-    assert(pair_should_upgrade(true, false, false));
-    assert(!pair_should_upgrade(true, false, true));    /* already asked on this link */
-    assert(!pair_should_upgrade(true, true, false));    /* numeric comparison bond */
-    assert(!pair_should_upgrade(false, false, false));  /* not encrypted (failed): nothing to upgrade */
+    const pair_sec_t just_works = { true, false, 16, true };
+    const pair_sec_t legacy_mitm = { true, true, 16, false };
+    const pair_sec_t short_key = { true, true, 7, true };
+    const pair_sec_t sc_mitm = { true, true, 16, true };
+    const pair_sec_t failed = { false, false, 0, false };
+    assert(pair_should_upgrade(&just_works, false));
+    assert(pair_should_upgrade(&legacy_mitm, false));   /* authenticated but not Secure Connections */
+    assert(pair_should_upgrade(&short_key, false));
+    assert(!pair_should_upgrade(&just_works, true));    /* already asked on this link */
+    assert(!pair_should_upgrade(&sc_mitm, false));      /* numeric comparison SC bond */
+    assert(!pair_should_upgrade(&failed, false));       /* not encrypted (failed): nothing to upgrade */
+}
+
+static void sleep_hold_is_counted(void)
+{
+    pair_sleep_t s;
+    pair_sleep_reset(&s);
+    assert(!pair_sleep_hold(&s, PAIR_ID_NONE));   /* no code: no hold */
+    /* the same request holds for as long as it is up (at most its 30 s) and counts once */
+    for (int i = 0; i < 100; i++) {
+        assert(pair_sleep_hold(&s, 1));
+    }
+    assert(s.holds == 1);
+    assert(pair_sleep_hold(&s, 2));
+    assert(!pair_sleep_hold(&s, PAIR_ID_NONE));
+    assert(pair_sleep_hold(&s, 3));
+    assert(s.holds == PAIR_SLEEP_HOLDS_MAX);
+    /* more remote requests no longer keep the board awake */
+    assert(!pair_sleep_hold(&s, 4));
+    assert(!pair_sleep_hold(&s, 4));
+    assert(!pair_sleep_hold(&s, 5));
+    assert(!pair_sleep_hold(&s, 1000));
+    /* the app connected (a real session): the budget is back */
+    pair_sleep_reset(&s);
+    assert(pair_sleep_hold(&s, 1001));
 }
 
 int main(void)
 {
     starts_idle();
     accept_and_reject();
+    answer_bound_to_its_request();
+    taps_ignored_first_second();
     times_out_after_30s();
     late_tap_counts_as_timeout();
-    disp_has_nothing_to_answer();
-    new_request_replaces_old();
+    only_numeric_comparison();
+    newcomer_loses();
+    locked_board_refuses();
+    cancel_when_locked_while_showing();
+    rate_limit_per_peer();
+    rate_limit_global_and_lru();
     end_closes_only_its_own_link();
     code_text_is_six_digits();
     access_rules();
-    upgrade_once_for_unauthenticated_link();
+    upgrade_once_for_weak_link();
+    sleep_hold_is_counted();
     puts("test_pairing: all passed");
     return 0;
 }
