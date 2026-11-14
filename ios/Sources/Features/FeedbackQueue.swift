@@ -22,8 +22,18 @@ struct FeedbackItem: Identifiable, Hashable, Codable, Sendable {
     var languageCode: String = ""
     /// When it was last exported for the share sheet; nil while only queued.
     var sentAt: Date? = nil
+    /// The transcript line it came from, so a later "Sửa" on that line lands on this item.
+    var lineID: String? = nil
+    /// The translation as the user fixed it with "Sửa"; nil when never edited.
+    var correctedTranslation: String? = nil
 
     var side: Side { mine ? .mine : .theirs }
+
+    /// The review row's title: "heard → expected", or "heard → corrected translation" for a "Sửa" without one.
+    var reviewTitle: String {
+        let fix = expected.isEmpty ? (correctedTranslation ?? "") : expected
+        return fix.isEmpty ? heard : heard + " \u{2192} " + fix
+    }
 
     /// A line that may hold a secret (a password, a code): it is queued unselected and marked.
     static func looksSensitive(_ texts: String...) -> Bool {
@@ -54,12 +64,16 @@ struct FeedbackExportItem: Codable, Hashable, Sendable {
     var durationSeconds: Double?
     var wav: String?
     var at: Date
+    /// The translation as fixed with "Sửa", when there was one.
+    var correctedTranslation: String? = nil
 }
 
 /// The local queue of reports; export builds `feedback-<date>/` with `items.json` and the WAVs for the share sheet.
 protocol FeedbackQueueing: Sendable {
     func items() async -> [FeedbackItem]
     func add(_ item: FeedbackItem, clip: Data?) async
+    /// Replaces the queued item with the same id (its clip stays); unknown ids are ignored.
+    func update(_ item: FeedbackItem) async
     func setSelected(_ id: String, _ selected: Bool) async
     func removeAll() async
     /// Removes the items already exported, their clips and every export folder ("Xoá dữ liệu đã gửi").
@@ -87,6 +101,11 @@ actor InMemoryFeedbackQueue: FeedbackQueueing {
 
     func items() async -> [FeedbackItem] { list }
     func add(_ item: FeedbackItem, clip: Data?) async { list.append(item) }
+
+    func update(_ item: FeedbackItem) async {
+        guard let i = list.firstIndex(where: { $0.id == item.id }) else { return }
+        list[i] = item
+    }
 
     func setSelected(_ id: String, _ selected: Bool) async {
         guard let i = list.firstIndex(where: { $0.id == id }) else { return }
@@ -146,6 +165,15 @@ actor FileFeedbackQueue: FeedbackQueueing {
         save()
     }
 
+    func update(_ item: FeedbackItem) async {
+        guard let i = list.firstIndex(where: { $0.id == item.id }) else { return }
+        var item = item
+        item.clipFile = list[i].clipFile
+        item.clipSeconds = list[i].clipSeconds
+        list[i] = item
+        save()
+    }
+
     func setSelected(_ id: String, _ selected: Bool) async {
         guard let i = list.firstIndex(where: { $0.id == id }) else { return }
         list[i].selected = selected
@@ -199,7 +227,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
             entries.append(FeedbackExportItem(index: i + 1, side: item.side.rawValue, language: item.languageCode,
                                               heard: item.heard, translation: item.target, expected: item.expected,
                                               durationSeconds: wav == nil ? nil : item.clipSeconds, wav: wav,
-                                              at: item.at))
+                                              at: item.at, correctedTranslation: item.correctedTranslation))
         }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]

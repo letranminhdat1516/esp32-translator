@@ -114,7 +114,7 @@ struct SharingView: View {
                 .accessibilityLabel(Copy.t("sharing.select"))
                 .accessibilityValue(item.selected ? Text(Copy.t("settings.on")) : Text(Copy.t("settings.off")))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.expected.isEmpty ? item.heard : item.heard + " \u{2192} " + item.expected)
+                    Text(item.reviewTitle)
                         .ds(DSType.row.with(weight: 700)).lineSpacing(0)
                         .lineLimit(2)
                     Text(subtitle(item)).ds(.caption)
