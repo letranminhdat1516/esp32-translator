@@ -15,6 +15,7 @@
  */
 #include <string.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -306,6 +307,8 @@ static void phone_audio_on(uint16_t conn)
     s_phone_last_write_us = esp_timer_get_time();
     ble_npl_callout_reset(&s_phone_idle_timer, ble_npl_time_ms_to_ticks32(PHONE_IDLE_TIMEOUT_MS));
     ESP_LOGI(TAG, "iPhone audio on");
+    ESP_LOGI(TAG, "internal DMA free %u, largest block %u", (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     /* Audio needs the fast pace: ask again when the link runs slower than 45 ms (relaxed for ANCS, or a retry NimBLE
      * dropped: an update that times out is freed without an event) or a relaxed request still waits for a retry */
     struct ble_gap_conn_desc desc;
@@ -610,6 +613,13 @@ static int gap_event(struct ble_gap_event *event, void *arg)
             s_connections--;
         }
         ESP_LOGI(TAG, "disconnected, reason 0x%x", event->disconnect.reason);
+        if (event->disconnect.reason == BLE_HS_HCI_ERR(BLE_ERR_CONN_TERM_MIC)) {
+            /* MIC failure: our stored keys for this peer no longer match (it forgot the bond, e.g. "Forget This
+             * Device" on the Mac or iPhone). Drop them so the next connection pairs from scratch instead of
+             * failing the same way every time */
+            ESP_LOGW(TAG, "link %d: stale bond (MIC failure), deleting it", event->disconnect.conn.conn_handle);
+            ble_store_util_delete_peer(&event->disconnect.conn.peer_id_addr);
+        }
         if (event->disconnect.conn.conn_handle == s_phone_conn) {
             phone_audio_off(false);
         }
