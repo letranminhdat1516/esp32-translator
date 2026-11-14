@@ -461,6 +461,47 @@ private final class ManualClock: @unchecked Sendable {
         #expect(await services.feedbackItems.first?.sentAt != nil)
     }
 
+    /// The clip of an unselected sensitive item stays in memory: written only once the user selects the item, and
+    /// taken off the disk again if the item becomes sensitive and unselected.
+    @Test func unselectedSensitiveClipsAreNeverWritten() async throws {
+        let dir = tempDir()
+        let q = FileFeedbackQueue(directory: dir)
+        let clip = WAV.encode([Int16](repeating: 3, count: 16_000), sampleRate: 16_000)
+        var secret = Self.item("s", selected: false)
+        secret.sensitive = true
+        await q.add(secret, clip: clip)
+        let clipsDir = dir.appendingPathComponent("clips")
+        let clipsOnDisk = { (try? FileManager.default.contentsOfDirectory(atPath: clipsDir.path)) ?? [] }
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipURL("s") == nil)
+        #expect(await q.clipData("s") == clip, "still playable from memory")
+        #expect(await q.items().first?.clipSeconds == 1)
+        #expect(await q.items().first?.clipFile == nil)
+        // Selected: written
+        await q.setSelected("s", true)
+        #expect(clipsOnDisk().count == 1)
+        #expect(await q.clipData("s") == clip)
+        // Unselected again: off the disk, back in memory
+        await q.setSelected("s", false)
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipData("s") == clip)
+
+        // A queued item that a later "Sửa" makes sensitive (and unselected) loses its file too
+        await q.add(Self.item("a"), clip: clip)
+        #expect(clipsOnDisk().count == 1)
+        var a = try #require(await q.items().first { $0.id == "a" })
+        a.sensitive = true
+        a.selected = false
+        await q.update(a)
+        #expect(clipsOnDisk().isEmpty)
+        #expect(await q.clipData("a") == clip)
+
+        // A memory clip does not outlive the process: after a reload the item shows no audio
+        let reloaded = FileFeedbackQueue(directory: dir)
+        #expect(await reloaded.items().allSatisfy { $0.clipSeconds == nil && $0.clipFile == nil })
+        #expect(await reloaded.clipData("s") == nil)
+    }
+
     @Test func corruptQueueStartsEmpty() async throws {
         let dir = tempDir()
         try Data("[{".utf8).write(to: dir.appendingPathComponent("queue.json"))

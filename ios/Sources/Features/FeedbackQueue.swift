@@ -90,8 +90,10 @@ protocol FeedbackQueueing: Sendable {
     func markSent(_ export: FeedbackExport) async
     /// The share was cancelled: the export folder (and its zip) goes, nothing is marked sent.
     func discardExport(_ export: FeedbackExport) async
-    /// The queued clip of `id`, for playback.
+    /// The queued clip of `id` on disk.
     func clipURL(_ id: String) async -> URL?
+    /// The clip of `id` for playback: from disk, or from memory for an unselected sensitive item.
+    func clipData(_ id: String) async -> Data?
 }
 
 extension FeedbackQueueing {
@@ -99,6 +101,7 @@ extension FeedbackQueueing {
     func markSent(_ export: FeedbackExport) async {}
     func discardExport(_ export: FeedbackExport) async {}
     func clipURL(_ id: String) async -> URL? { nil }
+    func clipData(_ id: String) async -> Data? { nil }
 }
 
 extension FeedbackItem {
@@ -135,6 +138,10 @@ actor InMemoryFeedbackQueue: FeedbackQueueing {
 /// The file queue in `directory` (Application Support/Feedback, excluded from backup):
 /// `queue.json` (the items), `clips/<id>.wav`, and `exports/feedback-<yyyyMMdd-HHmmss>/` (`items.json` + `NN.wav`)
 /// built for the share sheet. An unreadable `queue.json` is set aside as `queue.corrupt-<n>.json` and logged.
+///
+/// The clip of an item that is sensitive and not selected is never written: it is held in memory until the user
+/// selects the item (then written), and an item that becomes sensitive and unselected has its file moved back into
+/// memory. A held clip is gone when the app quits.
 actor FileFeedbackQueue: FeedbackQueueing {
     static func defaultDirectory() throws -> URL {
         try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
@@ -146,6 +153,8 @@ actor FileFeedbackQueue: FeedbackQueueing {
     private let clock: @Sendable () -> Date
     private let calendar: Calendar
     private var list: [FeedbackItem]
+    /// Clips of unselected sensitive items (memory only).
+    private var heldClips: [String: Data] = [:]
 
     init(directory: URL, clock: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current) {
         self.directory = directory
@@ -163,17 +172,13 @@ actor FileFeedbackQueue: FeedbackQueueing {
         var item = item
         item.clipFile = nil
         if let clip {
-            do {
-                try ensure(clipsDirectory)
-                let name = "\(Self.safeName(item.id)).wav"
-                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: .atomic)
-                item.clipFile = name
-                item.clipSeconds = item.clipSeconds ?? WAV.duration(clip)
-            } catch {
-                Diag.log("feedback: clip write failed: \(error)")
-            }
+            item.clipSeconds = item.clipSeconds ?? WAV.duration(clip)
+            heldClips[item.id] = clip
+        } else {
+            item.clipSeconds = nil
         }
         list.append(item)
+        settleClip(list.count - 1)
         save()
     }
 
@@ -183,17 +188,20 @@ actor FileFeedbackQueue: FeedbackQueueing {
         item.clipFile = list[i].clipFile
         item.clipSeconds = list[i].clipSeconds
         list[i] = item
+        settleClip(i)
         save()
     }
 
     func setSelected(_ id: String, _ selected: Bool) async {
         guard let i = list.firstIndex(where: { $0.id == id }) else { return }
         list[i].selected = selected
+        settleClip(i)
         save()
     }
 
     func removeAll() async {
         list.removeAll()
+        heldClips.removeAll()
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -202,6 +210,7 @@ actor FileFeedbackQueue: FeedbackQueueing {
         for item in list where item.sentAt != nil {
             if let f = item.clipFile { try? fm.removeItem(at: clipsDirectory.appendingPathComponent(f)) }
         }
+        for item in list where item.sentAt != nil { heldClips[item.id] = nil }
         list.removeAll { $0.sentAt != nil }
         try? fm.removeItem(at: exportsDirectory)
         save()
@@ -211,6 +220,12 @@ actor FileFeedbackQueue: FeedbackQueueing {
         guard let f = list.first(where: { $0.id == id })?.clipFile else { return nil }
         let url = clipsDirectory.appendingPathComponent(f)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func clipData(_ id: String) async -> Data? {
+        if let held = heldClips[id] { return held }
+        guard let url = await clipURL(id) else { return nil }
+        return try? Data(contentsOf: url)
     }
 
     func exportBundle() async throws -> FeedbackExport? {
@@ -266,6 +281,30 @@ actor FileFeedbackQueue: FeedbackQueueing {
 
     // MARK: Internals
 
+    /// Puts the clip of item `i` where it belongs: memory while the item is sensitive and unselected, the clips
+    /// folder otherwise.
+    private func settleClip(_ i: Int) {
+        let item = list[i]
+        let fm = FileManager.default
+        if item.sensitive && !item.selected {
+            guard let f = item.clipFile else { return }
+            let url = clipsDirectory.appendingPathComponent(f)
+            if let data = try? Data(contentsOf: url) { heldClips[item.id] = data }
+            try? fm.removeItem(at: url)
+            list[i].clipFile = nil
+        } else if let clip = heldClips[item.id] {
+            do {
+                try ensure(clipsDirectory)
+                let name = "\(Self.safeName(item.id)).wav"
+                try clip.write(to: clipsDirectory.appendingPathComponent(name), options: .atomic)
+                list[i].clipFile = name
+                heldClips[item.id] = nil
+            } catch {
+                Diag.log("feedback: clip write failed: \(error)")
+            }
+        }
+    }
+
     private static func safeName(_ id: String) -> String {
         String(id.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "_" })
     }
@@ -295,7 +334,12 @@ actor FileFeedbackQueue: FeedbackQueueing {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         do {
-            return try decoder.decode([FeedbackItem].self, from: Data(contentsOf: file))
+            // A clip held in memory (unselected sensitive item) did not survive the restart: no audio shown
+            return try decoder.decode([FeedbackItem].self, from: Data(contentsOf: file)).map { item in
+                var item = item
+                if item.clipFile == nil { item.clipSeconds = nil }
+                return item
+            }
         } catch {
             Diag.log("feedback: unreadable queue, set aside: \(error)")
             let aside = file.deletingLastPathComponent()

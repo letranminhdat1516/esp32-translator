@@ -116,7 +116,7 @@ struct SharingView: View {
     private func play(_ item: FeedbackItem) {
         error = nil
         Task {
-            guard let url = await services.feedback.clipURL(item.id), player.toggle(url, id: item.id) else {
+            guard let clip = await services.feedback.clipData(item.id), player.toggle(clip, id: item.id) else {
                 error = Copy.t("sharing.playFailed")
                 return
             }
@@ -157,12 +157,15 @@ struct SharingView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(item.clipFile == nil)
-                .opacity(item.clipFile == nil ? 0.35 : 1)
+                .disabled(!hasClip(item))
+                .opacity(hasClip(item) ? 1 : 0.35)
                 .accessibilityLabel(Copy.t("sharing.play"))
             }
         }
     }
+
+    /// A clip on disk, or one held in memory (an unselected sensitive item)
+    private func hasClip(_ item: FeedbackItem) -> Bool { item.clipFile != nil || item.clipSeconds != nil }
 
     private func subtitle(_ item: FeedbackItem) -> String {
         var parts = [Copy.t(item.mine ? "bubble.mine" : "bubble.theirs")]
@@ -219,9 +222,9 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
     private(set) var playingID: String?
     @ObservationIgnored private var player: AVAudioPlayer?
 
-    /// Plays `url`, or stops when `id` is already playing. False when the file cannot be played.
+    /// Plays `clip` (WAV bytes), or stops when `id` is already playing. False when it cannot be played.
     @discardableResult
-    func toggle(_ url: URL, id: String) -> Bool {
+    func toggle(_ clip: Data, id: String) -> Bool {
         if playingID == id {
             stop()
             return true
@@ -233,7 +236,7 @@ final class ClipPlayer: NSObject, AVAudioPlayerDelegate {
             if session.category != .playAndRecord {
                 try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             }
-            let p = try AVAudioPlayer(contentsOf: url)
+            let p = try AVAudioPlayer(data: clip)
             p.delegate = self
             guard p.play() else { return false }
             player = p
