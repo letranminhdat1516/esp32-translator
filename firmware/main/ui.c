@@ -1,9 +1,9 @@
 /*
  * Round 466x466 screen ("Phụ đề" style: black, text first, one blue accent):
- *   top    : status line: the other person's language while translating, else the connection state
- *   middle : live English subtitles for the other person (streamed by the app while you speak)
+ *   top    : the other person's language while translating ("English", "日本語"), else the connection state
+ *   middle : live subtitles for the other person (streamed by the app while you speak), centred while they fit
  *   bottom : round board mic button (mic icon; slashed and dimmed when off)
- *   edge   : level ring, brighter and thicker the louder the speaker
+ *   edge   : a faint track around the rim; a thin blue arc grows along it with the speaker's level
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,8 +25,9 @@ LV_FONT_DECLARE(font_vi_36);
 #define COLOR_LIGHT   0xe3eaf0
 #define COLOR_OUTLINE 0x2a2d33
 #define COLOR_OFF_BG  0x16171a
+#define COLOR_TRACK   0x1c1d21
 
-/* Status while translating; the language label (kind 3) follows it: "Live translation · 日本語" */
+/* Status while translating; replaced by the language label (kind 3) alone once the app sent one */
 #define LIVE_STATUS "Live translation"
 /* Shown while no iPhone is connected (replaces stale subtitles on a disconnect, cleared on connect) */
 #define WELCOME_TEXT "Hello!\nOpen the iPhone app to connect."
@@ -45,19 +46,15 @@ static lv_obj_t *s_mic_stem;
 static lv_obj_t *s_mic_slash;
 static bool s_connected;
 
-/* Display lock held. Status line = "<status> · <label>" */
+/* Display lock held. While translating the line shows only the language ("English"); any other status
+ * (waiting, mic off, a toast) is shown alone, without the label */
 static void status_set(const char *utf8)
 {
     size_t n = utf8_cut_len(utf8, strlen(utf8), sizeof(s_status_text) - 1);   /* not through a character */
     memcpy(s_status_text, utf8, n);
     s_status_text[n] = '\0';
-    if (s_label[0]) {
-        char line[sizeof(s_status_text) + LABEL_MAX + 8];
-        snprintf(line, sizeof(line), "%s · %s", s_status_text, s_label);
-        lv_label_set_text(s_status, line);
-    } else {
-        lv_label_set_text(s_status, s_status_text);
-    }
+    bool live = strcmp(s_status_text, LIVE_STATUS) == 0;
+    lv_label_set_text(s_status, live && s_label[0] ? s_label : s_status_text);
 }
 
 
@@ -89,6 +86,7 @@ static void on_button(lv_event_t *e)
 }
 
 static void refresh_status(rec_lang_t lang);
+static void center_text(void);
 
 static void set_screen(bool on)
 {
@@ -158,6 +156,10 @@ lv_obj_t *ui_translator_screen(void)
     return s_translator_scr;
 }
 
+/* LVGL angles: 0 = 3 o'clock, clockwise. 110 is the lower left, where the design's arc starts */
+#define RING_START    110
+#define RING_MIN_SPAN 24
+
 void ui_set_level(int percent)
 {
     if (percent < 0) {
@@ -171,11 +173,12 @@ void ui_set_level(int percent)
     }
     s_level = percent;
     lock();
-    lv_obj_set_hidden(s_ring, percent == 0);
-    if (percent != 0) {
-        /* Faint speech: thin and dim; clear speech: thick and bright */
-        lv_obj_set_style_arc_width(s_ring, 3 + percent / 12, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(60 + percent * 195 / 100), LV_PART_INDICATOR);
+    /* The track stays; the blue arc grows from the lower left, clockwise, with the level (dim when faint) */
+    if (percent == 0) {
+        lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
+    } else {
+        lv_arc_set_angles(s_ring, RING_START, RING_START + RING_MIN_SPAN + percent * (360 - RING_MIN_SPAN) / 100);
+        lv_obj_set_style_arc_opa(s_ring, (lv_opa_t)(110 + percent * 145 / 100), LV_PART_INDICATOR);
     }
     unlock();
 }
@@ -239,6 +242,7 @@ void ui_prepare_power_off(void)
     set_screen(true);
     status_set("Powering off");
     lv_label_set_text(s_text, "Press the PWR button\nto turn on");
+    center_text();
     unlock();
     vTaskDelay(pdMS_TO_TICKS(1500));
     lock();
@@ -253,6 +257,7 @@ void ui_prepare_sleep(void)
     lv_screen_load(s_translator_scr);
     status_set("Sleeping");
     lv_label_set_text(s_text, "Touch the screen\nto wake up");
+    center_text();
     unlock();
     vTaskDelay(pdMS_TO_TICKS(2500));
     lock();
@@ -305,12 +310,25 @@ static void style_mic(bool on)
 {
     lv_color_t icon = lv_color_hex(on ? COLOR_LIGHT : COLOR_MUTED);
     lv_obj_set_style_bg_color(s_btn_mic, on ? lv_color_black() : lv_color_hex(COLOR_OFF_BG), 0);
-    lv_obj_set_style_border_color(s_btn_mic, lv_color_hex(on ? COLOR_EN : COLOR_OUTLINE), 0);
+    lv_obj_set_style_border_color(s_btn_mic, lv_color_hex(COLOR_OUTLINE), 0);
     lv_obj_set_style_bg_color(s_mic_body, icon, 0);
     lv_obj_set_style_bg_color(s_mic_stem, icon, 0);
     lv_obj_set_style_arc_color(s_mic_cradle, icon, LV_PART_INDICATOR);
     lv_obj_set_style_line_color(s_mic_slash, icon, 0);
     lv_obj_set_hidden(s_mic_slash, on);
+}
+
+/* Display lock held. Subtitles that fit sit in the middle of the box; longer ones start at the top and scroll
+ * so the newest line stays in view */
+static void center_text(void)
+{
+    lv_obj_update_layout(s_text_box);
+    int32_t box_h = lv_obj_get_content_height(s_text_box);
+    int32_t text_h = lv_obj_get_height(s_text);
+    lv_obj_set_y(s_text, text_h < box_h ? (box_h - text_h) / 2 : 0);
+    lv_obj_update_layout(s_text_box);
+    lv_obj_scroll_to_y(s_text_box, lv_obj_get_scroll_y(s_text_box) + lv_obj_get_scroll_bottom(s_text_box),
+                       LV_ANIM_OFF);
 }
 
 void ui_init(void)
@@ -337,18 +355,24 @@ void ui_init(void)
     s_ring = lv_arc_create(scr);
     lv_obj_set_size(s_ring, 462, 462);
     lv_obj_center(s_ring);
+    lv_arc_set_rotation(s_ring, 0);
     lv_arc_set_bg_angles(s_ring, 0, 360);
-    lv_arc_set_angles(s_ring, 0, 360);
+    lv_arc_set_angles(s_ring, RING_START, RING_START + RING_MIN_SPAN);
     lv_obj_remove_style(s_ring, NULL, LV_PART_KNOB);
     lv_obj_set_clickable(s_ring, false);
-    lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_ring, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(s_ring, 7, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_TRACK), LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(s_ring, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s_ring, 7, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(s_ring, true, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(s_ring, lv_color_hex(COLOR_EN), LV_PART_INDICATOR);
-    lv_obj_set_hidden(s_ring, true);
+    lv_obj_set_style_arc_opa(s_ring, LV_OPA_TRANSP, LV_PART_INDICATOR);
 
     s_text_box = lv_obj_create(scr);
-    lv_obj_set_size(s_text_box, 400, 236);
-    lv_obj_align(s_text_box, LV_ALIGN_CENTER, 0, -14);
+    /* 360 wide: the top and bottom lines stay inside the round glass. Exactly four lines tall, so a long
+     * subtitle scrolled to its newest line never shows half a line at the top */
+    lv_obj_set_size(s_text_box, 360, 4 * (lv_font_get_line_height(font_store_font(36)) + 2));
+    lv_obj_align(s_text_box, LV_ALIGN_CENTER, 0, -12);
     lv_obj_set_style_bg_opa(s_text_box, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(s_text_box, 0, 0);
     lv_obj_set_style_pad_all(s_text_box, 0, 0);
@@ -365,21 +389,22 @@ void ui_init(void)
     lv_obj_set_style_text_align(s_text, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_line_space(s_text, 2, 0);
     lv_label_set_text(s_text, WELCOME_TEXT);
+    center_text();
 
     s_btn_mic = lv_button_create(scr);
-    lv_obj_set_size(s_btn_mic, 72, 72);
-    lv_obj_align(s_btn_mic, LV_ALIGN_BOTTOM_MID, 0, -46);
+    lv_obj_set_size(s_btn_mic, 64, 64);
+    lv_obj_align(s_btn_mic, LV_ALIGN_BOTTOM_MID, 0, -50);
     lv_obj_set_style_radius(s_btn_mic, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(s_btn_mic, lv_color_hex(COLOR_OFF_BG), 0);
     lv_obj_set_style_border_width(s_btn_mic, 2, 0);
     lv_obj_set_style_border_color(s_btn_mic, lv_color_hex(COLOR_OUTLINE), 0);
     lv_obj_set_style_shadow_width(s_btn_mic, 0, 0);
-    lv_obj_set_ext_click_area(s_btn_mic, 12);
+    lv_obj_set_ext_click_area(s_btn_mic, 16);
     lv_obj_add_event_cb(s_btn_mic, on_button, LV_EVENT_CLICKED, NULL);
     build_mic_icon(s_btn_mic);
     style_mic(false);
 
-    status_set("Waiting for iPhone…");
+    status_set("Waiting for iPhone");
     lv_obj_add_event_cb(scr, on_double_tap, LV_EVENT_DOUBLE_CLICKED, NULL);
     lv_timer_create(screen_timer_cb, 250, NULL);
     unlock();
@@ -388,7 +413,7 @@ void ui_init(void)
 static void refresh_status(rec_lang_t lang)
 {
     if (!s_connected) {
-        status_set("Waiting for iPhone…");
+        status_set("Waiting for iPhone");
     } else if (lang != REC_NONE) {
         status_set(LIVE_STATUS);
     } else {
@@ -402,6 +427,7 @@ void ui_set_connected(bool connected)
     if (connected != s_connected && !s_shutting_down) {   /* keep the sleep / power-off message */
         lv_label_set_text(s_text, connected ? "" : WELCOME_TEXT);
         lv_obj_scroll_to_y(s_text_box, 0, LV_ANIM_OFF);
+        center_text();
     }
     s_connected = connected;
     refresh_status(app_get_recording());
@@ -421,10 +447,7 @@ void ui_show_text(const char *utf8)
     ui_mark_activity();
     lock();
     lv_label_set_text(s_text, utf8);
-    /* Live subtitles: always keep the newest line in view */
-    lv_obj_update_layout(s_text_box);
-    lv_obj_scroll_to_y(s_text_box, lv_obj_get_scroll_y(s_text_box) + lv_obj_get_scroll_bottom(s_text_box),
-                       LV_ANIM_OFF);
+    center_text();   /* live subtitles: centred while they fit, else the newest line in view */
     unlock();
 }
 
