@@ -143,8 +143,33 @@ static void locked_board_refuses(void)
     pair_init(&p);
     assert(pair_begin(&p, 1, A, true, true, 482913, 0) == PAIR_BEGIN_REJECT_LOCKED);
     assert(p.phase == PAIR_IDLE && p.id == PAIR_ID_NONE);
-    /* unlocked, after the per-peer gap: shown */
-    show(&p, 1, A, 482913, 10 * SEC);
+    /* locked refusals do not burn the peer's budget: retries while locked, then unlocked a second later: shown */
+    for (int i = 1; i <= 2 * PAIR_RATE_MAX; i++) {
+        assert(pair_begin(&p, 1, A, true, true, 482913, (int64_t)i * 100 * 1000) == PAIR_BEGIN_REJECT_LOCKED);
+    }
+    assert(p.peers[0].used == false && p.global_n == 0);
+    show(&p, 1, A, 482913, 2 * SEC);
+}
+
+static void notices_are_rate_limited(void)
+{
+    pair_t p;
+    pair_init(&p);
+    /* "unlock to pair": at most once per PAIR_LOCKED_NOTICE_GAP_US */
+    assert(pair_notice_due(&p, PAIR_NOTICE_LOCKED, 0));
+    assert(!pair_notice_due(&p, PAIR_NOTICE_LOCKED, SEC));
+    assert(!pair_notice_due(&p, PAIR_NOTICE_LOCKED, PAIR_LOCKED_NOTICE_GAP_US - 1));
+    assert(pair_notice_due(&p, PAIR_NOTICE_LOCKED, PAIR_LOCKED_NOTICE_GAP_US));
+    /* "too many requests": at most once a minute, independent of the other notice */
+    assert(pair_notice_due(&p, PAIR_NOTICE_RATE, SEC));
+    assert(!pair_notice_due(&p, PAIR_NOTICE_RATE, 30 * SEC));
+    assert(!pair_notice_due(&p, PAIR_NOTICE_RATE, SEC + PAIR_RATE_NOTICE_GAP_US - 1));
+    assert(pair_notice_due(&p, PAIR_NOTICE_RATE, SEC + PAIR_RATE_NOTICE_GAP_US));
+    assert(PAIR_RATE_NOTICE_GAP_US == 60LL * SEC);
+    /* a refused-by-rate request asks for its notice through pair_notice_due; a fresh pair_t allows one at t=0 */
+    pair_t q;
+    pair_init(&q);
+    assert(pair_notice_due(&q, PAIR_NOTICE_RATE, 0));
 }
 
 static void cancel_when_locked_while_showing(void)
@@ -193,8 +218,10 @@ static void rate_limit_per_peer(void)
     assert(pair_begin(&q, 2, B, true, false, 1, SEC) == PAIR_BEGIN_REJECT_BUSY);
     assert(pair_begin(&q, 2, B, true, false, 1, 2 * SEC) == PAIR_BEGIN_REJECT_RATE);
     pair_end(&q, 1);
+    /* busy counts; locked does not (the board refuses before anything is recorded; its notice is limited apart) */
     assert(pair_begin(&q, 2, B, true, true, 1, 20 * SEC) == PAIR_BEGIN_REJECT_LOCKED);
-    assert(pair_begin(&q, 2, B, true, true, 1, 25 * SEC) == PAIR_BEGIN_REJECT_RATE);   /* no notice spam */
+    assert(pair_begin(&q, 2, B, true, true, 1, 25 * SEC) == PAIR_BEGIN_REJECT_LOCKED);
+    assert(pair_begin(&q, 2, B, true, false, 1, 26 * SEC) == PAIR_BEGIN_SHOW);   /* the budget is intact */
 }
 
 static void rate_limit_global_and_lru(void)
@@ -324,6 +351,7 @@ int main(void)
     only_numeric_comparison();
     newcomer_loses();
     locked_board_refuses();
+    notices_are_rate_limited();
     cancel_when_locked_while_showing();
     rate_limit_per_peer();
     rate_limit_global_and_lru();

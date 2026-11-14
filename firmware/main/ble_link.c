@@ -499,7 +499,8 @@ static void on_passkey_action(uint16_t conn, const struct ble_gap_passkey_params
     bool numcmp = params->action == BLE_SM_IOACT_NUMCMP;
     uint32_t passkey = numcmp ? params->numcmp : 0;
 
-    switch (pair_begin(&s_pair, conn, addr, numcmp, m.locked, passkey, esp_timer_get_time())) {
+    int64_t now = esp_timer_get_time();
+    switch (pair_begin(&s_pair, conn, addr, numcmp, m.locked, passkey, now)) {
     case PAIR_BEGIN_SHOW:
         ESP_LOGI(TAG, "link %d: pairing, compare code %06lu (request %lu)", conn, (unsigned long)s_pair.passkey,
                  (unsigned long)s_pair.id);
@@ -514,11 +515,17 @@ static void on_passkey_action(uint16_t conn, const struct ble_gap_passkey_params
     case PAIR_BEGIN_REJECT_RATE:
         ESP_LOGW(TAG, "link %d: pairing requests too often from this peer (or overall), rejected", conn);
         inject_numcmp(conn, false);
+        /* never over a code being compared; at most once a minute */
+        if (s_pair.phase != PAIR_SHOWING && pair_notice_due(&s_pair, PAIR_NOTICE_RATE, now)) {
+            lock_ui_notice("Quá nhiều yêu cầu ghép", PAIR_NOTICE_MS);
+        }
         break;
     case PAIR_BEGIN_REJECT_LOCKED:
         ESP_LOGW(TAG, "link %d: pairing while the board is locked, rejected", conn);
         inject_numcmp(conn, false);
-        lock_ui_notice("Mở khoá board để ghép", PAIR_NOTICE_MS);
+        if (pair_notice_due(&s_pair, PAIR_NOTICE_LOCKED, now)) {
+            lock_ui_notice("Mở khoá board để ghép", PAIR_NOTICE_MS);
+        }
         break;
     case PAIR_BEGIN_REJECT_BUSY:
         ESP_LOGW(TAG, "link %d: pairing while link %d's code is up, rejected", conn, s_pair.conn);

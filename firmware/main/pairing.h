@@ -7,10 +7,14 @@
  * Request flow: idle -> showing the code -> accepted / rejected / timed out (PAIR_TIMEOUT_US) / cancelled -> idle.
  * A request is refused, before anything is drawn, when:
  *   - it is not a numeric comparison (passkey entry, OOB): PAIR_BEGIN_REJECT_METHOD
+ *   - the board is locked: PAIR_BEGIN_REJECT_LOCKED (the caller shows a short notice, never the code). Checked
+ *     before the rate limit and not recorded: the owner's phone retrying while the board is locked must not use up
+ *     its budget for when the board is unlocked
  *   - its peer address asked less than PAIR_RATE_GAP_US ago, or PAIR_RATE_MAX times within PAIR_RATE_WINDOW_US,
- *     or all peers together asked PAIR_GLOBAL_MAX times within that window: PAIR_BEGIN_REJECT_RATE
- *   - the board is locked: PAIR_BEGIN_REJECT_LOCKED (the caller shows a short notice, never the code)
+ *     or all peers together asked PAIR_GLOBAL_MAX times within that window: PAIR_BEGIN_REJECT_RATE (the caller
+ *     shows a short "too many requests" notice)
  *   - another link's code is on screen: PAIR_BEGIN_REJECT_BUSY (the newcomer loses, the shown code stays)
+ * The two notices are rate-limited themselves (pair_notice_due): a stream of requests cannot keep the panel lit.
  * Every request gets an id; an answer only counts for the request (link + id) it was given for, and only after the
  * code was up for PAIR_ARM_US (a tap meant for the previous screen cannot confirm a new code).
  */
@@ -24,7 +28,9 @@
 #define PAIR_TIMEOUT_MS   ((uint32_t)(PAIR_TIMEOUT_US / 1000))
 #define PAIR_ARM_US       (1000LL * 1000)          /* answers ignored this long after a code appears */
 #define PAIR_ARM_MS       ((uint32_t)(PAIR_ARM_US / 1000))
-#define PAIR_NOTICE_MS    2000u                    /* "unlock to pair" notice on a locked board */
+#define PAIR_NOTICE_MS    2000u                    /* "unlock to pair" / "too many requests" notice */
+#define PAIR_LOCKED_NOTICE_GAP_US (10LL * 1000 * 1000)   /* "unlock to pair" at most every 10 s */
+#define PAIR_RATE_NOTICE_GAP_US   (60LL * 1000 * 1000)   /* "too many requests" at most once a minute */
 #define PAIR_CONN_NONE    0xFFFF                   /* = BLE_HS_CONN_HANDLE_NONE */
 #define PAIR_ID_NONE      0u
 
@@ -56,6 +62,8 @@ typedef enum {
     PAIR_BEGIN_REJECT_BUSY,     /* reject, nothing on screen: another link's code stays up */
 } pair_begin_t;
 
+typedef enum { PAIR_NOTICE_LOCKED = 0, PAIR_NOTICE_RATE, PAIR_NOTICE_COUNT } pair_notice_t;
+
 typedef struct {
     bool used;
     uint8_t addr[PAIR_ADDR_LEN];
@@ -74,6 +82,8 @@ typedef struct {
     pair_peer_t peers[PAIR_RATE_PEERS];
     uint8_t global_n;
     int64_t global_t[PAIR_GLOBAL_MAX];   /* newest last */
+    bool notice_shown[PAIR_NOTICE_COUNT];
+    int64_t notice_us[PAIR_NOTICE_COUNT];   /* when each notice was last shown */
 } pair_t;
 
 static inline void pair_init(pair_t *p)
@@ -146,11 +156,11 @@ static inline pair_begin_t pair_begin(pair_t *p, uint16_t conn, const uint8_t ad
     if (!numcmp) {
         return PAIR_BEGIN_REJECT_METHOD;
     }
-    if (!pair_rate_allow(p, addr, now_us)) {
-        return PAIR_BEGIN_REJECT_RATE;
-    }
     if (locked) {
         return PAIR_BEGIN_REJECT_LOCKED;
+    }
+    if (!pair_rate_allow(p, addr, now_us)) {
+        return PAIR_BEGIN_REJECT_RATE;
     }
     if (p->phase == PAIR_SHOWING && p->conn != conn) {
         return PAIR_BEGIN_REJECT_BUSY;
@@ -165,6 +175,19 @@ static inline pair_begin_t pair_begin(pair_t *p, uint16_t conn, const uint8_t ad
     p->shown_us = now_us;
     p->deadline_us = now_us + PAIR_TIMEOUT_US;
     return PAIR_BEGIN_SHOW;
+}
+
+/* A refusal wants its notice drawn: true (and noted) when that notice was not shown within its gap
+ * (PAIR_LOCKED_NOTICE_GAP_US, PAIR_RATE_NOTICE_GAP_US); false: stay silent this time. */
+static inline bool pair_notice_due(pair_t *p, pair_notice_t which, int64_t now_us)
+{
+    int64_t gap = which == PAIR_NOTICE_RATE ? PAIR_RATE_NOTICE_GAP_US : PAIR_LOCKED_NOTICE_GAP_US;
+    if (p->notice_shown[which] && now_us - p->notice_us[which] < gap) {
+        return false;
+    }
+    p->notice_shown[which] = true;
+    p->notice_us[which] = now_us;
+    return true;
 }
 
 /* The owner tapped Đúng (yes) or Sai on the view of request (conn, id). Ignored (PAIR_OUT_NONE, the request stays)
