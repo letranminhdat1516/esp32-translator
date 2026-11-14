@@ -191,6 +191,23 @@ private final class ManualClock: @unchecked Sendable {
         await rec.settle()
         #expect(await store.sessions().isEmpty)
     }
+
+    /// Lines spoken while "Lưu lịch sử" was off never reach the store, not even when it is turned back on (or when
+    /// their translation arrives after that).
+    @Test func linesFromWhileOffStayUnsavedAfterTurningBackOn() async {
+        let store = InMemoryHistoryStore()
+        let rec = HistoryRecorder(store: store)
+        #expect(rec.sync(lines: [uiLine("t-1", mine: false, "a", "A")], languageCode: "en", enabled: true).count == 1)
+        var lines = [uiLine("t-1", mine: false, "a", "A"), uiLine("t-2", mine: false, "secret", "BÍ MẬT", at: 1),
+                     uiLine("m-1", mine: true, "mật khẩu", "", at: 2)]
+        #expect(rec.sync(lines: lines, languageCode: "en", enabled: false).isEmpty)
+        lines[2].target = "the password"   // its translation lands after the switch is back on
+        lines.append(uiLine("t-3", mine: false, "b", "B", at: 3))
+        let saved = rec.sync(lines: lines, languageCode: "en", enabled: true)
+        #expect(saved.map(\.id) == ["t-3"])
+        await rec.settle()
+        #expect(await store.sessions().flatMap(\.lines).map(\.source) == ["a", "b"])
+    }
 }
 
 // MARK: AudioClipRecorder
