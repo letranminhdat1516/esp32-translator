@@ -12,17 +12,19 @@
  *
  *   info    ...0005  read    : open (the app reads it before pairing)
  *
- * Pairing by code (pairing.h): LE Secure Connections numeric comparison. Text, control and the audio / control
- * CCCDs need an encrypted, authenticated link, so iOS shows its pairing dialog with 6 digits on the first access and
- * the board shows the same 6 digits (pair_ui.c) with Sai / Đúng. Bonds are kept in NVS; a stale bond is dropped on a
- * MIC failure. A Just Works bond from older firmware encrypts without authentication: the board asks for pairing
- * once on that link so the comparison runs, and streams nothing until it did.
+ * Pairing by code (pairing.h): LE Secure Connections numeric comparison only (sm_sc_only; passkey entry and OOB
+ * drop the link). Text, control and the audio / control CCCDs need an encrypted, authenticated link with a 16-byte
+ * key from an SC bond, so iOS shows its pairing dialog with 6 digits on the first access and the board shows the same
+ * 6 digits (pair_ui.c) with Sai / Đúng. A request is refused without drawing anything when it comes too often
+ * (per peer address and overall), while another link's code is up, or while the board is locked (a short "unlock to
+ * pair" notice on the lock screen instead). Locking the board while a code is up rejects it. Bonds are kept in NVS;
+ * a stale bond is dropped on a MIC failure. A Just Works or legacy bond from older firmware does not count: the
+ * board asks for pairing once on that link so the comparison runs, and streams nothing until it did.
  */
 #include <string.h>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -88,11 +90,16 @@ static uint8_t s_own_addr_type;
  * completes (BLE_GAP_EVENT_CONN_UPDATE) */
 static uint16_t s_pace_retry_conn = BLE_HS_CONN_HANDLE_NONE;
 
-/* Pairing request on screen (host task only), its 30 s timer, and the owner's answer posted from the LVGL task */
+/* Pairing request on screen and the rate limits (host task only), its 30 s timer, the owner's answer posted from the
+ * LVGL task (bound to the request it was given for), and the cancel posted by the shell when the board locks */
 static pair_t s_pair;
 static struct ble_npl_callout s_pair_timer;
 static struct ble_npl_event s_pair_answer_ev;
-static volatile bool s_pair_answer_yes;
+static struct ble_npl_event s_pair_cancel_ev;
+static portMUX_TYPE s_pair_answer_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint16_t s_pair_answer_conn = BLE_HS_CONN_HANDLE_NONE;
+static uint32_t s_pair_answer_id = PAIR_ID_NONE;
+static bool s_pair_answer_yes;
 /* Links on which the board already asked to upgrade an unauthenticated key (once per link) */
 static uint16_t s_upgrade_asked[CONFIG_BT_NIMBLE_MAX_CONNECTIONS] = { [0 ... CONFIG_BT_NIMBLE_MAX_CONNECTIONS - 1] = BLE_HS_CONN_HANDLE_NONE };
 
@@ -114,14 +121,38 @@ static void set_fast_pace(uint16_t conn)
     }
 }
 
-/* May this link use chr? (pairing.h: protected ones need the numeric-comparison bond) */
-static bool link_allows(uint16_t conn, pair_chr_t chr)
+/* The link's security for pairing.h: NimBLE's sec_state, plus whether the stored bond for this peer was made with
+ * LE Secure Connections (NimBLE keeps that flag only in the bond). False: no such link. */
+static bool link_sec(uint16_t conn, pair_sec_t *out)
 {
     struct ble_gap_conn_desc desc;
     if (ble_gap_conn_find(conn, &desc) != 0) {
         return false;
     }
-    return pair_chr_allowed(chr, desc.sec_state.encrypted, desc.sec_state.authenticated);
+    *out = (pair_sec_t){
+        .encrypted = desc.sec_state.encrypted,
+        .authenticated = desc.sec_state.authenticated,
+        .key_size = desc.sec_state.key_size,
+        .sc_bond = false,
+    };
+    if (desc.sec_state.encrypted && desc.sec_state.bonded) {
+        struct ble_store_key_sec key = { .peer_addr = desc.peer_id_addr };
+        struct ble_store_value_sec bond;
+        if (ble_store_read_peer_sec(&key, &bond) == 0) {
+            out->sc_bond = bond.ltk_present && bond.sc && bond.authenticated;
+        }
+    }
+    return true;
+}
+
+/* May this link use chr? (pairing.h: protected ones need the Secure Connections numeric-comparison bond) */
+static bool link_allows(uint16_t conn, pair_chr_t chr)
+{
+    pair_sec_t sec;
+    if (!link_sec(conn, &sec)) {
+        return false;
+    }
+    return pair_chr_allowed(chr, &sec);
 }
 
 /* conn waits for the translator app (restored audio CCCD, or the app went silent) */
@@ -377,8 +408,8 @@ static void inject_numcmp(uint16_t conn, bool accept)
     ESP_LOGI(TAG, "link %d: pairing code %s (rc %d)", conn, accept ? "confirmed" : "rejected", rc);
 }
 
-/* A request ended with outcome: answer the SM (numeric comparison) and close the view */
-static void pair_finish(uint16_t conn, pair_kind_t kind, pair_outcome_t outcome)
+/* The request on screen ended with outcome: answer the SM and close the view */
+static void pair_finish(uint16_t conn, pair_outcome_t outcome)
 {
     if (outcome == PAIR_OUT_NONE) {
         return;
@@ -387,9 +418,7 @@ static void pair_finish(uint16_t conn, pair_kind_t kind, pair_outcome_t outcome)
     if (outcome == PAIR_OUT_TIMEOUT) {
         ESP_LOGW(TAG, "link %d: no answer within %d s", conn, (int)(PAIR_TIMEOUT_US / 1000000));
     }
-    if (kind == PAIR_KIND_NUMCMP) {
-        inject_numcmp(conn, outcome == PAIR_OUT_ACCEPT);
-    }
+    inject_numcmp(conn, outcome == PAIR_OUT_ACCEPT);
     pair_ui_close();
 }
 
@@ -397,54 +426,103 @@ static void on_pair_timer(struct ble_npl_event *ev)
 {
     (void)ev;
     int64_t now = esp_timer_get_time();
-    pair_kind_t kind = s_pair.kind;
     pair_outcome_t out = pair_tick(&s_pair, now);
     if (out != PAIR_OUT_NONE) {
-        pair_finish(s_pair.conn, kind, out);
+        pair_finish(s_pair.conn, out);
     } else if (s_pair.phase == PAIR_SHOWING) {
         int64_t left_ms = (s_pair.deadline_us - now + 999) / 1000;
         ble_npl_callout_reset(&s_pair_timer, ble_npl_time_ms_to_ticks32(left_ms < 10 ? 10 : (uint32_t)left_ms));
     }
 }
 
+/* Applied only if (conn, id) is still the request on screen and its code has been up for PAIR_ARM_US */
 static void on_pair_answer(struct ble_npl_event *ev)
 {
     (void)ev;
-    pair_kind_t kind = s_pair.kind;
-    pair_finish(s_pair.conn, kind, pair_answer(&s_pair, s_pair_answer_yes, esp_timer_get_time()));
+    taskENTER_CRITICAL(&s_pair_answer_mux);
+    uint16_t conn = s_pair_answer_conn;
+    uint32_t id = s_pair_answer_id;
+    bool yes = s_pair_answer_yes;
+    s_pair_answer_id = PAIR_ID_NONE;
+    taskEXIT_CRITICAL(&s_pair_answer_mux);
+    if (id == PAIR_ID_NONE) {
+        return;
+    }
+    pair_outcome_t out = pair_answer(&s_pair, conn, id, yes, esp_timer_get_time());
+    if (out == PAIR_OUT_NONE) {
+        ESP_LOGW(TAG, "link %d: answer for request %lu dropped (not the code on screen, or too early)", conn,
+                 (unsigned long)id);
+        return;
+    }
+    pair_finish(conn, out);
 }
 
-void ble_link_pair_answer(bool yes)
+void ble_link_pair_answer(uint16_t conn, uint32_t id, bool yes)
 {
+    taskENTER_CRITICAL(&s_pair_answer_mux);
+    s_pair_answer_conn = conn;
+    s_pair_answer_id = id;
     s_pair_answer_yes = yes;
+    taskEXIT_CRITICAL(&s_pair_answer_mux);
     ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_pair_answer_ev);
 }
 
-static void pair_show(uint16_t conn, pair_kind_t kind, uint32_t passkey)
+/* The board locked: a code must not stay up for approval on a locked board */
+static void on_pair_cancel(struct ble_npl_event *ev)
 {
-    uint16_t replaced = pair_begin(&s_pair, conn, kind, passkey, esp_timer_get_time());
-    if (replaced != PAIR_CONN_NONE) {
-        inject_numcmp(replaced, false);   /* one code on screen at a time: the newer request wins */
+    (void)ev;
+    uint16_t conn = s_pair.conn;
+    pair_outcome_t out = pair_cancel(&s_pair);
+    if (out != PAIR_OUT_NONE) {
+        ESP_LOGW(TAG, "link %d: board locked while its code was up", conn);
+        pair_finish(conn, out);
     }
-    ble_npl_callout_reset(&s_pair_timer, ble_npl_time_ms_to_ticks32(PAIR_TIMEOUT_MS));
-    pair_ui_show(passkey, kind == PAIR_KIND_NUMCMP);
+}
+
+void ble_link_pair_cancel(void)
+{
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_pair_cancel_ev);
 }
 
 static void on_passkey_action(uint16_t conn, const struct ble_gap_passkey_params *params)
 {
-    if (params->action == BLE_SM_IOACT_NUMCMP) {
-        ESP_LOGI(TAG, "link %d: pairing, compare code %06lu", conn, (unsigned long)params->numcmp);
-        pair_show(conn, PAIR_KIND_NUMCMP, params->numcmp);
-    } else if (params->action == BLE_SM_IOACT_DISP) {
-        /* Legacy passkey entry (iOS uses numeric comparison): the board picks the code, the phone types it */
-        struct ble_sm_io io = { .action = BLE_SM_IOACT_DISP, .passkey = esp_random() % 1000000u };
-        int rc = ble_sm_inject_io(conn, &io);
-        ESP_LOGI(TAG, "link %d: pairing, passkey shown (rc %d)", conn, rc);
-        pair_show(conn, PAIR_KIND_DISP, io.passkey);
-    } else {
-        /* Input / OOB: this board has no keypad and no OOB data */
-        ESP_LOGW(TAG, "link %d: pairing action %d not supported, dropping the link", conn, params->action);
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) != 0) {
+        return;
+    }
+    uint8_t addr[PAIR_ADDR_LEN];
+    addr[0] = desc.peer_id_addr.type;
+    memcpy(addr + 1, desc.peer_id_addr.val, 6);
+    modes_t m;
+    shell_snapshot(&m);
+    bool numcmp = params->action == BLE_SM_IOACT_NUMCMP;
+    uint32_t passkey = numcmp ? params->numcmp : 0;
+
+    switch (pair_begin(&s_pair, conn, addr, numcmp, m.locked, passkey, esp_timer_get_time())) {
+    case PAIR_BEGIN_SHOW:
+        ESP_LOGI(TAG, "link %d: pairing, compare code %06lu (request %lu)", conn, (unsigned long)s_pair.passkey,
+                 (unsigned long)s_pair.id);
+        ble_npl_callout_reset(&s_pair_timer, ble_npl_time_ms_to_ticks32(PAIR_TIMEOUT_MS));
+        pair_ui_show(conn, s_pair.id, s_pair.passkey);
+        break;
+    case PAIR_BEGIN_REJECT_METHOD:
+        /* Passkey entry / OOB (only possible with a peer that cannot do numeric comparison): not offered here */
+        ESP_LOGW(TAG, "link %d: pairing action %d is not numeric comparison, dropping the link", conn, params->action);
         ble_gap_terminate(conn, BLE_ERR_AUTH_FAIL);
+        break;
+    case PAIR_BEGIN_REJECT_RATE:
+        ESP_LOGW(TAG, "link %d: pairing requests too often from this peer (or overall), rejected", conn);
+        inject_numcmp(conn, false);
+        break;
+    case PAIR_BEGIN_REJECT_LOCKED:
+        ESP_LOGW(TAG, "link %d: pairing while the board is locked, rejected", conn);
+        inject_numcmp(conn, false);
+        lock_ui_notice("Mở khoá board để ghép", PAIR_NOTICE_MS);
+        break;
+    case PAIR_BEGIN_REJECT_BUSY:
+        ESP_LOGW(TAG, "link %d: pairing while link %d's code is up, rejected", conn, s_pair.conn);
+        inject_numcmp(conn, false);
+        break;
     }
 }
 
@@ -478,20 +556,23 @@ static void upgrade_forget(uint16_t conn)
 
 static void on_enc_change(uint16_t conn, int status)
 {
-    struct ble_gap_conn_desc desc;
-    bool found = ble_gap_conn_find(conn, &desc) == 0;
-    bool enc = found && status == 0 && desc.sec_state.encrypted;
-    bool auth = enc && desc.sec_state.authenticated;
-    ESP_LOGI(TAG, "link %d: encryption %s (status %d)%s%s", conn, enc ? "on" : "failed", status,
-             auth ? ", paired by code" : "", found && desc.sec_state.bonded ? ", bonded" : "");
+    pair_sec_t sec = { 0 };
+    bool found = link_sec(conn, &sec);
+    if (status != 0) {
+        sec.encrypted = false;
+    }
+    ESP_LOGI(TAG, "link %d: encryption %s (status %d), key %u bytes%s%s%s", conn, sec.encrypted ? "on" : "failed",
+             status, sec.key_size, sec.authenticated ? ", authenticated" : "", sec.sc_bond ? ", SC bond" : "",
+             found && pair_link_secure(&sec) ? ": paired by code" : "");
     if (pair_end(&s_pair, conn)) {   /* pairing finished either way while its code was up */
         ble_npl_callout_stop(&s_pair_timer);
         pair_ui_close();
     }
-    if (pair_should_upgrade(enc, auth, upgrade_asked(conn, false))) {
+    if (found && pair_should_upgrade(&sec, upgrade_asked(conn, false))) {
         upgrade_asked(conn, true);
         int rc = ble_gap_security_initiate(conn);
-        ESP_LOGW(TAG, "link %d: bond without a code (older firmware): asking to pair by code (rc %d)", conn, rc);
+        ESP_LOGW(TAG, "link %d: bond without a Secure Connections code (older firmware): asking to pair by code (rc %d)",
+                 conn, rc);
     }
 }
 
@@ -737,6 +818,7 @@ void ble_link_init(void)
     pair_init(&s_pair);
     ble_npl_callout_init(&s_pair_timer, nimble_port_get_dflt_eventq(), on_pair_timer, NULL);
     ble_npl_event_init(&s_pair_answer_ev, on_pair_answer, NULL);
+    ble_npl_event_init(&s_pair_cancel_ev, on_pair_cancel, NULL);
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
     /* LE Secure Connections numeric comparison: the screen shows the code, Sai / Đúng answer it */
@@ -744,6 +826,9 @@ void ble_link_init(void)
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 1;
     ble_hs_cfg.sm_sc = 1;
+    /* Secure Connections only: legacy pairing requests and keys shorter than 16 bytes fail in the SM itself
+     * (also CONFIG_BT_NIMBLE_SM_SC_ONLY=1 in sdkconfig.defaults, the default this field starts from) */
+    ble_hs_cfg.sm_sc_only = 1;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;

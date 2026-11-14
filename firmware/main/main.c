@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 
 #include "app.h"
+#include "pairing.h"
 #include "sleep_rule.h"
 
 /* Dev builds (menuconfig: Live Translator) never deep sleep, like on USB power */
@@ -29,6 +30,11 @@ static volatile int64_t s_disconnected_since;
 static QueueHandle_t s_cmd_queue;
 static volatile rec_lang_t s_recording = REC_NONE;
 static volatile bool s_connected;
+static volatile bool s_connected_seen;
+/* Codes on screen that held deep sleep off since the app last connected (pairing.h): main task only */
+static pair_sleep_t s_pair_sleep;
+/* After a code that held sleep off closes, this much of the idle period is left at least (the app connects) */
+#define PAIR_SLEEP_TAIL_US (30LL * 1000 * 1000)
 
 void app_request_recording(rec_lang_t lang)
 {
@@ -48,6 +54,9 @@ void app_on_speech_activity(void)
 void app_on_connection_changed(bool connected)
 {
     s_connected = connected;
+    if (connected) {
+        s_connected_seen = true;   /* the main task resets the pairing sleep-hold budget */
+    }
     s_disconnected_since = connected ? 0 : esp_timer_get_time();
     ui_mark_activity();
     if (!connected) {
@@ -125,8 +134,19 @@ void app_main(void)
                 /* Deep sleep drops the USB port (no reflash, no wake from the host): stay awake on USB power,
                  * and keep restarting the grace period so unplugging later still gives the full timeout */
                 static bool usb_logged;
-                if (pair_ui_active()) {
-                    s_disconnected_since = esp_timer_get_time();   /* never sleep under a pairing code */
+                if (s_connected_seen) {
+                    s_connected_seen = false;
+                    pair_sleep_reset(&s_pair_sleep);
+                }
+                if (pair_sleep_hold(&s_pair_sleep, pair_ui_request_id())) {
+                    /* No sleep under a pairing code (each lasts at most 30 s, and only PAIR_SLEEP_HOLDS_MAX per idle
+                     * period count). Leave at least PAIR_SLEEP_TAIL_US of the idle period for after it (time for
+                     * the app to connect), without restarting the whole period: remote requests cannot keep the
+                     * board awake */
+                    int64_t floor = esp_timer_get_time() - SLEEP_RULE_IDLE_US + PAIR_SLEEP_TAIL_US;
+                    if (s_disconnected_since < floor) {
+                        s_disconnected_since = floor;
+                    }
                 } else if (pmu_usb_powered() || CONFIG_TRANSLATOR_DEV_STAY_ON_ENABLED) {
                     s_disconnected_since = esp_timer_get_time();
                     if (!usb_logged) {

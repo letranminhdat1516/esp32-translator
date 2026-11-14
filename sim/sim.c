@@ -17,8 +17,12 @@
  *   label:<utf8>             language label after the status ("<status> · <label>"; empty clears)
  *   level:<0..100>           level ring (0 hides it)                       V (fake speech on/off)
  *   lock / unlock / face     PWR x1 / PWR x2 / tap on the lock screen      K / U / F
- *   pair:<6 digits>          an iPhone asks to pair: the code view (numeric comparison, 30 s timeout)
- *   pair:ok / pair:no        answer it like a tap on Đúng / Sai
+ *   pair:<6 digits>[@<n>]    an iPhone (link / peer address n, default 1) asks to pair by numeric comparison:
+ *                            the code view (30 s timeout), or a refusal printed as "pairing request refused: ..."
+ *                            (locked board: the "Mở khoá board để ghép" notice; another link's code up; too often:
+ *                            1 per 10 s and 5 per 10 min per peer, 10 per 10 min overall)
+ *   pair:passkey[@<n>]       a passkey-entry request: refused, the link is dropped
+ *   pair:ok / pair:no        a finger tap on Đúng / Sai (ignored for 1 s after the code appears: wait:1000 first)
  *   sleep                    the deep-sleep message
  *   wait:<ms>                keep rendering
  *   shot:<file.bmp>          save what the screen shows (round, outside the glass dark grey)   P
@@ -127,28 +131,61 @@ bool pmu_battery(pmu_battery_t *out)
     return true;
 }
 
-/* ---- pairing (ble_link.c's part: the request state machine, the answer, the 30 s timeout) ---- */
+/* ---- pairing (ble_link.c's part: the request state machine, rate limits, the answer, the 30 s timeout) ---- */
 
-#define SIM_CONN 1
 static pair_t s_pair;
 
-static void pair_finish(pair_outcome_t out)
+static void pair_finish(uint16_t conn, pair_outcome_t out)
 {
     if (out == PAIR_OUT_NONE) {
         return;
     }
-    printf("pairing %s\n", out == PAIR_OUT_ACCEPT ? "confirmed" : out == PAIR_OUT_REJECT ? "rejected" : "timed out");
+    printf("link %u: pairing %s\n", conn,
+           out == PAIR_OUT_ACCEPT ? "confirmed" : out == PAIR_OUT_REJECT ? "rejected" : "timed out");
     pair_ui_close();
 }
 
-void ble_link_pair_answer(bool yes)
+void ble_link_pair_answer(uint16_t conn, uint32_t id, bool yes)
 {
-    pair_finish(pair_answer(&s_pair, yes, now_us()));
+    pair_outcome_t out = pair_answer(&s_pair, conn, id, yes, now_us());
+    if (out == PAIR_OUT_NONE) {
+        printf("link %u: answer for request %u dropped\n", conn, (unsigned)id);
+    }
+    pair_finish(conn, out);
+}
+
+void ble_link_pair_cancel(void)
+{
+    uint16_t conn = s_pair.conn;
+    pair_finish(conn, pair_cancel(&s_pair));
+}
+
+/* An iPhone on link n (peer address n) asks to pair */
+static void pair_request(uint16_t n, bool numcmp, uint32_t passkey)
+{
+    uint8_t addr[PAIR_ADDR_LEN] = { 1, (uint8_t)n, 0x5e, 0x5e, 0x5e, 0x5e, 0x5e };
+    static const char *const WHY[] = {
+        [PAIR_BEGIN_REJECT_METHOD] = "not numeric comparison, link dropped",
+        [PAIR_BEGIN_REJECT_RATE] = "too often",
+        [PAIR_BEGIN_REJECT_LOCKED] = "board locked",
+        [PAIR_BEGIN_REJECT_BUSY] = "another link's code is up",
+    };
+    pair_begin_t r = pair_begin(&s_pair, n, addr, numcmp, s_modes.locked, passkey, now_us());
+    if (r == PAIR_BEGIN_SHOW) {
+        printf("link %u: pairing, compare code %06u (request %u)\n", n, (unsigned)s_pair.passkey, (unsigned)s_pair.id);
+        pair_ui_show(n, s_pair.id, s_pair.passkey);
+        return;
+    }
+    printf("link %u: pairing request refused: %s\n", n, WHY[r]);
+    if (r == PAIR_BEGIN_REJECT_LOCKED) {
+        lock_ui_notice("Mở khoá board để ghép", PAIR_NOTICE_MS);
+    }
 }
 
 static void pair_timer_cb(lv_timer_t *t)
 {
-    pair_finish(pair_tick(&s_pair, now_us()));
+    uint16_t conn = s_pair.conn;
+    pair_finish(conn, pair_tick(&s_pair, now_us()));
 }
 
 static void apply_screen(void)
@@ -166,6 +203,9 @@ bool shell_post(modes_event_t ev)
 {
     if (modes_handle(&s_modes, ev, now_us())) {
         ui_force_screen_on();
+    }
+    if (s_modes.locked) {
+        ble_link_pair_cancel();   /* shell.c: no code stays up on a locked board */
     }
     apply_screen();
     return true;
@@ -330,13 +370,21 @@ static void run(char *cmd)
             finger(x2, y2, false, 60);
         }
     } else if (!strcmp(cmd, "pair") && arg) {
+        char *at = strchr(arg, '@');
+        uint16_t link = 1;
+        if (at) {
+            *at++ = '\0';
+            link = (uint16_t)atoi(at);
+        }
         if (!strcmp(arg, "ok") || !strcmp(arg, "no")) {
-            ble_link_pair_answer(!strcmp(arg, "ok"));
-        } else if (strlen(arg) == 6 && strspn(arg, "0123456789") == 6) {
-            pair_begin(&s_pair, SIM_CONN, PAIR_KIND_NUMCMP, (uint32_t)atol(arg), now_us());
-            pair_ui_show((uint32_t)atol(arg), true);
+            /* pair_ui.c's buttons: 128 x 64 at (center +-74, center +108) */
+            tap(SIZE / 2 + (!strcmp(arg, "ok") ? 74 : -74), SIZE / 2 + 108);
+        } else if (!strcmp(arg, "passkey")) {
+            pair_request(link, false, 0);
+        } else if (strlen(arg) == 6 && strspn(arg, "0123456789") == 6 && link > 0 && link < 0xFFFF) {
+            pair_request(link, true, (uint32_t)atol(arg));
         } else {
-            fprintf(stderr, "pair: 6 digits, ok or no\n");
+            fprintf(stderr, "pair: <6 digits>[@link], passkey[@link], ok or no\n");
             return;
         }
     } else if (!strcmp(cmd, "sleep")) {

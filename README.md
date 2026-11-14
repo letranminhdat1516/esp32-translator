@@ -109,14 +109,20 @@ A bystander only 6 dB quieter than you, or babble 3 dB below you for seconds bef
 ## BLE protocol (service `A7C00001-3B2F-4C1E-9D8A-5F6E7D8C9B0A`)
 
 The board has this one service. Text, control and the audio / control subscriptions need an **encrypted,
-authenticated link** (LE Secure Connections numeric comparison); board info stays open, so the app can read it
-before pairing. The first access to a protected characteristic fails with ATT error 0x05 (Insufficient
+authenticated link with a 16-byte key from an LE Secure Connections bond** (numeric comparison; the board accepts
+Secure Connections only, and drops a link that asks for passkey entry); board info stays open, so the app can read
+it before pairing. The first access to a protected characteristic fails with ATT error 0x05 (Insufficient
 Authentication) or 0x0F (Insufficient Encryption), and iOS shows its pairing dialog with 6 digits. The board shows
-the same 6 digits full screen ("Ghép với iPhone", **Sai** / **Đúng**), even when locked or dark, and goes back to
-what it showed afterwards; no answer in 30 s rejects. A bond made by older firmware (no code, unauthenticated) is
-upgraded: when such a link encrypts, the board asks for pairing once and streams nothing until the codes were
-confirmed. A stale bond (the link fails its integrity check) is deleted. Simulator: `pair:482913`, `pair:ok`,
-`pair:no`.
+the same 6 digits full screen ("Ghép với iPhone", **Sai** / **Đúng**) over the translator and goes back to it
+afterwards; the buttons ignore taps for the first second, an answer only counts for the code it was shown for, and
+no answer in 30 s rejects. **The board must be unlocked to pair**: a request on a locked board is rejected with a
+2 s "Mở khoá board để ghép" notice on the lock screen, and locking the board while a code is up rejects it. A
+request is also rejected, with nothing on screen, while another link's code is up, or when it comes too often (one
+per 10 s and five per 10 min per peer address, ten per 10 min overall). A code on screen holds deep sleep off for
+at most its 30 s and only three times per idle period. A bond made by older firmware (Just Works or legacy pairing)
+does not count: when such a link encrypts, the board asks for pairing once and streams nothing until the codes were
+confirmed. A stale bond (the link fails its integrity check) is deleted. Simulator: `pair:482913` (`@2` for another
+link), `pair:passkey`, `wait:1000`, then `pair:ok` / `pair:no`.
 
 | Characteristic | Properties | Payload |
 |---|---|---|

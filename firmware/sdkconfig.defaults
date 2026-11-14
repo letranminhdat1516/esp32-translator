@@ -24,6 +24,9 @@ CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
 CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="ESP-Translator"
+# Pairing by code: LE Secure Connections only (no legacy pairing, 16-byte keys); ble_link.c sets sm_sc_only too
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_SM_SC_ONLY=1
 # Host task stack: the text handler takes the LVGL lock and lays out subtitles
 CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=6144
 

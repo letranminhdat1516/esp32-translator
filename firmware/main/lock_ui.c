@@ -8,6 +8,9 @@
  * SWIPE_PX it slides up and fades out, then MODES_EV_SWIPE_UP unlocks (modes.c re-checks the face is up).
  * On the dark panel a swipe is just a tap (LVGL still sends SINGLE_CLICKED): it shows the face, never unlocks.
  * Animations (chevron bounce, slide-out) run only while the face is visible; lock_ui_set_face(false) stops them.
+ * Notice (lock_ui_notice): a short line in a pill in the middle, over the face or the dark screen, e.g. "Mở khoá
+ * board để ghép" when an iPhone asks to pair while locked. Not interactive; ui.c's screen timer lights the panel
+ * while it is up.
  */
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +41,9 @@ static lv_obj_t *s_battery;
 static lv_obj_t *s_chevron;
 static lv_obj_t *s_hint;
 static lv_timer_t *s_tick;
+static lv_obj_t *s_notice;
+static lv_obj_t *s_notice_text;
+static lv_timer_t *s_notice_timer;
 static bool s_face_on;
 static char s_clock_text[6];
 
@@ -236,6 +242,34 @@ void lock_ui_set_face(bool visible)
     }
 }
 
+/* LVGL task: the notice's time is up */
+static void notice_done_cb(lv_timer_t *t)
+{
+    (void)t;
+    s_notice_timer = NULL;   /* one-shot: LVGL deletes it */
+    lv_obj_set_hidden(s_notice, true);
+}
+
+void lock_ui_notice(const char *utf8, uint32_t ms)
+{
+    bsp_display_lock((uint32_t)-1);
+    if (s_notice != NULL) {
+        lv_label_set_text(s_notice_text, utf8);
+        lv_obj_set_hidden(s_notice, false);
+        if (s_notice_timer != NULL) {
+            lv_timer_delete(s_notice_timer);
+        }
+        s_notice_timer = lv_timer_create(notice_done_cb, ms, NULL);
+        lv_timer_set_repeat_count(s_notice_timer, 1);
+    }
+    bsp_display_unlock();
+}
+
+bool lock_ui_notice_active(void)
+{
+    return s_notice != NULL && !lv_obj_is_hidden(s_notice);
+}
+
 lv_obj_t *lock_ui_screen(void)
 {
     return s_scr;
@@ -294,6 +328,26 @@ void lock_ui_init(void)
 
     s_hint = make_label(&font_vi_22, 0x8c8c8c, LV_ALIGN_BOTTOM_MID, -48);
     lv_label_set_text(s_hint, "Vuốt lên để mở khoá");
+
+    /* Notice pill: on the screen, not the face, so it shows on the dark panel too */
+    s_notice = lv_obj_create(s_scr);
+    lv_obj_remove_style_all(s_notice);
+    lv_obj_set_size(s_notice, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_color(s_notice, lv_color_hex(0x1e2024), 0);
+    lv_obj_set_style_bg_opa(s_notice, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_notice, lv_color_hex(0x3a3e46), 0);
+    lv_obj_set_style_border_width(s_notice, 2, 0);
+    lv_obj_set_style_radius(s_notice, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_hor(s_notice, 26, 0);
+    lv_obj_set_style_pad_ver(s_notice, 14, 0);
+    lv_obj_set_clickable(s_notice, false);
+    lv_obj_align(s_notice, LV_ALIGN_CENTER, 0, 0);
+    s_notice_text = lv_label_create(s_notice);
+    lv_obj_set_style_text_font(s_notice_text, &font_vi_22, 0);
+    lv_obj_set_style_text_color(s_notice_text, lv_color_white(), 0);
+    lv_label_set_text(s_notice_text, "");
+    lv_obj_center(s_notice_text);
+    lv_obj_set_hidden(s_notice, true);
 
     s_tick = lv_timer_create(tick_cb, TICK_MS, NULL);
     lv_timer_pause(s_tick);
