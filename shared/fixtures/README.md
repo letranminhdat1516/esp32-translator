@@ -479,7 +479,10 @@ firmware encoder (`firmware/main/adpcm.c`) round trip.
   bit0 first, bit1 last; always at least one chunk.
 - `labelText(input)` keeps whole characters up to 32 UTF-8 bytes, no ellipsis.
 - `boardInfo`: parsing the `…0005` value `[version u8][fontSets u32 LE]`;
-  fewer than 5 bytes → null; extra bytes ignored.
+  fewer than 5 bytes → null; extra bytes ignored. Version 1 = font sets and
+  the language label; version 2 = same layout, and the board enforces pairing
+  by code (the app pins a board as secure only at version ≥ 2, see the README
+  "BLE pairing" section).
 - `timeText`: `"<unix seconds> <UTC offset minutes>"` for that instant seen
   at that UTC offset (whole seconds, milliseconds dropped; the offset is signed
   minutes, e.g. `420`, `-300`, `330`). Ports take the offset from the phone's

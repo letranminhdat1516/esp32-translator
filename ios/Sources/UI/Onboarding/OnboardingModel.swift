@@ -94,6 +94,8 @@ struct PairDisplay: Hashable {
     var confirming = false
     var found = false
     var paired = false
+    /// An old-firmware board waits for "Vẫn ghép" / "Huỷ".
+    var legacy = false
     var failure: PairingFailure?
     var failed: Bool { failure != nil }
 
@@ -104,6 +106,8 @@ struct PairDisplay: Hashable {
             self.name = name; self.battery = battery; found = true
         case let .confirming(name, battery):
             self.name = name; self.battery = battery; confirming = true
+        case let .legacyConsent(name):
+            self.name = name; legacy = true
         case let .paired(name):
             self.name = name; paired = true
         case let .failed(f):
@@ -114,6 +118,7 @@ struct PairDisplay: Hashable {
     var kickerKey: String {
         if paired { return "pair.kickerPaired" }
         if failed { return "pair.kickerFailed" }
+        if legacy { return "pair.kickerLegacy" }
         if confirming || found { return "pair.kickerCode" }
         return "pair.kickerScanning"
     }
@@ -121,6 +126,7 @@ struct PairDisplay: Hashable {
     var dialKey: String {
         if paired { return "pair.dialPaired" }
         if failed { return "pair.dialFailed" }
+        if legacy { return "pair.dialLegacy" }
         if confirming || found { return "pair.dialCode" }
         return "pair.dialScanning"
     }
@@ -128,6 +134,7 @@ struct PairDisplay: Hashable {
     var noteKey: String {
         if paired { return "pair.notePaired" }
         if failed { return "pair.noteFailed" }
+        if legacy { return "pair.noteLegacy" }
         if confirming || found { return "pair.noteCode" }
         return "pair.noteScanning"
     }
@@ -138,11 +145,18 @@ struct PairDisplay: Hashable {
         case .timeout?: return "pair.bodyTimeout"
         case .lost?: return "pair.bodyLost"
         case .bluetoothOff?: return "pair.bodyBluetoothOff"
+        case .declined?: return "pair.bodyDeclined"
+        case .unverified?: return "pair.bodyUnverified"
         case nil: break
         }
         if paired { return "pair.bodyPaired" }
+        if legacy { return "pair.bodyLegacy" }
         if confirming { return "pair.bodyConfirming" }
         if found { return "pair.bodyFound" }
         return "pair.bodyScanning"
     }
+
+    /// While a code is expected: the iOS dialog is the proof (a board that never makes it appear is not
+    /// authenticated, README "BLE pairing").
+    var dialogHintKey: String? { confirming || found ? "pair.dialogRequired" : nil }
 }

@@ -222,6 +222,8 @@ private final class FakeChar {}
 @Suite struct BoardPinTests {
     private let board = UUID()
     private let stranger = UUID()
+    private var secure: PinnedBoard { PinnedBoard(id: board, security: .secure) }
+    private var legacy: PinnedBoard { PinnedBoard(id: board, security: .legacy) }
 
     @Test func withoutAPinTheFirstBoardIsFoundByScanning() {
         let pin = BoardPin(pinned: nil)
@@ -232,56 +234,194 @@ private final class FakeChar {}
 
     /// A pinned board is reconnected by identifier only: a device found by a scan that is not the pinned board is
     /// never connected, even when it advertises the board service
-    @Test func aPinnedBoardIsReconnectedByIdentifierOnly() {
-        let pin = BoardPin(pinned: board)
+    @Test(arguments: [PinSecurity.secure, .legacy])
+    func aPinnedBoardIsReconnectedByIdentifierOnly(_ level: PinSecurity) {
+        let pin = BoardPin(pinned: PinnedBoard(id: board, security: level))
         #expect(pin.reconnect == .pinned(board))
         #expect(pin.mayConnect(board))
         #expect(!pin.mayConnect(stranger))
     }
 
-    /// Trust on first use: the board whose translator setup finishes first is pinned
-    @Test func theFirstBoardIsPinnedOnceItsSetupFinished() {
-        var pin = BoardPin(pinned: nil)
-        pin.connecting(board)
-        #expect(pin.pinned == nil)                   // connected, not set up yet
-        pin.accessGranted()
-        #expect(pin.setupFinished() == board)
-        #expect(pin.pinned == board)
-        #expect(pin.reconnect == .pinned(board))
-        #expect(!pin.mayConnect(stranger))
-        // Already pinned: nothing more to persist, also on the next link
-        #expect(pin.setupFinished() == nil)
-        pin.linkGone()
-        pin.connecting(board)
-        #expect(pin.setupFinished() == nil)
+    // MARK: Decision tables
+
+    /// One link: board info (version, control characteristic), then the protected read if asked for
+    struct Row: CustomTestStringConvertible, Sendable {
+        let pinned: PinSecurity?
+        let version: Int
+        let hasControl: Bool
+        /// Decision after board info
+        let afterInfo: BoardPin.Step
+        /// Decision after a successful protected read (only when `afterInfo == .readProtected`)
+        let afterRead: BoardPin.Step?
+        /// The pin after `setupFinished` (when the setup finishes without consent)
+        let pinAfter: PinSecurity?
+        var testDescription: String { "pin \(pinned.map(\.rawValue) ?? "none") v\(version) control \(hasControl)" }
     }
 
-    /// A link that dropped before its setup finished pins nothing
-    @Test func setupWithoutALinkDoesNotPin() {
-        var pin = BoardPin(pinned: nil)
-        #expect(pin.setupFinished() == nil)
+    static let rows: [Row] = [
+        // First connection
+        Row(pinned: nil, version: 2, hasControl: true, afterInfo: .readProtected, afterRead: .finish, pinAfter: .secure),
+        Row(pinned: nil, version: 3, hasControl: true, afterInfo: .readProtected, afterRead: .finish, pinAfter: .secure),
+        Row(pinned: nil, version: 1, hasControl: true, afterInfo: .readProtected, afterRead: .askConsent, pinAfter: nil),
+        Row(pinned: nil, version: 0, hasControl: true, afterInfo: .readProtected, afterRead: .askConsent, pinAfter: nil),
+        Row(pinned: nil, version: 2, hasControl: false, afterInfo: .askConsent, afterRead: nil, pinAfter: nil),
+        Row(pinned: nil, version: 0, hasControl: false, afterInfo: .askConsent, afterRead: nil, pinAfter: nil),
+        // Reconnecting a secure pin
+        Row(pinned: .secure, version: 2, hasControl: true, afterInfo: .readProtected, afterRead: .finish, pinAfter: .secure),
+        Row(pinned: .secure, version: 1, hasControl: true, afterInfo: .refuse, afterRead: nil, pinAfter: .secure),
+        Row(pinned: .secure, version: 0, hasControl: true, afterInfo: .refuse, afterRead: nil, pinAfter: .secure),
+        Row(pinned: .secure, version: 2, hasControl: false, afterInfo: .refuse, afterRead: nil, pinAfter: .secure),
+        Row(pinned: .secure, version: 0, hasControl: false, afterInfo: .refuse, afterRead: nil, pinAfter: .secure),
+        // Reconnecting a legacy pin
+        Row(pinned: .legacy, version: 2, hasControl: true, afterInfo: .readProtected, afterRead: .finish, pinAfter: .secure),
+        Row(pinned: .legacy, version: 1, hasControl: true, afterInfo: .readProtected, afterRead: .finish, pinAfter: .legacy),
+        Row(pinned: .legacy, version: 0, hasControl: false, afterInfo: .finish, afterRead: nil, pinAfter: .legacy),
+    ]
+
+    @Test(arguments: rows)
+    func decisions(_ row: Row) {
+        var pin = BoardPin(pinned: row.pinned.map { PinnedBoard(id: board, security: $0) })
         pin.connecting(board)
-        pin.linkGone()
-        #expect(pin.setupFinished() == nil)
-        #expect(pin.pinned == nil)
+        #expect(pin.boardInfo(version: row.version, hasControl: row.hasControl) == row.afterInfo)
+        if row.afterInfo == .readProtected {
+            #expect(pin.accessGranted() == row.afterRead)
+        } else {
+            #expect(row.afterRead == nil)
+        }
+        let finishes = (row.afterRead ?? row.afterInfo) == .finish
+        let made = finishes ? pin.setupFinished() : nil
+        #expect(pin.pinned?.security == row.pinAfter)
+        #expect(pin.awaitingConsent == ((row.afterRead ?? row.afterInfo) == .askConsent))
+        // Something to persist only when a pin was made or upgraded
+        #expect((made != nil) == (finishes && row.pinned != row.pinAfter))
     }
 
-    /// Pairing by code: nothing is pinned until a protected read succeeded on this very link
-    @Test func noPinWithoutAnAuthenticatedRead() {
+    /// The table's own "the read succeeds while board info says < 2" case for a secure pin: even if the link read
+    /// anyway, the success is refused and the pin stays secure
+    @Test func aSecurePinRefusesAReadThatSucceedsOnOldFirmware() {
+        var pin = BoardPin(pinned: secure)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: true)
+        #expect(pin.accessGranted() == .refuse)
+        #expect(pin.setupFinished() == nil)
+        #expect(pin.pinned == secure)
+    }
+
+    /// No pin is ever made without proof or consent, whatever order the link calls in
+    @Test func noPinWithoutProofOrConsent() {
         var pin = BoardPin(pinned: nil)
         pin.connecting(board)
-        #expect(pin.setupFinished() == nil)
-        pin.accessGranted()
-        pin.linkGone()                               // the proof belongs to the link that gave it
+        #expect(pin.setupFinished() == nil)                       // no board info, no read
+        _ = pin.boardInfo(version: 2, hasControl: true)
+        #expect(pin.setupFinished() == nil)                       // the read has not succeeded
+        _ = pin.accessGranted()
+        pin.linkGone()                                            // the proof belongs to the link that gave it
         pin.connecting(board)
         #expect(!pin.proven)
         #expect(pin.setupFinished() == nil)
-        pin.accessGranted()
-        #expect(pin.setupFinished() == board)
-        // Proof without a link is ignored
+        // A services reset on the same link drops the proof too
+        _ = pin.boardInfo(version: 2, hasControl: true)
+        _ = pin.accessGranted()
+        pin.setupRestarted()
+        #expect(pin.setupFinished() == nil)
+        // Proof without a link is refused
         var lone = BoardPin(pinned: nil)
-        lone.accessGranted()
+        #expect(lone.accessGranted() == .refuse)
+        #expect(lone.boardInfo(version: 2, hasControl: true) == .refuse)
         #expect(!lone.proven)
+    }
+
+    /// A pinned board's identifier is the only one set up, even if the link reached another one
+    @Test func aStrangerOnAPinnedLinkIsRefused() {
+        var pin = BoardPin(pinned: legacy)
+        pin.connecting(stranger)
+        #expect(pin.boardInfo(version: 2, hasControl: true) == .refuse)
+    }
+
+    // MARK: Consent
+
+    @Test(arguments: [true, false])
+    func onlyVanGhepPinsAnOldBoardAsLegacy(_ hasControl: Bool) {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        let step = pin.boardInfo(version: 1, hasControl: hasControl)
+        if hasControl { #expect(pin.accessGranted() == .askConsent) } else { #expect(step == .askConsent) }
+        #expect(pin.setupFinished() == nil)                       // waiting: nothing pinned
+        #expect(pin.acceptLegacy() == true)
+        #expect(!pin.awaitingConsent)
+        #expect(pin.setupFinished() == legacy)
+        #expect(pin.reconnect == .pinned(board))
+        #expect(pin.acceptLegacy() == false)                              // asked once
+    }
+
+    @Test func consentIsOnlyTakenWhenAsked() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 2, hasControl: true)
+        #expect(pin.acceptLegacy() == false)                              // a secure board is never pinned as legacy
+        #expect(pin.declineLegacy() == nil)
+        _ = pin.accessGranted()
+        #expect(pin.setupFinished() == secure)
+    }
+
+    @Test func consentBelongsToItsLink() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        pin.linkGone()
+        #expect(pin.acceptLegacy() == false)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        #expect(pin.acceptLegacy() == true)
+        pin.linkGone()
+        pin.connecting(board)
+        #expect(pin.setupFinished() == nil)                       // the consent did not carry over
+    }
+
+    @Test func huyIgnoresThatBoardUntilARetry() {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: true)
+        _ = pin.accessGranted()
+        #expect(pin.declineLegacy() == board)
+        #expect(pin.setupFinished() == nil)
+        #expect(pin.pinned == nil)
+        pin.linkGone()
+        #expect(!pin.mayConnect(board))
+        #expect(pin.mayConnect(stranger))
+        pin.clearDeclined()
+        #expect(pin.mayConnect(board))
+        // forget clears it too
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        _ = pin.declineLegacy()
+        pin.forget()
+        #expect(pin.mayConnect(board))
+    }
+
+    // MARK: Upgrade, never downgrade
+
+    @Test func aLegacyPinBecomesSecureOnceTheBoardProvesIt() {
+        var pin = BoardPin(pinned: legacy)
+        pin.connecting(board)
+        #expect(pin.boardInfo(version: 2, hasControl: true) == .readProtected)
+        #expect(pin.setupFinished() == nil)                       // not before the read
+        #expect(pin.accessGranted() == .finish)
+        #expect(pin.setupFinished() == secure)
+        // From now on old firmware is refused
+        pin.linkGone()
+        pin.connecting(board)
+        #expect(pin.boardInfo(version: 1, hasControl: true) == .refuse)
+        #expect(pin.pinned == secure)
+    }
+
+    @Test func aSecurePinIsNeverDowngraded() {
+        var pin = BoardPin(pinned: secure)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 0, hasControl: false)
+        #expect(pin.acceptLegacy() == false)                              // no consent asked, none taken
+        #expect(pin.setupFinished() == nil)
+        #expect(pin.pinned == secure)
     }
 
     @Test func pairingErrorsMapToFailures() {
@@ -294,30 +434,53 @@ private final class FakeChar {}
     }
 
     @Test func forgettingClearsThePin() {
-        var pin = BoardPin(pinned: board)
+        var pin = BoardPin(pinned: secure)
         pin.connecting(board)
         pin.forget()
         #expect(pin.pinned == nil)
         #expect(pin.reconnect == .discover)
         #expect(pin.mayConnect(stranger))
-        // The next board is pinned again on its setup
+        // The next board is pinned again on its own proof
         pin.connecting(stranger)
-        pin.accessGranted()
-        #expect(pin.setupFinished() == stranger)
+        _ = pin.boardInfo(version: 2, hasControl: true)
+        _ = pin.accessGranted()
+        #expect(pin.setupFinished() == PinnedBoard(id: stranger, security: .secure))
     }
 
-    @Test func thePinIsKeptInUserDefaults() throws {
+    // MARK: Persistence
+
+    private func withDefaults(_ body: (UserDefaults) throws -> Void) throws {
         let suite = "board-pin-tests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = BoardPinStore(defaults: defaults)
-        #expect(store.load() == nil)
-        store.save(board)
-        #expect(BoardPinStore(defaults: defaults).load() == board)
-        store.save(nil)
-        #expect(BoardPinStore(defaults: defaults).load() == nil)
-        // Anything that is not a UUID is no pin
-        defaults.set("not a uuid", forKey: BoardPinStore.key)
-        #expect(store.load() == nil)
+        try body(defaults)
+    }
+
+    @Test func thePinAndItsLevelAreKeptInUserDefaults() throws {
+        try withDefaults { defaults in
+            let store = BoardPinStore(defaults: defaults)
+            #expect(store.load() == nil)
+            store.save(secure)
+            #expect(BoardPinStore(defaults: defaults).load() == secure)
+            store.save(legacy)
+            #expect(BoardPinStore(defaults: defaults).load() == legacy)
+            store.save(nil)
+            #expect(BoardPinStore(defaults: defaults).load() == nil)
+            #expect(defaults.object(forKey: BoardPinStore.securityKey) == nil)
+            // Anything that is not a UUID is no pin
+            defaults.set("not a uuid", forKey: BoardPinStore.key)
+            #expect(store.load() == nil)
+        }
+    }
+
+    /// A pin saved before levels existed (identifier only) loads as legacy: it is not trusted as secure, and
+    /// upgrades once the board proves itself
+    @Test func anOldPinWithoutALevelLoadsAsLegacy() throws {
+        try withDefaults { defaults in
+            defaults.set(board.uuidString, forKey: BoardPinStore.key)
+            #expect(BoardPinStore(defaults: defaults).load() == legacy)
+            defaults.set("bogus", forKey: BoardPinStore.securityKey)
+            #expect(BoardPinStore(defaults: defaults).load() == legacy)
+        }
     }
 }

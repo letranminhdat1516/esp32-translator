@@ -25,12 +25,59 @@ import Testing
         #expect(m.state == .paired(name: "ESP-Translator"))
     }
 
-    /// Old firmware asks for no pairing: the read succeeds right away and the board is paired (pinned) as before
-    @Test func oldFirmwareSucceedsWithoutADialog() {
+    /// Old firmware asks for no pairing: the read proves nothing, so the link asks the user before pinning
+    @Test func oldFirmwareAsksForConsent() {
         var m = connected()
         m.handle(.authenticating)
+        m.handle(.legacyBoard)
+        #expect(m.state == .legacyConsent(name: "ESP-Translator"))
+        m.timedOut()                                              // no confirm timer on the warning
+        #expect(m.state == .legacyConsent(name: "ESP-Translator"))
+        m.acceptLegacy()
+        #expect(m.state == .found(name: "ESP-Translator", battery: nil))
         m.handle(.authenticated)
         #expect(m.state == .paired(name: "ESP-Translator"))
+    }
+
+    @Test func huyOnTheOldFirmwareWarningFailsAndRetryLooksAgain() {
+        var m = connected()
+        m.handle(.legacyBoard)                                    // no control characteristic: no read at all
+        m.declineLegacy()
+        #expect(m.state == .failed(.declined))
+        m.handle(.linkLost)
+        m.handle(.scanning)
+        #expect(m.state == .failed(.declined))
+        m.retry(connected: false)
+        #expect(m.state == .scanning)
+        // Answers outside the warning do nothing
+        m.acceptLegacy()
+        m.declineLegacy()
+        #expect(m.state == .scanning)
+    }
+
+    @Test func linkLostOnTheOldFirmwareWarningFails() {
+        var m = connected()
+        m.handle(.legacyBoard)
+        m.handle(.linkLost)
+        #expect(m.state == .failed(.lost))
+        var n = connected()
+        n.handle(.legacyBoard)
+        n.handle(.scanning)
+        #expect(n.state == .failed(.lost))
+    }
+
+    /// The pinned secure board came back as old firmware: shown even though the screen was paired
+    @Test func aPairedBoardThatNoLongerAuthenticatesIsShown() {
+        var m = PairingMachine(state: .paired(name: "X"))
+        m.handle(.authFailed(.unverified))
+        #expect(m.state == .failed(.unverified))
+        m.handle(.scanning)
+        m.handle(.connected(name: "X"))
+        m.handle(.legacyBoard)
+        #expect(m.state == .failed(.unverified))
+        // The board later proves itself again
+        m.handle(.authenticated)
+        #expect(m.state == .paired(name: "X"))
     }
 
     @Test func refusalsAndRetry() {
@@ -108,11 +155,23 @@ import Testing
         #expect(PairDisplay(.failed(.timeout)).bodyKey == "pair.bodyTimeout")
         #expect(PairDisplay(.failed(.rejected)).failed)
         #expect(PairDisplay(.paired(name: "A")).kickerKey == "pair.kickerPaired")
+        #expect(PairDisplay(.legacyConsent(name: "A")).legacy)
+        #expect(PairDisplay(.legacyConsent(name: "A")).bodyKey == "pair.bodyLegacy")
+        #expect(PairDisplay(.legacyConsent(name: "A")).name == "A")
+        #expect(PairDisplay(.failed(.unverified)).bodyKey == "pair.bodyUnverified")
+        #expect(PairDisplay(.failed(.declined)).bodyKey == "pair.bodyDeclined")
+        #expect(PairDisplay(.confirming(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
+        #expect(PairDisplay(.found(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
+        #expect(PairDisplay(.legacyConsent(name: "A")).dialogHintKey == nil)
+        #expect(PairDisplay(.paired(name: "A")).dialogHintKey == nil)
         for state: PairingState in [.idle, .scanning, .found(name: "A", battery: nil), .confirming(name: "A", battery: nil),
                                     .paired(name: "A"), .failed(.rejected), .failed(.timeout), .failed(.lost),
-                                    .failed(.bluetoothOff)] {
+                                    .failed(.bluetoothOff), .failed(.declined), .failed(.unverified),
+                                    .legacyConsent(name: "A")] {
             let d = PairDisplay(state)
-            for key in [d.kickerKey, d.dialKey, d.noteKey, d.bodyKey] { #expect(Copy.t(key) != key, "\(key)") }
+            for key in [d.kickerKey, d.dialKey, d.noteKey, d.bodyKey] + [d.dialogHintKey].compactMap({ $0 }) {
+                #expect(Copy.t(key) != key, "\(key)")
+            }
         }
     }
 }
@@ -131,6 +190,28 @@ import Testing
         m.handle(.authenticated)
         try await Task.sleep(for: .milliseconds(150))
         #expect(m.state == .paired(name: "B"))   // the timer was cancelled
+    }
+
+    @Test func theOldFirmwareAnswerGoesToTheLink() {
+        var answers: [Bool] = []
+        let m = LinkPairingModel(retryLink: { false }, consent: { answers.append($0) })
+        m.start()
+        m.acceptLegacy()                                          // not asked: nothing sent
+        #expect(answers.isEmpty)
+        m.handle(.connected(name: "B"))
+        m.handle(.legacyBoard)
+        #expect(m.state == .legacyConsent(name: "B"))
+        m.acceptLegacy()
+        #expect(answers == [true])
+        m.handle(.authenticated)
+        #expect(m.state == .paired(name: "B"))
+        m.reset()
+        m.start()
+        m.handle(.connected(name: "C"))
+        m.handle(.legacyBoard)
+        m.declineLegacy()
+        #expect(answers == [true, false])
+        #expect(m.state == .failed(.declined))
     }
 
     @Test func startActivatesTheLinkAndResetStartsOver() {

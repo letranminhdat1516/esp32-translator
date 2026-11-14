@@ -128,12 +128,39 @@ struct BoardLabel {
     }
 }
 
-/// Which board this phone talks to (P9 access control). The first board is trusted on first use: once its
-/// translator setup finished on a link, its identifier is pinned. From then on only that board is reconnected, by
-/// identifier (`retrievePeripherals(withIdentifiers:)` + a pending connect); a device found by a scan that is not
-/// the pinned board is never connected, whatever it advertises. `forget` drops the pin (a new board) and scanning
-/// starts again.
+/// How much the pinned board proved when it was pinned (stored with the pin)
+enum PinSecurity: String, Hashable, Sendable {
+    /// Board info version ≥ `BoardPin.secureVersion` and the protected read succeeded: firmware that enforces
+    /// pairing by code, so the read went through an authenticated (numeric comparison) link
+    case secure
+    /// The user explicitly accepted a board that cannot authenticate (old firmware: version < 2 or no control
+    /// characteristic). Pins saved before security levels existed load as legacy.
+    case legacy
+}
+
+/// The pinned board: its CoreBluetooth identifier and how it was pinned
+struct PinnedBoard: Hashable, Sendable {
+    var id: UUID
+    var security: PinSecurity
+}
+
+/// Which board this phone talks to (P9 access control). Only that board is reconnected, by identifier
+/// (`retrievePeripherals(withIdentifiers:)` + a pending connect); a device found by a scan that is not the pinned
+/// board is never connected, whatever it advertises. `forget` drops the pin (a new board) and scanning starts again.
+///
+/// Pinning (README "BLE pairing"), driven by the board-info version (`…0005`, byte 0) and the protected read of
+/// control `…0004`:
+/// - No pin, version ≥ 2: pinned `.secure` once the protected read succeeded and the setup finished.
+/// - No pin, version < 2 or no control characteristic: never pinned on its own. The link waits (`.askConsent`) and
+///   only `acceptLegacy` (the user's "Vẫn ghép") pins it, as `.legacy`; `declineLegacy` ignores that board until
+///   `clearDeclined` (the user retries) or `forget`.
+/// - Pinned `.secure`: a board that now reports version < 2, has no control characteristic, or whose read succeeds
+///   while it reports < 2 is refused (`.refuse`: disconnect, never ready). The pin is never downgraded.
+/// - Pinned `.legacy`: set up as before; it becomes `.secure` once it reports version ≥ 2 and the read succeeded.
 struct BoardPin {
+    /// Board-info version from which the firmware enforces pairing by code
+    static let secureVersion = 2
+
     enum Reconnect: Equatable {
         /// Connect to this identifier only (and wait for it)
         case pinned(UUID)
@@ -141,47 +168,133 @@ struct BoardPin {
         case discover
     }
 
-    private(set) var pinned: UUID?
+    /// What the link does next
+    enum Step: Equatable {
+        /// Read the protected characteristic (new firmware asks for the code now)
+        case readProtected
+        /// Finish the setup (notifications, clock, label, mic, ready), then `setupFinished`
+        case finish
+        /// Hold the link and ask the user whether to pin this unauthenticated board
+        case askConsent
+        /// Not this board: disconnect, never ready
+        case refuse
+    }
+
+    private(set) var pinned: PinnedBoard?
     /// The peripheral being connected or connected
     private var link: UUID?
-    /// A protected characteristic was read on the current link (an authenticated link on new firmware): the proof
-    /// a board must give before it is pinned
+    /// Board-info version on the current link (0: absent or unreadable)
+    private var version = 0
+    /// A protected characteristic was read on the current link
     private(set) var proven = false
+    /// The user accepted this link's unauthenticated board ("Vẫn ghép")
+    private var consented = false
+    /// Waiting for the user's answer on the current link
+    private(set) var awaitingConsent = false
+    /// Boards the user said "Huỷ" to: not connected again until `clearDeclined` or `forget`
+    private var declined: Set<UUID> = []
 
-    init(pinned: UUID?) { self.pinned = pinned }
+    init(pinned: PinnedBoard?) { self.pinned = pinned }
 
-    var reconnect: Reconnect { pinned.map(Reconnect.pinned) ?? .discover }
+    var reconnect: Reconnect { pinned.map { .pinned($0.id) } ?? .discover }
 
     /// Whether a peripheral found by a scan (or already connected to the system) may be connected
-    func mayConnect(_ id: UUID) -> Bool { pinned == nil || pinned == id }
+    func mayConnect(_ id: UUID) -> Bool {
+        if let pinned { return pinned.id == id }
+        return !declined.contains(id)
+    }
 
     /// A connection to `id` starts
     mutating func connecting(_ id: UUID) {
         link = id
+        setupRestarted()
+    }
+
+    /// The translator setup starts over on the same link (services changed): everything proven so far is dropped
+    mutating func setupRestarted() {
+        version = 0
         proven = false
+        consented = false
+        awaitingConsent = false
+    }
+
+    /// Board info was read (`version` 0 when absent or unreadable); `hasControl`: the link has control `…0004`
+    mutating func boardInfo(version: Int, hasControl: Bool) -> Step {
+        guard let link, pinned == nil || pinned?.id == link else { return .refuse }
+        self.version = version
+        if pinned?.security == .secure, version < Self.secureVersion || !hasControl { return .refuse }
+        if hasControl { return .readProtected }
+        // Nothing to prove with (very old firmware): a legacy pin was accepted before; a new board needs consent
+        return pinned != nil ? .finish : askConsent()
     }
 
     /// The protected read (`…0004`) succeeded on the current link
-    mutating func accessGranted() {
-        if link != nil { proven = true }
+    mutating func accessGranted() -> Step {
+        guard link != nil else { return .refuse }
+        proven = true
+        if version >= Self.secureVersion { return .finish }
+        switch pinned?.security {
+        case .secure?: return .refuse     // a secure board never comes back as old firmware
+        case .legacy?: return .finish
+        case nil: return askConsent()     // old firmware lets anyone read: no proof
+        }
     }
 
-    /// The translator setup finished on the current link; the identifier to persist when it just became the pin.
-    /// Nothing is pinned without `accessGranted` on this link.
-    mutating func setupFinished() -> UUID? {
-        guard pinned == nil, proven, let link else { return nil }
-        pinned = link
+    private mutating func askConsent() -> Step {
+        awaitingConsent = true
+        return .askConsent
+    }
+
+    /// "Vẫn ghép": true when the link was waiting for it (the caller finishes the setup, which pins it as legacy)
+    mutating func acceptLegacy() -> Bool {
+        guard awaitingConsent, link != nil else { return false }
+        awaitingConsent = false
+        consented = true
+        return true
+    }
+
+    /// "Huỷ": the board to disconnect, ignored by `mayConnect` from now on; nil when nothing was asked
+    mutating func declineLegacy() -> UUID? {
+        guard awaitingConsent, let link else { return nil }
+        awaitingConsent = false
+        declined.insert(link)
         return link
+    }
+
+    /// The user retries pairing: declined boards may be connected again
+    mutating func clearDeclined() { declined.removeAll() }
+
+    /// The translator setup finished on the current link; the pin to persist when it was just made or upgraded.
+    /// Nothing is pinned without proof (version ≥ 2 and the read) or the user's consent on this link, and a
+    /// `.secure` pin is never replaced by a `.legacy` one.
+    mutating func setupFinished() -> PinnedBoard? {
+        guard let link else { return nil }
+        let level: PinSecurity
+        if proven && version >= Self.secureVersion {
+            level = .secure
+        } else if consented {
+            level = .legacy
+        } else {
+            return nil
+        }
+        if let pinned {
+            // Only the upgrade of this board's legacy pin
+            guard pinned.id == link, pinned.security == .legacy, level == .secure else { return nil }
+        }
+        let made = PinnedBoard(id: link, security: level)
+        pinned = made
+        return made
     }
 
     mutating func linkGone() {
         link = nil
-        proven = false
+        setupRestarted()
     }
 
     /// Drops the pin (the caller disconnects and scans again)
     mutating func forget() {
         pinned = nil
+        declined.removeAll()
         linkGone()
     }
 }
@@ -210,16 +323,28 @@ enum PairingErrorMap {
     }
 }
 
-/// Where the pinned board's identifier is kept (UserDefaults: an identifier CoreBluetooth gives this app only)
+/// Where the pinned board is kept (UserDefaults: an identifier CoreBluetooth gives this app only). The security
+/// level sits under its own key, so a pin saved before levels existed (no level) loads as `.legacy`.
 struct BoardPinStore {
     static let key = "ble.pinnedBoard"
+    static let securityKey = "ble.pinnedBoardSecurity"
     let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    func load() -> UUID? { defaults.string(forKey: Self.key).flatMap(UUID.init(uuidString:)) }
+    func load() -> PinnedBoard? {
+        guard let id = defaults.string(forKey: Self.key).flatMap(UUID.init(uuidString:)) else { return nil }
+        let security = defaults.string(forKey: Self.securityKey).flatMap(PinSecurity.init(rawValue:)) ?? .legacy
+        return PinnedBoard(id: id, security: security)
+    }
 
-    func save(_ id: UUID?) {
-        if let id { defaults.set(id.uuidString, forKey: Self.key) } else { defaults.removeObject(forKey: Self.key) }
+    func save(_ pin: PinnedBoard?) {
+        if let pin {
+            defaults.set(pin.id.uuidString, forKey: Self.key)
+            defaults.set(pin.security.rawValue, forKey: Self.securityKey)
+        } else {
+            defaults.removeObject(forKey: Self.key)
+            defaults.removeObject(forKey: Self.securityKey)
+        }
     }
 }

@@ -3,9 +3,10 @@ import Observation
 
 /// The app side of pairing by code (ARCHITECTURE §4). After its setup the link reads the protected control
 /// characteristic (`…0004`). New firmware answers "insufficient authentication", iOS shows its system dialog with
-/// the 6 digits the board shows, and the read succeeds once both sides confirmed. Old firmware asks for no pairing:
-/// the read just succeeds. Either way the board is pinned only after that read succeeded. The app never shows a
-/// code of its own.
+/// the 6 digits the board shows, and the read succeeds once both sides confirmed. A board whose info reports version
+/// ≥ 2 (pairing by code enforced) is pinned only after that read succeeded. Old firmware (version < 2, or no control
+/// characteristic) asks for no pairing, so its read proves nothing: the link holds it and the screen asks the user
+/// (`legacyConsent`); only "Vẫn ghép" pins it. The app never shows a code of its own.
 enum PairingState: Hashable, Sendable {
     case idle
     /// Looking for a board (or waiting for Bluetooth to come on).
@@ -14,6 +15,8 @@ enum PairingState: Hashable, Sendable {
     case found(name: String, battery: Int?)
     /// The protected read is out: compare the board's code with the iPhone dialog and confirm on both.
     case confirming(name: String, battery: Int?)
+    /// An old-firmware board that cannot authenticate: pin it only if the user says it is theirs.
+    case legacyConsent(name: String)
     case paired(name: String)
     case failed(PairingFailure)
 }
@@ -28,6 +31,11 @@ enum PairingFailure: Hashable, Sendable {
     case lost
     /// Bluetooth is off or not allowed.
     case bluetoothOff
+    /// The user cancelled pinning an old-firmware board ("Huỷ").
+    case declined
+    /// The pinned (secure) board no longer authenticates: it reports old firmware or lacks the protected
+    /// characteristic. The link refused it and never downgrades the pin.
+    case unverified
 }
 
 /// What the board link reports about pairing (`ESPLink.onPairingEvent`, on its BLE queue).
@@ -38,9 +46,11 @@ enum PairingLinkEvent: Hashable, Sendable {
     case connected(name: String)
     /// The first protected access (read of `…0004`) is out; new firmware asks for the code now.
     case authenticating
-    /// The protected read succeeded (paired, or old firmware): the board is pinned and set up.
+    /// The board is set up: paired (pinned secure), accepted by the user (pinned legacy), or the pinned board back.
     case authenticated
     case authFailed(PairingFailure)
+    /// The board cannot authenticate (old firmware): the link waits for `acceptLegacyBoard` / `declineLegacyBoard`.
+    case legacyBoard
     /// The link dropped.
     case linkLost
     case bluetoothOff
@@ -65,7 +75,7 @@ struct PairingMachine: Hashable, Sendable {
             // A failure stays on screen until the user retries; a pinned board reconnecting after pairing stays paired
             switch state {
             case .failed, .paired: return
-            case .confirming: state = .failed(.lost)
+            case .confirming, .legacyConsent: state = .failed(.lost)
             default: state = .scanning
             }
         case let .connected(n):
@@ -79,11 +89,16 @@ struct PairingMachine: Hashable, Sendable {
         case .authenticated:
             state = .paired(name: name ?? Self.defaultName)
         case let .authFailed(reason):
-            if case .paired = state { return }
+            // A paired board that no longer authenticates is shown; other refusals of a paired board are retried
+            // by the link on its own
+            if case .paired = state, reason != .unverified { return }
             state = .failed(reason)
+        case .legacyBoard:
+            if case .failed = state { return }
+            state = .legacyConsent(name: name ?? Self.defaultName)
         case .linkLost:
             switch state {
-            case .confirming: state = .failed(.lost)
+            case .confirming, .legacyConsent: state = .failed(.lost)
             case .found: state = .scanning
             default: break
             }
@@ -118,6 +133,18 @@ struct PairingMachine: Hashable, Sendable {
         }
     }
 
+    /// "Vẫn ghép": the link finishes the setup and reports `authenticated`.
+    mutating func acceptLegacy() {
+        guard case let .legacyConsent(n) = state else { return }
+        state = .found(name: n, battery: battery)
+    }
+
+    /// "Huỷ": the link drops that board; "Thử lại" looks again.
+    mutating func declineLegacy() {
+        guard case .legacyConsent = state else { return }
+        state = .failed(.declined)
+    }
+
     /// The confirm timer fired; only a pending confirmation times out.
     mutating func timedOut() {
         if case .confirming = state { state = .failed(.timeout) }
@@ -133,6 +160,10 @@ protocol PairingModeling: AnyObject {
     func start()
     /// "Thử lại" after a failure.
     func retry()
+    /// "Vẫn ghép" on the old-firmware warning.
+    func acceptLegacy()
+    /// "Huỷ" on the old-firmware warning.
+    func declineLegacy()
 }
 
 /// A scripted pairing model: demo mode and tests.
@@ -149,6 +180,14 @@ final class FakePairingModel: PairingModeling {
         retries += 1
         state = .scanning
     }
+
+    func acceptLegacy() {
+        if case let .legacyConsent(n) = state { state = .paired(name: n) }
+    }
+
+    func declineLegacy() {
+        if case .legacyConsent = state { state = .failed(.declined) }
+    }
 }
 
 /// The BLE-backed pairing model: link events (any thread) feed a `PairingMachine` on the main actor; a timer turns
@@ -160,15 +199,19 @@ final class LinkPairingModel: PairingModeling {
 
     @ObservationIgnored private let retryLink: @MainActor () -> Bool
     @ObservationIgnored private let onStart: @MainActor () -> Void
+    @ObservationIgnored private let consent: @MainActor (Bool) -> Void
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private let timeout: TimeInterval
 
     /// `retryLink` asks the link to read again; true when it is connected (the read goes out at once). `onStart`
-    /// runs when the Pair screen appears (the link creates its central if the Permissions step did not).
+    /// runs when the Pair screen appears (the link creates its central if the Permissions step did not). `consent`
+    /// gives the link the user's answer about an old-firmware board (true: "Vẫn ghép").
     init(retryLink: @escaping @MainActor () -> Bool, onStart: @escaping @MainActor () -> Void = {},
+         consent: @escaping @MainActor (Bool) -> Void = { _ in },
          timeout: TimeInterval = PairingMachine.confirmTimeout) {
         self.retryLink = retryLink
         self.onStart = onStart
+        self.consent = consent
         self.timeout = timeout
     }
 
@@ -195,6 +238,18 @@ final class LinkPairingModel: PairingModeling {
     func retry() {
         machine.retry(connected: retryLink())
         armTimer()
+    }
+
+    func acceptLegacy() {
+        guard case .legacyConsent = machine.state else { return }
+        machine.acceptLegacy()
+        consent(true)
+    }
+
+    func declineLegacy() {
+        guard case .legacyConsent = machine.state else { return }
+        machine.declineLegacy()
+        consent(false)
     }
 
     private func armTimer() {
