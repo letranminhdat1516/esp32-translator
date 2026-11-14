@@ -1,4 +1,7 @@
-// Them → You, wired like AppleVoiceEngine.feedTheirAudio + ConversationController.handleTheirs/translateTheirs:
+// Them → You, wired like the app's AppleVoiceEngine.feedTheirAudio before BoardSilencePadder (the defaults here
+// keep the old finalize-on-pause baseline; the app now runs the measured PAD=silence FINALIZE=0, with a 0.1 s BLE
+// grace before padding and a 3 s cap, see ios/Sources/Engine/BoardSilencePadder.swift)
+// + ConversationController.handleTheirs/translateTheirs:
 //   board VAD + ADPCM packets (20 ms, real time) → ADPCMDecoder → pcm16Buffer → BufferConverter →
 //   LiveTranscriber(SpeechTranscriber en-US) with finalizeNow() 0.25 s after packets pause →
 //   final phrase (> 1 char) → in-order worker: TextPipeline(.theirs) over Translator (en→vi) → TTS vi-VN.

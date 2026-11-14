@@ -113,16 +113,18 @@ final class FakeSpeaker: EngineSpeaker {
 final class FakeMic: EngineMic {
     let sink: (AVAudioPCMBuffer) -> Void
     let onSpeechStart: () -> Void
+    let onFinalize: () -> Void
     let onSpeechEnd: () -> Void
     private let fail: Bool
     private(set) var started = false
     private(set) var stopped = false
 
     init(fail: Bool, sink: @escaping (AVAudioPCMBuffer) -> Void, onSpeechStart: @escaping () -> Void,
-         onSpeechEnd: @escaping () -> Void) {
+         onFinalize: @escaping () -> Void, onSpeechEnd: @escaping () -> Void) {
         self.fail = fail
         self.sink = sink
         self.onSpeechStart = onSpeechStart
+        self.onFinalize = onFinalize
         self.onSpeechEnd = onSpeechEnd
     }
 
@@ -166,9 +168,10 @@ final class EngineRig {
                 speakers.append(s)
                 return s
             },
-            makeMic: { [unowned self] _, _, sink, onStart, onEnd in
+            makeMic: { [unowned self] _, _, sink, onStart, onFinalize, onEnd in
                 log.calls.append("mic.make")
-                let m = FakeMic(fail: micFails, sink: sink, onSpeechStart: onStart, onSpeechEnd: onEnd)
+                let m = FakeMic(fail: micFails, sink: sink, onSpeechStart: onStart, onFinalize: onFinalize,
+                                onSpeechEnd: onEnd)
                 mics.append(m)
                 return m
             },

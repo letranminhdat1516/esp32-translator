@@ -61,10 +61,13 @@ struct Signal {
     }
 }
 
-/// Runs a whole signal through a gate; returns the passed seconds and the times of each `.ended`
+/// Runs a whole signal through a gate; returns the passed seconds and the times of each `.finalize` and `.ended`
 struct GateRun {
     var passed = 0.0
     var ends: [Double] = []
+    var finalizes: [Double] = []
+    /// Every event kind in order: "open" (first audio after a close), "finalize", "end"
+    var sequence: [String] = []
     /// Input time of the first audio passed after each opening
     var opens: [Double] = []
 
@@ -82,11 +85,19 @@ struct GateRun {
                 switch event {
                 case .audio(let a):
                     let s = Double(a.frameLength) / Signal.rate
-                    if !open { opens.append(Double(t) / Signal.rate - s); open = true }
+                    if !open {
+                        opens.append(Double(t) / Signal.rate - s)
+                        open = true
+                        sequence.append("open")
+                    }
                     passed += s
+                case .finalize:
+                    finalizes.append(Double(t) / Signal.rate)
+                    sequence.append("finalize")
                 case .ended:
                     ends.append(Double(t) / Signal.rate)
                     open = false
+                    sequence.append("end")
                 }
             }
         }
@@ -216,5 +227,77 @@ struct GateRun {
         let run = GateRun(x)
         let later = run.opens.filter { $0 > start }
         #expect(later.isEmpty, "partner opened the gate at \(later.prefix(5))")
+    }
+    // MARK: Early finalize (ios/Tools/latency-harness EARLY_FINALIZE=0.4: final 0.42 s after speech end
+    // instead of 0.82 s, 12/12 exact, no splits)
+
+    @Test func finalizesOnceAfterTheEarlyPauseAndStillClosesAtTheHangover() {
+        var s = Signal()
+        let x = s.noise(2, db: -62) + Signal.mix(Signal.voice(2, db: -20), s.noise(2, db: -62)) + s.noise(2, db: -62)
+        let run = GateRun(x)
+        #expect(VoiceGate.Config().finalizeAfter == 0.4)
+        #expect(run.finalizes.count == 1, "finalizes \(run.finalizes)")
+        // 0.4 s of non-speech after the voice stops at 4 s (plus a frame or two), not before
+        #expect(run.finalizes[0] >= 4.35 && run.finalizes[0] <= 4.55, "finalize at \(run.finalizes)")
+        // The gate still closes 0.8 s after the voice and passes the hangover's audio
+        #expect(run.ends.count == 1)
+        #expect(run.ends[0] >= 4.75 && run.ends[0] <= 4.95)
+        #expect(run.passed >= 2.0 + 0.8 && run.passed <= 3.3)
+        #expect(run.sequence == ["open", "finalize", "end"], "\(run.sequence)")
+    }
+
+    @Test func noFinalizeInAPauseShorterThanTheEarlyPoint() {
+        var s = Signal()
+        let x = s.noise(1, db: -62) + Signal.voice(2, db: -20) + s.noise(0.3, db: -62) + Signal.voice(2, db: -20)
+            + s.noise(2, db: -62)
+        let run = GateRun(x)
+        #expect(run.opens.count == 1 && run.ends.count == 1)
+        #expect(run.finalizes.count == 1, "finalizes \(run.finalizes)")
+        #expect(run.finalizes[0] >= 5.3 + 0.35, "only after the last word, at \(run.finalizes)")
+    }
+
+    /// Speech resuming after the early finalize but before the close keeps the gate open; the next pause
+    /// finalizes again
+    @Test func speechResumingResetsTheEarlyFinalize() {
+        var s = Signal()
+        let x = s.noise(1, db: -62) + Signal.voice(2, db: -20) + s.noise(0.6, db: -62) + Signal.voice(2, db: -20)
+            + s.noise(2, db: -62)
+        let run = GateRun(x)
+        #expect(run.opens.count == 1, "the gate stays open through a 0.6 s pause, opens \(run.opens)")
+        #expect(run.ends.count == 1)
+        #expect(run.finalizes.count == 2, "finalizes \(run.finalizes)")
+        #expect(run.finalizes[0] >= 3.35 && run.finalizes[0] <= 3.55, "first in the pause, \(run.finalizes)")
+        #expect(run.finalizes[1] >= 5.6 + 0.35 && run.finalizes[1] <= 5.6 + 0.55, "\(run.finalizes)")
+        #expect(run.ends[0] >= 5.6 + 0.75)
+        #expect(run.sequence == ["open", "finalize", "finalize", "end"], "\(run.sequence)")
+    }
+
+    /// With the early point at or past the hangover the phrase is finalized at the close, once, before `.ended`
+    @Test func earlyPointAtTheHangoverFinalizesAtTheClose() {
+        var s = Signal()
+        var config = VoiceGate.Config()
+        config.finalizeAfter = config.hangover
+        let x = s.noise(2, db: -62) + Signal.voice(2, db: -20) + s.noise(2, db: -62)
+        let run = GateRun(x, gate: VoiceGate(config: config))
+        #expect(run.sequence == ["open", "finalize", "end"], "\(run.sequence)")
+        #expect(run.finalizes == run.ends)
+    }
+
+    /// Every close comes after a finalize in the same opening, babble included
+    @Test func everyCloseIsFinalizedOnce() {
+        let babble = Signal.babble(20, db: -30)
+        let voice = [Float](repeating: 0, count: 2 * 16_000) + Signal.voice(3, db: -18)
+            + [Float](repeating: 0, count: 3 * 16_000) + Signal.voice(4, db: -18)
+        let run = GateRun(Signal.mix(babble, voice))
+        #expect(run.ends.count >= 2)
+        var finalizedSinceAudio = false
+        for e in run.sequence {
+            switch e {
+            case "open": finalizedSinceAudio = false
+            case "finalize": finalizedSinceAudio = true
+            default: #expect(finalizedSinceAudio, "closed without a finalize: \(run.sequence)")
+            }
+        }
+        #expect(run.finalizes.count >= run.ends.count)
     }
 }

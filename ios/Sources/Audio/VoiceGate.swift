@@ -9,7 +9,8 @@ import os
 /// The wearer's mouth is a few centimetres from the AirPods mics, so their voice arrives much louder than
 /// anyone else's. A 20 ms frame opens the gate only if it is well above the background level, voiced
 /// (periodic at a speech pitch) and near the wearer's own learned level. The gate keeps 300 ms of pre-roll
-/// so the first syllable is not cut, and closes 0.8 s after the voice stops.
+/// so the first syllable is not cut, asks for the phrase to be finalized 0.4 s after the voice stops and
+/// closes 0.8 s after it.
 ///
 /// The background level is a low percentile of the frame levels over the last few seconds. It follows
 /// sustained café babble within seconds (the old floor rose 0.5 dB/s and never caught up, so the gate
@@ -29,6 +30,11 @@ final class VoiceGate {
         var preroll: TimeInterval = 0.3
         /// The gate closes after this much non-speech (1.2 s measured no better and adds latency)
         var hangover: TimeInterval = 0.8
+        /// `.finalize` is sent after this much non-speech while open, once per pause; the gate stays open until
+        /// `hangover`, so a sentence that goes on is still fed. ios/Tools/latency-harness (EARLY_FINALIZE=0.4,
+        /// DictationTranscriber vi-VN): final 0.42 s after speech end instead of 0.82 s, 12/12 exact, no splits.
+        /// At or past `hangover` the phrase is finalized at the close.
+        var finalizeAfter: TimeInterval = 0.4
         /// Analysis frame
         var frame: TimeInterval = 0.02
         /// Background level: this percentile of frame levels over the last `floorWindow` seconds
@@ -86,7 +92,10 @@ final class VoiceGate {
     enum Event {
         /// Audio to pass to the recognizer, in the input buffer's format
         case audio(AVAudioPCMBuffer)
-        /// The wearer stopped speaking: finalize
+        /// The wearer paused (`finalizeAfter`): finalize what was passed so far. Sent once per pause, always
+        /// before the `.ended` of the same opening; the gate may stay open and pass more audio after it
+        case finalize
+        /// The gate closed (`hangover`): the wearer stopped speaking. The phrase was already finalized.
         case ended
     }
 
@@ -139,6 +148,8 @@ final class VoiceGate {
     private var onsetFilled = 0
     private var speaking = false
     private var silentFor: TimeInterval = 0
+    /// `.finalize` was sent for the current pause
+    private var finalizedPause = false
     /// Time since the last frame that held the gate open
     private var sinceHeld: TimeInterval = 0
 
@@ -230,9 +241,16 @@ final class VoiceGate {
             if held && voiced {
                 silentFor = 0
                 sinceHeld = 0
+                finalizedPause = false
             } else {
                 sinceHeld += config.frame
                 silentFor += config.frame
+                if !finalizedPause, silentFor > config.finalizeAfter, config.finalizeAfter < config.hangover {
+                    // Everything passed before this frame is finalized; the gate stays open
+                    flush(&out, into: &events, format: format)
+                    events.append(.finalize)
+                    finalizedPause = true
+                }
                 if silentFor > config.hangover {
                     speaking = false
                     learnFromUtterance()
@@ -240,8 +258,9 @@ final class VoiceGate {
                                     userLevelDB.map { String(format: "%.0f dB", $0) } ?? "not learned"))
                     clearOnset()
                     history.removeAll()
-                    if !out.isEmpty, let b = Self.buffer(out, format: format) { events.append(.audio(b)) }
-                    out.removeAll()
+                    flush(&out, into: &events, format: format)
+                    if !finalizedPause { events.append(.finalize) }
+                    finalizedPause = false
                     events.append(.ended)
                     history.append(frame)
                     return
@@ -280,10 +299,17 @@ final class VoiceGate {
         speaking = true
         silentFor = 0
         sinceHeld = 0
+        finalizedPause = false
         openFloorDB = floorDB
         openQuartileDB = quartileDB
         utteranceLevels.removeAll(keepingCapacity: true)
         utteranceCount = 0
+    }
+
+    /// Sends the audio gathered so far as one `.audio` event
+    private func flush(_ out: inout [Float], into events: inout [Event], format: AVAudioFormat) {
+        if !out.isEmpty, let b = Self.buffer(out, format: format) { events.append(.audio(b)) }
+        out.removeAll()
     }
 
     private func clearOnset() {
@@ -311,6 +337,7 @@ final class VoiceGate {
         clearOnset()
         rejected = [Bool](repeating: false, count: max(1, Int((config.relearnWindow / config.frame).rounded())))
         speaking = false
+        finalizedPause = false
         forgetWearer(nil)
     }
 

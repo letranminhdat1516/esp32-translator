@@ -15,9 +15,9 @@ extension AppleVoiceEngine {
         return AppleVoiceEngine(platform: AppleEnginePlatform(
             session: AudioSession(),
             makeSpeaker: { Speaker(language: $0) },
-            makeMic: { format, gate, sink, onSpeechStart, onSpeechEnd in
+            makeMic: { format, gate, sink, onSpeechStart, onFinalize, onSpeechEnd in
                 MicSource(target: format, gate: gate, sink: sink, onSpeechStart: onSpeechStart,
-                          onSpeechEnd: onSpeechEnd)
+                          onFinalize: onFinalize, onSpeechEnd: onSpeechEnd)
             },
             micPermitted: { AVAudioApplication.shared.recordPermission == .granted },
             requestMicPermission: { _ = await AVAudioApplication.requestRecordPermission() },

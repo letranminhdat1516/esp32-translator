@@ -51,6 +51,7 @@ struct AppleEnginePlatform {
     typealias MakeMic = @MainActor (_ format: AVAudioFormat, _ gate: VoiceGate,
                                     _ sink: @escaping (AVAudioPCMBuffer) -> Void,
                                     _ onSpeechStart: @escaping () -> Void,
+                                    _ onFinalize: @escaping () -> Void,
                                     _ onSpeechEnd: @escaping () -> Void) -> EngineMic
     typealias Translate = @Sendable (String) async throws -> String
 
@@ -91,9 +92,9 @@ final class AppleVoiceEngine: VoiceEngine {
     /// The controller asked for the mic (micOn(true)) and has not released it
     private var micWanted = false
     private var translators: [String: AppleEnginePlatform.Translate] = [:]
-    /// Finalizes the board phrase once board audio stops coming (the board streams only while it hears speech)
-    private var theirPause: DispatchWorkItem?
-    private static let theirPauseGap: TimeInterval = 0.25
+    /// Feeds silence to their recognizer while board packets pause, so it ends the phrase itself (never
+    /// finalized: that corrupts SpeechTranscriber's following utterances, see `BoardSilencePadder`)
+    private var theirPadder: BoardSilencePadder!
     private nonisolated let capabilityCache: CapabilitiesCache
     /// The home language capabilities were last asked for (re-gathered after a download)
     private nonisolated let capabilitiesHome = OSAllocatedUnfairLock<String?>(initialState: nil)
@@ -109,6 +110,7 @@ final class AppleVoiceEngine: VoiceEngine {
         session.onChange = { [weak self] change in self?.sessionChanged(change) }
         downloads = Downloads(events: sink, work: platform.downloads,
                               onDone: { [weak self] in self?.refreshCapabilities() })
+        theirPadder = BoardSilencePadder { [weak self] frames in self?.padTheirs(frames) ?? false }
     }
 
     // MARK: Events
@@ -194,8 +196,7 @@ final class AppleVoiceEngine: VoiceEngine {
     /// whether the controller wants the mic (a pair change takes it again). The recognizers themselves are
     /// replaced by `RecognizerPair.start` or stopped by `stop`.
     private func tearDown() {
-        theirPause?.cancel()
-        theirPause = nil
+        theirPadder.stop()
         releaseMic()
         speaker?.stop()
         speaker = nil
@@ -245,12 +246,12 @@ final class AppleVoiceEngine: VoiceEngine {
         try session.configureForConversation()
         mic?.stop()
         let sink = self.sink
+        // DictationTranscriber needs finalizeNow (input stops while the gate is closed). It comes at the gate's
+        // early point (VoiceGate.Config.finalizeAfter, 0.4 s of non-speech), not at its close (0.8 s).
         let fresh = platform.makeMic(format, voiceGate, { home.feed($0) },
                                      { sink.send(.gate(true)) },
-                                     {
-                                         home.finalizeNow()
-                                         sink.send(.gate(false))
-                                     })
+                                     { home.finalizeNow() },
+                                     { sink.send(.gate(false)) })
         try fresh.start()
         mic = fresh
         session.stopSilence()
@@ -275,13 +276,24 @@ final class AppleVoiceEngine: VoiceEngine {
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }
         Diag.count("esp.packets")
+        // Cancels a pending pad first: silence never lands between real packets out of order
+        theirPadder.audioArrived(seconds: Double(pcm.count) / Double(sampleRate))
         x.feed(converted)
-        // The board stops streaming in silence; once packets pause, finalize the phrase right away so it is
-        // translated and spoken without waiting for the next utterance
-        theirPause?.cancel()
-        let pause = DispatchWorkItem { [weak x] in x?.finalizeNow() }
-        theirPause = pause
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.theirPauseGap, execute: pause)
+    }
+
+    /// Feeds `frames` 20 ms buffers of digital silence, in their recognizer's format, to their recognizer (a
+    /// fresh buffer each, as the harness fed them); false once it is gone (padding stops; the next real packet
+    /// reports the death through `feedTheirAudio`)
+    private func padTheirs(_ frames: Int) -> Bool {
+        guard recognizers.theirsAlive, let x = theirRecognizer, let format = x.audioFormat else { return false }
+        Diag.count("esp.padFrames", frames)
+        for _ in 0..<frames {
+            guard let silence = EngineMapping.silence(seconds: theirPadder.config.frame, format: format) else {
+                return false
+            }
+            x.feed(silence)
+        }
+        return true
     }
 
     func setHints(_ hints: [String]) async throws {

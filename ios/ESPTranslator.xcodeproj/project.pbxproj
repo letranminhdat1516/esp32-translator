@@ -35,6 +35,7 @@
 		8D8DD48FA63E8955CD982577 /* SessionMachine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A11B6BF22488CF35326ACF /* SessionMachine.swift */; };
 		90CE569D6FB4F2E0750A72C5 /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77E63E61E081954788E29BE1 /* GlossaryView.swift */; };
 		91DE047C9A4301A298CE4136 /* board_glyphs in Resources */ = {isa = PBXBuildFile; fileRef = 5749C4DE7E75307DF032EE45 /* board_glyphs */; };
+		924D2E4C2A0C115772714DA3 /* BoardSilencePadder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D8E9D7D1445608C20C6101 /* BoardSilencePadder.swift */; };
 		957C6FF8C8080391541CDBDC /* Copy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDC91B52214BD7B194139A2 /* Copy.swift */; };
 		9A8934E28F548B0E488F7DFC /* ConversationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB582AC4013911623BCB7A9E /* ConversationController.swift */; };
 		9BA32CA9B8FF35E76CBF54B9 /* Capabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */; };
@@ -94,6 +95,7 @@
 		7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnAssembler.swift; sourceTree = "<group>"; };
 		7CA00F3F7391F50F6BE31A40 /* AppleVoiceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleVoiceEngine.swift; sourceTree = "<group>"; };
 		7DDC91B52214BD7B194139A2 /* Copy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Copy.swift; sourceTree = "<group>"; };
+		80D8E9D7D1445608C20C6101 /* BoardSilencePadder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardSilencePadder.swift; sourceTree = "<group>"; };
 		88ADE27FFC1D55D0B5F9E0DE /* ADPCMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADPCMDecoder.swift; sourceTree = "<group>"; };
 		8A5A1F0CCB648455F14ACFFC /* ReadinessView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadinessView.swift; sourceTree = "<group>"; };
 		8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Capabilities.swift; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@
 				010A311145740CD052FBDFF0 /* AppleVoiceEngine+Live.swift */,
 				5F197DB4657594D6482DB95D /* AudioSession.swift */,
 				2784B4C12E897950E30D015B /* AudioSources.swift */,
+				80D8E9D7D1445608C20C6101 /* BoardSilencePadder.swift */,
 				8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */,
 				C97CE2685BA5739EE0CE32F3 /* Downloads.swift */,
 				2D6F8ED68676431B024E4E24 /* EngineMapping.swift */,
@@ -331,6 +334,7 @@
 				FD9E804DBB06D6D6F857AF64 /* BoardLink.swift in Sources */,
 				5C39A3CE1256810DD946BCB3 /* BoardLinkLogic.swift in Sources */,
 				DD82C5F5395E496CA135AF2A /* BoardProtocol.swift in Sources */,
+				924D2E4C2A0C115772714DA3 /* BoardSilencePadder.swift in Sources */,
 				29C3A28D96C8063A314064A3 /* BoardText.swift in Sources */,
 				9BA32CA9B8FF35E76CBF54B9 /* Capabilities.swift in Sources */,
 				2F0A0DB2C1E5784446208304 /* ContentView.swift in Sources */,

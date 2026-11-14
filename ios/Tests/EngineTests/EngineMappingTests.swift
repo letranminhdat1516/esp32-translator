@@ -7,6 +7,21 @@ import XCTest
 final class EngineMappingTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000.5)
 
+    func testSilenceIsTwentyMillisecondsOfZerosInTheRecognizerFormat() throws {
+        for format in [AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!,
+                       AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!] {
+            let b = try XCTUnwrap(EngineMapping.silence(seconds: 0.02, format: format))
+            XCTAssertEqual(b.format, format)
+            XCTAssertEqual(b.frameLength, 320)
+            if let p = b.int16ChannelData?[0] {
+                XCTAssertTrue((0..<320).allSatisfy { p[$0] == 0 })
+            } else {
+                let p = try XCTUnwrap(b.floatChannelData?[0])
+                XCTAssertTrue((0..<320).allSatisfy { p[$0] == 0 })
+            }
+        }
+    }
+
     func testMinePartialEndsWhenItArrivesAndStartsItsAudioLengthEarlier() {
         let msg = EngineMapping.mine(.partial("xin chào", audio: 1.25), now: now)
         XCTAssertEqual(msg.kind, .partial)

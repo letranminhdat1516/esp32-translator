@@ -58,6 +58,17 @@ enum EngineMapping {
         return buffer
     }
 
+    /// `seconds` of digital silence in `format` (any sample format, every channel zeroed)
+    static func silence(seconds: TimeInterval, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let frames = AVAudioFrameCount((seconds * format.sampleRate).rounded())
+        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
+        buffer.frameLength = frames
+        for b in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+            if let data = b.mData { memset(data, 0, Int(b.mDataByteSize)) }
+        }
+        return buffer
+    }
+
     /// The highest-quality installed TTS voice for a language code or locale identifier, or nil
     static func bestVoice(_ language: String) -> AVSpeechSynthesisVoice? {
         let code = languageCode(Locale(identifier: language))
