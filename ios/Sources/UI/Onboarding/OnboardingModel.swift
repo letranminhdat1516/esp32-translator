@@ -106,7 +106,7 @@ struct PairDisplay: Hashable {
             self.name = name; self.battery = battery; found = true
         case let .confirming(name, battery):
             self.name = name; self.battery = battery; confirming = true
-        case let .legacyConsent(name):
+        case let .legacyConsent(name, _, _):
             self.name = name; legacy = true
         case let .paired(name):
             self.name = name; paired = true

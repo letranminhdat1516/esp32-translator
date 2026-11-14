@@ -138,6 +138,13 @@ enum PinSecurity: String, Hashable, Sendable {
     case legacy
 }
 
+/// The question "pin this old-firmware board?" for one link: the peripheral and the link generation it was asked on.
+/// The answer must carry both back; an answer for another peripheral or an earlier link is ignored.
+struct LegacyConsentRequest: Hashable, Sendable {
+    var id: UUID
+    var gen: Int
+}
+
 /// The pinned board: its CoreBluetooth identifier and how it was pinned
 struct PinnedBoard: Hashable, Sendable {
     var id: UUID
@@ -183,6 +190,8 @@ struct BoardPin {
     private(set) var pinned: PinnedBoard?
     /// The peripheral being connected or connected
     private var link: UUID?
+    /// Bumped on every connect, setup restart and link loss: a consent answer from an earlier link is stale
+    private(set) var generation = 0
     /// Board-info version on the current link (0: absent or unreadable)
     private var version = 0
     /// A protected characteristic was read on the current link
@@ -212,6 +221,7 @@ struct BoardPin {
 
     /// The translator setup starts over on the same link (services changed): everything proven so far is dropped
     mutating func setupRestarted() {
+        generation += 1
         version = 0
         proven = false
         consented = false
@@ -245,20 +255,38 @@ struct BoardPin {
         return .askConsent
     }
 
-    /// "Vẫn ghép": true when the link was waiting for it (the caller finishes the setup, which pins it as legacy)
-    mutating func acceptLegacy() -> Bool {
-        guard awaitingConsent, link != nil else { return false }
+    /// The pending question (`PairingLinkEvent.legacyBoard`); nil when nothing is asked
+    var consentRequest: LegacyConsentRequest? {
+        guard awaitingConsent, let link else { return nil }
+        return LegacyConsentRequest(id: link, gen: generation)
+    }
+
+    /// "Vẫn ghép" for the question `id`/`gen`: true when the current link is waiting for exactly that answer (the
+    /// caller finishes the setup, which pins it as legacy). A stale answer (another board, an earlier link) is
+    /// ignored and logged.
+    mutating func acceptLegacy(id: UUID, gen: Int) -> Bool {
+        guard answers(id: id, gen: gen, "Vẫn ghép") else { return false }
         awaitingConsent = false
         consented = true
         return true
     }
 
-    /// "Huỷ": the board to disconnect, ignored by `mayConnect` from now on; nil when nothing was asked
-    mutating func declineLegacy() -> UUID? {
-        guard awaitingConsent, let link else { return nil }
+    /// "Huỷ" for the question `id`/`gen`: the board to disconnect, ignored by `mayConnect` from now on; nil when
+    /// nothing was asked or the answer is stale (ignored and logged)
+    mutating func declineLegacy(id: UUID, gen: Int) -> UUID? {
+        guard answers(id: id, gen: gen, "Huỷ"), let link else { return nil }
         awaitingConsent = false
         declined.insert(link)
         return link
+    }
+
+    private func answers(id: UUID, gen: Int, _ what: String) -> Bool {
+        guard let asked = consentRequest else { return false }
+        guard asked == LegacyConsentRequest(id: id, gen: gen) else {
+            Diag.log("ble: stale \(what) ignored (asked \(asked.id) gen \(asked.gen), got \(id) gen \(gen))")
+            return false
+        }
+        return true
     }
 
     /// The user retries pairing: declined boards may be connected again

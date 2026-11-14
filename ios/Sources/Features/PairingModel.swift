@@ -15,8 +15,9 @@ enum PairingState: Hashable, Sendable {
     case found(name: String, battery: Int?)
     /// The protected read is out: compare the board's code with the iPhone dialog and confirm on both.
     case confirming(name: String, battery: Int?)
-    /// An old-firmware board that cannot authenticate: pin it only if the user says it is theirs.
-    case legacyConsent(name: String)
+    /// An old-firmware board that cannot authenticate: pin it only if the user says it is theirs. `id`/`gen` name the
+    /// peripheral and link the question was asked on; the answer goes back with them (`ESPLink.answerLegacyBoard`).
+    case legacyConsent(name: String, id: UUID, gen: Int)
     case paired(name: String)
     case failed(PairingFailure)
 }
@@ -49,8 +50,9 @@ enum PairingLinkEvent: Hashable, Sendable {
     /// The board is set up: paired (pinned secure), accepted by the user (pinned legacy), or the pinned board back.
     case authenticated
     case authFailed(PairingFailure)
-    /// The board cannot authenticate (old firmware): the link waits for `acceptLegacyBoard` / `declineLegacyBoard`.
-    case legacyBoard
+    /// The board cannot authenticate (old firmware): the link waits for the user's answer about peripheral `id` on
+    /// link generation `gen` (`ESPLink.answerLegacyBoard(id:gen:accept:)`).
+    case legacyBoard(id: UUID, gen: Int)
     /// The link dropped.
     case linkLost
     case bluetoothOff
@@ -93,9 +95,9 @@ struct PairingMachine: Hashable, Sendable {
             // by the link on its own
             if case .paired = state, reason != .unverified { return }
             state = .failed(reason)
-        case .legacyBoard:
+        case let .legacyBoard(id, gen):
             if case .failed = state { return }
-            state = .legacyConsent(name: name ?? Self.defaultName)
+            state = .legacyConsent(name: name ?? Self.defaultName, id: id, gen: gen)
         case .linkLost:
             switch state {
             case .confirming, .legacyConsent: state = .failed(.lost)
@@ -135,7 +137,7 @@ struct PairingMachine: Hashable, Sendable {
 
     /// "Vẫn ghép": the link finishes the setup and reports `authenticated`.
     mutating func acceptLegacy() {
-        guard case let .legacyConsent(n) = state else { return }
+        guard case let .legacyConsent(n, _, _) = state else { return }
         state = .found(name: n, battery: battery)
     }
 
@@ -182,7 +184,7 @@ final class FakePairingModel: PairingModeling {
     }
 
     func acceptLegacy() {
-        if case let .legacyConsent(n) = state { state = .paired(name: n) }
+        if case let .legacyConsent(n, _, _) = state { state = .paired(name: n) }
     }
 
     func declineLegacy() {
@@ -199,15 +201,16 @@ final class LinkPairingModel: PairingModeling {
 
     @ObservationIgnored private let retryLink: @MainActor () -> Bool
     @ObservationIgnored private let onStart: @MainActor () -> Void
-    @ObservationIgnored private let consent: @MainActor (Bool) -> Void
+    @ObservationIgnored private let consent: @MainActor (_ id: UUID, _ gen: Int, _ accept: Bool) -> Void
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private let timeout: TimeInterval
 
     /// `retryLink` asks the link to read again; true when it is connected (the read goes out at once). `onStart`
     /// runs when the Pair screen appears (the link creates its central if the Permissions step did not). `consent`
-    /// gives the link the user's answer about an old-firmware board (true: "Vẫn ghép").
+    /// gives the link the user's answer about an old-firmware board (true: "Vẫn ghép") with the peripheral and link
+    /// generation it was asked on, so the link drops an answer that arrives after a reconnect.
     init(retryLink: @escaping @MainActor () -> Bool, onStart: @escaping @MainActor () -> Void = {},
-         consent: @escaping @MainActor (Bool) -> Void = { _ in },
+         consent: @escaping @MainActor (_ id: UUID, _ gen: Int, _ accept: Bool) -> Void = { _, _, _ in },
          timeout: TimeInterval = PairingMachine.confirmTimeout) {
         self.retryLink = retryLink
         self.onStart = onStart
@@ -241,15 +244,15 @@ final class LinkPairingModel: PairingModeling {
     }
 
     func acceptLegacy() {
-        guard case .legacyConsent = machine.state else { return }
+        guard case let .legacyConsent(_, id, gen) = machine.state else { return }
         machine.acceptLegacy()
-        consent(true)
+        consent(id, gen, true)
     }
 
     func declineLegacy() {
-        guard case .legacyConsent = machine.state else { return }
+        guard case let .legacyConsent(_, id, gen) = machine.state else { return }
         machine.declineLegacy()
-        consent(false)
+        consent(id, gen, false)
     }
 
     private func armTimer() {

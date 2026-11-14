@@ -347,35 +347,78 @@ private final class FakeChar {}
         let step = pin.boardInfo(version: 1, hasControl: hasControl)
         if hasControl { #expect(pin.accessGranted() == .askConsent) } else { #expect(step == .askConsent) }
         #expect(pin.setupFinished() == nil)                       // waiting: nothing pinned
-        #expect(pin.acceptLegacy() == true)
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == true)
         #expect(!pin.awaitingConsent)
         #expect(pin.setupFinished() == legacy)
         #expect(pin.reconnect == .pinned(board))
-        #expect(pin.acceptLegacy() == false)                              // asked once
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == false)                              // asked once
     }
 
     @Test func consentIsOnlyTakenWhenAsked() {
         var pin = BoardPin(pinned: nil)
         pin.connecting(board)
         _ = pin.boardInfo(version: 2, hasControl: true)
-        #expect(pin.acceptLegacy() == false)                              // a secure board is never pinned as legacy
-        #expect(pin.declineLegacy() == nil)
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == false)                              // a secure board is never pinned as legacy
+        #expect(pin.declineLegacy(id: board, gen: pin.generation) == nil)
         _ = pin.accessGranted()
         #expect(pin.setupFinished() == secure)
     }
 
-    @Test func consentBelongsToItsLink() {
+    @Test func consentBelongsToItsLink() throws {
         var pin = BoardPin(pinned: nil)
         pin.connecting(board)
         _ = pin.boardInfo(version: 1, hasControl: false)
+        let asked = try #require(pin.consentRequest)
+        #expect(asked == LegacyConsentRequest(id: board, gen: pin.generation))
         pin.linkGone()
-        #expect(pin.acceptLegacy() == false)
+        #expect(pin.consentRequest == nil)
+        #expect(pin.acceptLegacy(id: asked.id, gen: asked.gen) == false)
         pin.connecting(board)
         _ = pin.boardInfo(version: 1, hasControl: false)
-        #expect(pin.acceptLegacy() == true)
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == true)
         pin.linkGone()
         pin.connecting(board)
         #expect(pin.setupFinished() == nil)                       // the consent did not carry over
+    }
+
+    /// The warning was answered late: the link dropped and reconnected (to another board, or to the same one) and
+    /// that link asks again. An answer carrying the old link's identifier or generation is ignored.
+    @Test func aStaleConsentAfterAReconnectIsIgnored() throws {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        let first = try #require(pin.consentRequest)
+        pin.linkGone()
+        pin.connecting(stranger)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        let second = try #require(pin.consentRequest)
+        #expect(second.id == stranger && second.gen != first.gen)
+        #expect(pin.acceptLegacy(id: first.id, gen: first.gen) == false, "the first board's answer")
+        #expect(pin.declineLegacy(id: first.id, gen: first.gen) == nil)
+        #expect(pin.acceptLegacy(id: stranger, gen: first.gen) == false, "the right board, an old generation")
+        #expect(pin.awaitingConsent, "still waiting for this link's own answer")
+        #expect(pin.setupFinished() == nil)
+        #expect(pin.mayConnect(board), "a stale Huỷ declines nothing")
+
+        // The same board reconnected: an answer from before the reconnect is ignored too
+        pin.linkGone()
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        let third = try #require(pin.consentRequest)
+        #expect(pin.acceptLegacy(id: board, gen: first.gen) == false)
+        #expect(pin.acceptLegacy(id: third.id, gen: third.gen) == true)
+        #expect(pin.setupFinished() == legacy)
+    }
+
+    @Test func aServicesResetOnTheSameLinkVoidsTheQuestion() throws {
+        var pin = BoardPin(pinned: nil)
+        pin.connecting(board)
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        let asked = try #require(pin.consentRequest)
+        pin.setupRestarted()
+        _ = pin.boardInfo(version: 1, hasControl: false)
+        #expect(pin.acceptLegacy(id: asked.id, gen: asked.gen) == false)
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == true)
     }
 
     @Test func huyIgnoresThatBoardUntilARetry() {
@@ -383,7 +426,7 @@ private final class FakeChar {}
         pin.connecting(board)
         _ = pin.boardInfo(version: 1, hasControl: true)
         _ = pin.accessGranted()
-        #expect(pin.declineLegacy() == board)
+        #expect(pin.declineLegacy(id: board, gen: pin.generation) == board)
         #expect(pin.setupFinished() == nil)
         #expect(pin.pinned == nil)
         pin.linkGone()
@@ -394,7 +437,7 @@ private final class FakeChar {}
         // forget clears it too
         pin.connecting(board)
         _ = pin.boardInfo(version: 1, hasControl: false)
-        _ = pin.declineLegacy()
+        _ = pin.declineLegacy(id: board, gen: pin.generation)
         pin.forget()
         #expect(pin.mayConnect(board))
     }
@@ -419,7 +462,7 @@ private final class FakeChar {}
         var pin = BoardPin(pinned: secure)
         pin.connecting(board)
         _ = pin.boardInfo(version: 0, hasControl: false)
-        #expect(pin.acceptLegacy() == false)                              // no consent asked, none taken
+        #expect(pin.acceptLegacy(id: board, gen: pin.generation) == false)                              // no consent asked, none taken
         #expect(pin.setupFinished() == nil)
         #expect(pin.pinned == secure)
     }

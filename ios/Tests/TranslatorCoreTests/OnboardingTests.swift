@@ -4,6 +4,7 @@ import Testing
 
 /// Pairing by code (ARCHITECTURE §4): the state machine behind the Pair screen.
 @Suite struct PairingMachineTests {
+    private static let boardID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
     private func connected() -> PairingMachine {
         var m = PairingMachine()
         m.start()
@@ -29,10 +30,10 @@ import Testing
     @Test func oldFirmwareAsksForConsent() {
         var m = connected()
         m.handle(.authenticating)
-        m.handle(.legacyBoard)
-        #expect(m.state == .legacyConsent(name: "ESP-Translator"))
+        m.handle(.legacyBoard(id: Self.boardID, gen: 1))
+        #expect(m.state == .legacyConsent(name: "ESP-Translator", id: Self.boardID, gen: 1))
         m.timedOut()                                              // no confirm timer on the warning
-        #expect(m.state == .legacyConsent(name: "ESP-Translator"))
+        #expect(m.state == .legacyConsent(name: "ESP-Translator", id: Self.boardID, gen: 1))
         m.acceptLegacy()
         #expect(m.state == .found(name: "ESP-Translator", battery: nil))
         m.handle(.authenticated)
@@ -41,7 +42,7 @@ import Testing
 
     @Test func huyOnTheOldFirmwareWarningFailsAndRetryLooksAgain() {
         var m = connected()
-        m.handle(.legacyBoard)                                    // no control characteristic: no read at all
+        m.handle(.legacyBoard(id: Self.boardID, gen: 1))     // no control characteristic: no read at all
         m.declineLegacy()
         #expect(m.state == .failed(.declined))
         m.handle(.linkLost)
@@ -57,11 +58,11 @@ import Testing
 
     @Test func linkLostOnTheOldFirmwareWarningFails() {
         var m = connected()
-        m.handle(.legacyBoard)
+        m.handle(.legacyBoard(id: Self.boardID, gen: 1))
         m.handle(.linkLost)
         #expect(m.state == .failed(.lost))
         var n = connected()
-        n.handle(.legacyBoard)
+        n.handle(.legacyBoard(id: Self.boardID, gen: 1))
         n.handle(.scanning)
         #expect(n.state == .failed(.lost))
     }
@@ -73,7 +74,7 @@ import Testing
         #expect(m.state == .failed(.unverified))
         m.handle(.scanning)
         m.handle(.connected(name: "X"))
-        m.handle(.legacyBoard)
+        m.handle(.legacyBoard(id: Self.boardID, gen: 1))
         #expect(m.state == .failed(.unverified))
         // The board later proves itself again
         m.handle(.authenticated)
@@ -155,19 +156,19 @@ import Testing
         #expect(PairDisplay(.failed(.timeout)).bodyKey == "pair.bodyTimeout")
         #expect(PairDisplay(.failed(.rejected)).failed)
         #expect(PairDisplay(.paired(name: "A")).kickerKey == "pair.kickerPaired")
-        #expect(PairDisplay(.legacyConsent(name: "A")).legacy)
-        #expect(PairDisplay(.legacyConsent(name: "A")).bodyKey == "pair.bodyLegacy")
-        #expect(PairDisplay(.legacyConsent(name: "A")).name == "A")
+        #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).legacy)
+        #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).bodyKey == "pair.bodyLegacy")
+        #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).name == "A")
         #expect(PairDisplay(.failed(.unverified)).bodyKey == "pair.bodyUnverified")
         #expect(PairDisplay(.failed(.declined)).bodyKey == "pair.bodyDeclined")
         #expect(PairDisplay(.confirming(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
         #expect(PairDisplay(.found(name: "A", battery: nil)).dialogHintKey == "pair.dialogRequired")
-        #expect(PairDisplay(.legacyConsent(name: "A")).dialogHintKey == nil)
+        #expect(PairDisplay(.legacyConsent(name: "A", id: UUID(), gen: 0)).dialogHintKey == nil)
         #expect(PairDisplay(.paired(name: "A")).dialogHintKey == nil)
         for state: PairingState in [.idle, .scanning, .found(name: "A", battery: nil), .confirming(name: "A", battery: nil),
                                     .paired(name: "A"), .failed(.rejected), .failed(.timeout), .failed(.lost),
                                     .failed(.bluetoothOff), .failed(.declined), .failed(.unverified),
-                                    .legacyConsent(name: "A")] {
+                                    .legacyConsent(name: "A", id: UUID(), gen: 0)] {
             let d = PairDisplay(state)
             for key in [d.kickerKey, d.dialKey, d.noteKey, d.bodyKey] + [d.dialogHintKey].compactMap({ $0 }) {
                 #expect(Copy.t(key) != key, "\(key)")
@@ -192,26 +193,48 @@ import Testing
         #expect(m.state == .paired(name: "B"))   // the timer was cancelled
     }
 
+    private struct Answer: Equatable { var id: UUID; var gen: Int; var accept: Bool }
+    private static let b = UUID(uuidString: "00000000-0000-0000-0000-0000000000B1")!
+    private static let c = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
+
+    /// The answer carries the peripheral and link generation the question was asked on
     @Test func theOldFirmwareAnswerGoesToTheLink() {
-        var answers: [Bool] = []
-        let m = LinkPairingModel(retryLink: { false }, consent: { answers.append($0) })
+        var answers: [Answer] = []
+        let m = LinkPairingModel(retryLink: { false }, consent: { answers.append(Answer(id: $0, gen: $1, accept: $2)) })
         m.start()
         m.acceptLegacy()                                          // not asked: nothing sent
         #expect(answers.isEmpty)
         m.handle(.connected(name: "B"))
-        m.handle(.legacyBoard)
-        #expect(m.state == .legacyConsent(name: "B"))
+        m.handle(.legacyBoard(id: Self.b, gen: 3))
+        #expect(m.state == .legacyConsent(name: "B", id: Self.b, gen: 3))
         m.acceptLegacy()
-        #expect(answers == [true])
+        #expect(answers == [Answer(id: Self.b, gen: 3, accept: true)])
         m.handle(.authenticated)
         #expect(m.state == .paired(name: "B"))
         m.reset()
         m.start()
         m.handle(.connected(name: "C"))
-        m.handle(.legacyBoard)
+        m.handle(.legacyBoard(id: Self.c, gen: 7))
         m.declineLegacy()
-        #expect(answers == [true, false])
+        #expect(answers == [Answer(id: Self.b, gen: 3, accept: true), Answer(id: Self.c, gen: 7, accept: false)])
         #expect(m.state == .failed(.declined))
+    }
+
+    /// The link dropped while the warning was up and a new link asks again: the answer names the new question
+    @Test func aReaskReplacesTheQuestion() {
+        var answers: [Answer] = []
+        let m = LinkPairingModel(retryLink: { false }, consent: { answers.append(Answer(id: $0, gen: $1, accept: $2)) })
+        m.start()
+        m.handle(.connected(name: "B"))
+        m.handle(.legacyBoard(id: Self.b, gen: 1))
+        m.handle(.linkLost)                                       // the warning fails: no answer for gen 1 is sent
+        m.acceptLegacy()
+        #expect(answers.isEmpty)
+        m.retry()
+        m.handle(.connected(name: "C"))
+        m.handle(.legacyBoard(id: Self.c, gen: 4))
+        m.acceptLegacy()
+        #expect(answers == [Answer(id: Self.c, gen: 4, accept: true)])
     }
 
     @Test func startActivatesTheLinkAndResetStartsOver() {
