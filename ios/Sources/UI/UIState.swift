@@ -255,9 +255,24 @@ final class UIState {
     var glossaryAdd: (String) throws -> Void = { _ in }
     var glossaryUpdate: (String, String) throws -> Void = { _, _ in }
     var glossaryDelete: (String) throws -> Void = { _ in }
+    /// Track C: add a term with a fixed translation for the current language (empty: kept as is). nil: the glossary
+    /// takes no fixed translations and `glossaryAdd` is used.
+    var glossaryAddFixed: ((String, String) throws -> Void)?
     /// Settings switches (persisted by track C).
     var setSaveHistory: (Bool) -> Void = { _ in }
     var setShareToImprove: (Bool) -> Void = { _ in }
+
+    // MARK: Track C: "Báo dịch sai" (bound by DataCoordinator)
+
+    /// "Báo dịch sai" on a transcript line (the Live screen calls it). Opens the report sheet (`feedbackDraft`).
+    var reportWrong: (UILine) -> Void = { _ in }
+    /// The report waiting in the sheet; nil when none.
+    var feedbackDraft: FeedbackDraft?
+    /// The sheet's "Bật chia sẻ" (sharing was off).
+    var enableSharingForFeedback: () -> Void = {}
+    /// The sheet's send, with the corrected text (may be empty).
+    var submitFeedback: (String) -> Void = { _ in }
+    var cancelFeedback: () -> Void = {}
 
     init() {}
 

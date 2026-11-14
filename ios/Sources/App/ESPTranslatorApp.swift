@@ -15,6 +15,9 @@ struct ESPTranslatorApp: App {
     /// Live Activity (track D): screen model → activity, and the board-forgotten end.
     private let activityDriver: LiveActivityDriver
     private let activityObserver: LiveActivityObserver?
+    /// Track C: persisted switches, "Báo dịch sai", the history mirror
+    private let data: DataCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let ui = UIState()
@@ -26,10 +29,15 @@ struct ESPTranslatorApp: App {
         // The board link; its central is created once Bluetooth was answered (the Permissions screen asks)
         let boardLink = ESPLink(startCentral: false)
         let pairing = LinkPairingModel(retryLink: { boardLink.retryPairing() }, onStart: { boardLink.activate() })
-        // Demo mode shows the canvas' version label
-        let services = demo == nil ? AppServices(liveActivity: liveActivity, pairing: pairing)
-                                   : AppServices(liveActivity: liveActivity, appVersion: "0.9")
+        // Demo mode shows the canvas' version label and keeps the canvas data in memory
+        let services = demo == nil ? Self.liveServices(liveActivity: liveActivity, pairing: pairing)
+            : AppServices(history: InMemoryHistoryStore(DemoData.history),
+                          feedback: InMemoryFeedbackQueue(DemoData.feedback),
+                          liveActivity: liveActivity, appVersion: "0.9")
         self.demo = demo
+        let data = DataCoordinator(ui: ui, services: services, defaults: demo == nil ? .standard : nil)
+        data.bind(observeHistory: demo == nil)
+        self.data = data
         if let demo {
             // "Cho phép" grants at once in demo mode
             services.permissionActions = PermissionActions(request: { [weak services] kind in
@@ -97,6 +105,28 @@ struct ESPTranslatorApp: App {
         }
         _ui = State(initialValue: ui)
         _services = State(initialValue: services)
+        if demo == nil {
+            // Track C: both clip rings (memory only; a clip is kept only for a line the user flags)
+            let recorder = services.recorder
+            MicPCMTap.connect(recorder, side: .mine)
+            controller.onTheirPCM = { pcm, rate in recorder.append(pcm, sampleRate: rate, side: .theirs) }
+        }
+    }
+
+    /// Track C: the file-backed history and feedback queue (Application Support, excluded from backup) and the clip
+    /// recorder; in-memory stand-ins when Application Support is unavailable.
+    private static func liveServices(liveActivity: (any LiveActivityControlling)?,
+                                     pairing: any PairingModeling) -> AppServices {
+        var history: any HistoryStoring = InMemoryHistoryStore()
+        var feedback: any FeedbackQueueing = InMemoryFeedbackQueue()
+        do {
+            history = FileHistoryStore(directory: try FileHistoryStore.defaultDirectory())
+            feedback = FileFeedbackQueue(directory: try FileFeedbackQueue.defaultDirectory())
+        } catch {
+            Diag.log("data: no Application Support directory: \(error)")
+        }
+        return AppServices(history: history, feedback: feedback, recorder: RingAudioClipRecorder(),
+                           liveActivity: liveActivity, pairing: pairing)
     }
 
     var body: some Scene {
@@ -111,6 +141,10 @@ struct ESPTranslatorApp: App {
             // a finished onboarding
             .task(id: router.onboardingDone || router.onboardingStep == .language) {
                 if demo == nil, router.onboardingDone || router.onboardingStep == .language { await controller.start() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // Track C: pending history is written when the app leaves the foreground
+                if phase != .active { Task { await services.history.flush() } }
             }
         }
     }

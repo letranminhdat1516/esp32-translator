@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 3.2 Cài đặt: board and language tiles, switches, links to the glossary, sharing and voice, "Quên board này".
-/// Track C persists the switches.
+/// The switches are persisted by `DataCoordinator`; the board tile reads the battery the link reports.
 struct SettingsView: View {
     let ui: UIState
     let router: AppRouter
@@ -36,9 +36,10 @@ struct SettingsView: View {
                             value: Copy.t("glossary.count", ["count": String(ui.glossaryTerms.count)])) {
                         router.push(.glossary)
                     }
-                    linkRow(Copy.t("settings.voice"), value: ui.voiceName ?? "–", action: ui.openTtsSettings)
+                    linkRow(Copy.t("settings.voice"), value: ui.voiceName ?? Copy.t("settings.voiceDefault"),
+                            action: ui.openTtsSettings)
                     linkRow(Copy.t("settings.openSource"), value: Copy.t("settings.github"), mono: false) {
-                        if let url = URL(string: "https://github.com/") { openURL(url) }
+                        openURL(Self.sourceURL)
                     }
                 }
             }
@@ -50,6 +51,8 @@ struct SettingsView: View {
     }
 
     @Environment(\.openURL) private var openURL
+
+    static let sourceURL = URL(string: "https://github.com/letranminhdat1516/esp32-translator")!
 
     /// Installed languages, Vietnamese included ("Đã tải 2 ngôn ngữ" with English ready).
     private var installedCount: Int {
