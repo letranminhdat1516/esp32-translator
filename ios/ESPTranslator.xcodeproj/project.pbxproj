@@ -94,10 +94,12 @@
 		B078770B47E992D1BF70F0AD /* HistoryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7849F9C82F919734C1299757 /* HistoryDetailView.swift */; };
 		B082A93F1E53734042E3B901 /* JetBrainsMono.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4AB9BD37D30C217E578928C5 /* JetBrainsMono.ttf */; };
 		B0D403A27FCDE3DBDB913258 /* TextPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDA6DB65733535938AD2B0E /* TextPipeline.swift */; };
+		B66BF82165902F581357BA06 /* CrossTalkGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C666A07761815BB4DCD8ABA8 /* CrossTalkGuard.swift */; };
 		B792FEA0D15ED5E41422BFE0 /* ProgressRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A811DC47CEA7224087F49B1C /* ProgressRule.swift */; };
 		B7EA61BFB27D3EDDD958D942 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EEF4D92048D8C60ACAB843F /* RootView.swift */; };
 		B822E2794A5E5177939B83EF /* VoiceEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22F135961F8511A66D39EAD6 /* VoiceEngine.swift */; };
 		BECE5FA500C02BE5ED42A8EC /* TurnAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B86BF6AF8504E753A3FF252 /* TurnAssembler.swift */; };
+		C14D751E665811DBD3A67358 /* CrossTalkArbiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A05B9A89E78A08F043186226 /* CrossTalkArbiter.swift */; };
 		C6FB03F1289E635B883C4A0D /* VoiceGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F4FEA984A985E2E869CEC20 /* VoiceGate.swift */; };
 		CBFE776C31A29BE1B5FF3CD7 /* TranslatorIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE9129FCAB3350EC8C46E30 /* TranslatorIntents.swift */; };
 		D63B234934C6822039099BFF /* BoardDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ACF0036B5AFF03ABF7F19EC /* BoardDial.swift */; };
@@ -230,6 +232,7 @@
 		9CDC138628E302CED4D5C192 /* FakeBoardLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeBoardLink.swift; sourceTree = "<group>"; };
 		9E4A0D140D7B03B2B646B2A3 /* SectionHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionHeader.swift; sourceTree = "<group>"; };
 		A02EFA273F80C7EACB5C276F /* ESPTranslatorWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPTranslatorWidgets.swift; sourceTree = "<group>"; };
+		A05B9A89E78A08F043186226 /* CrossTalkArbiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossTalkArbiter.swift; sourceTree = "<group>"; };
 		A1746279919516ABC5EF3518 /* Translator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Translator.swift; sourceTree = "<group>"; };
 		A236D855941642E1FFBE824D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A6CACC952B345A7F7DDD1115 /* UISamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UISamples.swift; sourceTree = "<group>"; };
@@ -242,6 +245,7 @@
 		BAC1E69067916FDF04269240 /* Tile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tile.swift; sourceTree = "<group>"; };
 		BD1DA4BEC6969DB76946CDF2 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		C1F1AEB7A674F3D779F90BA6 /* LivePermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePermissions.swift; sourceTree = "<group>"; };
+		C666A07761815BB4DCD8ABA8 /* CrossTalkGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossTalkGuard.swift; sourceTree = "<group>"; };
 		C89F482D5A1CDFB1A8ADD320 /* ESPLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESPLink.swift; sourceTree = "<group>"; };
 		C97CE2685BA5739EE0CE32F3 /* Downloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Downloads.swift; sourceTree = "<group>"; };
 		CCE663DBD016E3693CB14BD7 /* DemoMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoMode.swift; sourceTree = "<group>"; };
@@ -382,6 +386,8 @@
 				2784B4C12E897950E30D015B /* AudioSources.swift */,
 				80D8E9D7D1445608C20C6101 /* BoardSilencePadder.swift */,
 				8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */,
+				A05B9A89E78A08F043186226 /* CrossTalkArbiter.swift */,
+				C666A07761815BB4DCD8ABA8 /* CrossTalkGuard.swift */,
 				C97CE2685BA5739EE0CE32F3 /* Downloads.swift */,
 				2D6F8ED68676431B024E4E24 /* EngineMapping.swift */,
 				1ECB44B15C94E8BE9A210B15 /* InputRouting.swift */,
@@ -732,6 +738,8 @@
 				1D5105016B834931A5A0B3F3 /* ConversationActivity.swift in Sources */,
 				9A8934E28F548B0E488F7DFC /* ConversationController.swift in Sources */,
 				957C6FF8C8080391541CDBDC /* Copy.swift in Sources */,
+				C14D751E665811DBD3A67358 /* CrossTalkArbiter.swift in Sources */,
+				B66BF82165902F581357BA06 /* CrossTalkGuard.swift in Sources */,
 				144BC21924246F9F9BC3B79D /* DataFeatures.swift in Sources */,
 				E296D2EC1D13417D63BC2D1A /* DataProtection.swift in Sources */,
 				1545F8871669F10F5FDDC408 /* DemoData.swift in Sources */,
