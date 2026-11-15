@@ -112,4 +112,73 @@ final class Results {
         await st.idle()
         #expect(results.byTurn[1] == nil || results.byTurn[1] == "")
     }
+
+    // MARK: Refine step
+
+    @Test func refinedFinalReplacesItsDraft() async throws {
+        let fake = FakeTranslator()
+        let results = Results()
+        var history: [String] = []
+        let st = SubtitleTranslator(translate: { try await fake.translate($0) },
+                                    refine: { source, draft in source == "hai" ? "Two (refined)" : nil }) {
+            results.byTurn[$0] = $1
+            history.append($1)
+        }
+        st.addFinal("một", turn: 1)
+        st.addFinal("hai", turn: 1)
+        await st.idle()
+        #expect(results.byTurn[1] == "MỘT Two (refined)")
+        // The draft was shown first
+        #expect(history.contains("MỘT HAI"))
+    }
+
+    @Test func slowRefineDoesNotHoldTheNextPhrase() async throws {
+        let fake = FakeTranslator()
+        let results = Results()
+        let gate = AsyncGate()
+        let st = SubtitleTranslator(translate: { try await fake.translate($0) },
+                                    refine: { _, draft in await gate.wait(); return draft + "!" }) {
+            results.byTurn[$0] = $1
+        }
+        st.addFinal("một", turn: 1)
+        st.addFinal("hai", turn: 1)
+        // Both drafts arrive while the first refine is still waiting
+        for _ in 0..<200 where results.byTurn[1] != "MỘT HAI" { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(results.byTurn[1] == "MỘT HAI")
+        await gate.open()
+        await st.idle()
+        #expect(results.byTurn[1] == "MỘT! HAI!")
+    }
+
+    @Test func refineAfterResetIsDropped() async throws {
+        let fake = FakeTranslator()
+        let results = Results()
+        let gate = AsyncGate()
+        let st = SubtitleTranslator(translate: { try await fake.translate($0) },
+                                    refine: { _, _ in await gate.wait(); return "late" }) { results.byTurn[$0] = $1 }
+        st.addFinal("một", turn: 1)
+        for _ in 0..<200 where results.byTurn[1] != "MỘT" { try await Task.sleep(for: .milliseconds(5)) }
+        st.reset()
+        results.byTurn[1] = nil
+        await gate.open()
+        await st.idle()
+        #expect(results.byTurn[1] == nil)
+    }
+}
+
+/// Holds callers until `open()`.
+actor AsyncGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
 }
