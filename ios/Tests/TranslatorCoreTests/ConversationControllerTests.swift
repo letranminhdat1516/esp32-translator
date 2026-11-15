@@ -594,6 +594,19 @@ struct ConversationControllerTests {
         rig.controller.shutdown()
     }
 
+    @Test func boardBatteryShowsUntilTheBoardIsLost() async throws {
+        let rig = try await Rig()
+        #expect(await rig.startRunning())
+        rig.board.emitState(.ready)
+        #expect(await eventually { rig.ui.board == .ready })
+        rig.board.emitControl(.battery(BoardBattery(percent: 64, present: true, charging: true, usbPower: true)))
+        #expect(await eventually { rig.ui.boardBattery == 64 && rig.ui.boardCharging })
+        rig.board.emitState(.scanning)
+        #expect(await eventually { rig.ui.boardLostBattery == 64 })
+        #expect(rig.ui.boardBattery == nil, "a stale battery is not shown for a board that is gone")
+        rig.controller.shutdown()
+    }
+
     @Test func headsetLostShowsThePhoneMicChip() async throws {
         let rig = try await Rig()
         #expect(await rig.startRunning())

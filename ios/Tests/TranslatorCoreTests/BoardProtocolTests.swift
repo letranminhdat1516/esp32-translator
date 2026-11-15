@@ -99,3 +99,24 @@ private let fixture = Fixtures.load("protocol")
         #expect(i == BoardInfo(protocolVersion: 1, fontSets: .cjk))
     }
 }
+
+/// Battery characteristic …0006 (firmware/main/battery_info.h): [percent, 0xFF unknown][flags present 1, charging 2, usb 4]
+struct BoardBatteryParseTests {
+    @Test func percentAndFlags() throws {
+        let b = try #require(BoardProtocol.parseBattery(Data([82, 0x07])))
+        #expect(b == BoardBattery(percent: 82, present: true, charging: true, usbPower: true))
+    }
+
+    @Test func unknownPercentIsNil() throws {
+        let b = try #require(BoardProtocol.parseBattery(Data([0xFF, 0x04])))
+        #expect(b == BoardBattery(percent: nil, present: false, charging: false, usbPower: true))
+    }
+
+    @Test func outOfRangePercentIsNil() throws {
+        #expect(try #require(BoardProtocol.parseBattery(Data([150, 0x01]))).percent == nil)
+    }
+
+    @Test func shortValueIsRejected() {
+        #expect(BoardProtocol.parseBattery(Data([50])) == nil)
+    }
+}

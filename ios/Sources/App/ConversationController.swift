@@ -1011,14 +1011,16 @@ final class ConversationController {
     private func handleBoardState(_ state: BoardState) {
         let old = ui.board
         ui.board = state
-        // The lost screen: when the board was last connected and its battery then. The firmware does not report
-        // its battery over BLE yet, so `boardBattery` (and with it `boardLostBattery`) stays nil and nothing is shown.
+        // The lost screen: when the board was last connected and its battery then (…0006; nil on older firmware).
+        // A board that is gone shows no live battery.
         if state == .ready {
             ui.boardLostAt = nil
             ui.boardLostBattery = nil
         } else if old == .ready {
             ui.boardLostAt = now()
             ui.boardLostBattery = ui.boardBattery
+            ui.boardBattery = nil
+            ui.boardCharging = false
         }
     }
 
@@ -1028,6 +1030,9 @@ final class ConversationController {
             // A tap on the board mic (off → on) starts a conversation
             if on && !ui.boardMicOn { note(.userStart) }
             ui.boardMicOn = on
+        case .battery(let battery):
+            ui.boardBattery = battery.percent
+            ui.boardCharging = battery.charging
         }
     }
 

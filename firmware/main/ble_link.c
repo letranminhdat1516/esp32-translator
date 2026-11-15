@@ -47,6 +47,7 @@ void ble_store_config_init(void);
 #include "clock.h"
 #include "phone_idle.h"
 #include "pairing.h"
+#include "battery_info.h"
 
 static const char *TAG = "ble";
 
@@ -58,6 +59,7 @@ static const ble_uuid128_t s_audio_uuid = SVC_UUID(0x02);
 static const ble_uuid128_t s_text_uuid = SVC_UUID(0x03);
 static const ble_uuid128_t s_ctrl_uuid = SVC_UUID(0x04);
 static const ble_uuid128_t s_info_uuid = SVC_UUID(0x05);   /* read: [BOARD_INFO_VERSION][font_sets u32 LE] */
+static const ble_uuid128_t s_batt_uuid = SVC_UUID(0x06);   /* read + notify: battery_info.h */
 
 #define TEXT_FLAG_FIRST 0x01
 #define TEXT_FLAG_LAST  0x02
@@ -71,6 +73,9 @@ static uint16_t s_audio_handle;
 static uint16_t s_text_handle;
 static uint16_t s_ctrl_handle;
 static uint16_t s_info_handle;
+static uint16_t s_batt_handle;
+/* The last battery value the app read (battery_info.h); 0xFF 0xFF = never */
+static uint8_t s_batt_last[2] = { 0xFF, 0xFF };
 
 /* The iPhone link that holds the translator audio role */
 static volatile uint16_t s_phone_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -312,6 +317,17 @@ static void handle_text_write(const uint8_t *data, uint16_t len)
     }
 }
 
+/* The battery now, encoded as battery_info.h */
+static void battery_now(uint8_t out[2])
+{
+    pmu_battery_t b = { 0 };
+    if (pmu_battery(&b)) {
+        battery_info_encode(b.present, b.percent, b.charging, b.usb_power, out);
+    } else {
+        battery_info_encode(false, -1, false, false, out);
+    }
+}
+
 static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
                       struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -326,8 +342,16 @@ static int chr_access(uint16_t conn_handle, uint16_t attr_handle,
     }
     /* NimBLE enforces the ENC / AUTHEN flags before this runs; checked again so nothing slips through */
     if ((attr_handle == s_ctrl_handle && !link_allows(conn_handle, PAIR_CHR_CTRL)) ||
+        (attr_handle == s_batt_handle && !link_allows(conn_handle, PAIR_CHR_CTRL)) ||
         (attr_handle == s_text_handle && !link_allows(conn_handle, PAIR_CHR_TEXT))) {
         return BLE_ATT_ERR_INSUFFICIENT_AUTHEN;
+    }
+    if (attr_handle == s_batt_handle && ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
+        uint8_t value[2];
+        battery_now(value);
+        s_batt_last[0] = value[0];
+        s_batt_last[1] = value[1];
+        return os_mbuf_append(ctxt->om, value, sizeof(value)) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
     }
     if (attr_handle == s_ctrl_handle) {
         if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
@@ -387,6 +411,14 @@ static const struct ble_gatt_svc_def s_services[] = {
                          BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC |
                          BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN,
                 .val_handle = &s_ctrl_handle,
+            },
+            {
+                .uuid = &s_batt_uuid.u,
+                .access_cb = chr_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_READ_AUTHEN |
+                         BLE_GATT_CHR_F_NOTIFY | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC |
+                         BLE_GATT_CHR_F_NOTIFY_INDICATE_AUTHEN,
+                .val_handle = &s_batt_handle,
             },
             {
                 .uuid = &s_info_uuid.u,
@@ -884,6 +916,19 @@ bool ble_link_send_audio(const uint8_t *data, uint16_t len)
         vTaskDelay(pdMS_TO_TICKS(2));
     }
     return false;
+}
+
+void ble_link_notify_battery(void)
+{
+    uint8_t now[2];
+    battery_now(now);
+    if (now[0] == s_batt_last[0] && now[1] == s_batt_last[1]) {
+        return;
+    }
+    /* A subscriber reads the new value back through chr_access, which records it as the last one */
+    if (s_phone_conn != BLE_HS_CONN_HANDLE_NONE) {
+        ble_gatts_chr_updated(s_batt_handle);
+    }
 }
 
 void ble_link_notify_control(uint8_t state)

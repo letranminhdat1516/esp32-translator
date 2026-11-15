@@ -16,6 +16,7 @@
 static const char *TAG = "pmu";
 
 #define AXP2101_ADDR 0x34
+#define BATTERY_NOTIFY_MS 30000   /* how often the app's battery value is checked for a change */
 
 #define REG_STATUS1        0x00   /* bit5 VBUS good, bit3 battery present */
 #define REG_STATUS2        0x01   /* bits[6:5] 01 = charging */
@@ -93,9 +94,15 @@ static void pmu_task(void *arg)
 {
     static const modes_event_t PRESSES[] = { MODES_EV_PWR_1, MODES_EV_PWR_2, MODES_EV_PWR_3 };
     modes_clicks_t clicks = { 0 };
+    uint32_t last_battery_ms = 0;
 
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+        uint32_t now_ms = (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount());
+        if (now_ms - last_battery_ms >= BATTERY_NOTIFY_MS) {
+            last_battery_ms = now_ms;
+            ble_link_notify_battery();
+        }
         bool pressed = false, released = false;
         uint8_t irq = 0;
         if (reg_read(REG_IRQ_STATUS2, &irq) == ESP_OK && irq) {

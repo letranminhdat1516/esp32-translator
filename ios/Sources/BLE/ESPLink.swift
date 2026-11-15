@@ -33,6 +33,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     static let textChar = CBUUID(string: BoardProtocol.textUUID)
     static let controlChar = CBUUID(string: BoardProtocol.controlUUID)
     static let infoChar = CBUUID(string: BoardProtocol.infoUUID)
+    static let batteryChar = CBUUID(string: BoardProtocol.batteryUUID)
 
     /// Called on the BLE queue for every audio packet
     var onAudioPacket: (@Sendable (Data) -> Void)?
@@ -67,6 +68,8 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
     private var controlCharacteristic: CBCharacteristic?
     /// The board-info characteristic while its value is being read during setup
     private var infoCharacteristic: CBCharacteristic?
+    /// Battery …0006 (absent on older firmware): subscribed and read once the link is authenticated
+    private var batteryCharacteristic: CBCharacteristic?
     private var audioCharacteristic: CBCharacteristic?
     /// The board info read during setup, kept until the protected read succeeded
     private var pendingInfo: Data?
@@ -258,6 +261,7 @@ final class ESPLink: NSObject, BoardLink, @unchecked Sendable {
         textCharacteristic = nil
         controlCharacteristic = nil
         infoCharacteristic = nil
+        batteryCharacteristic = nil
         audioCharacteristic = nil
         pendingInfo = nil
         authReading = false
@@ -416,7 +420,8 @@ extension ESPLink: CBPeripheralDelegate {
         guard peripheral === self.peripheral else { return }
         for s in peripheral.services ?? [] where s.uuid == Self.service {
             setup.begin(s)
-            peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar], for: s)
+            peripheral.discoverCharacteristics([Self.audioChar, Self.textChar, Self.controlChar, Self.infoChar,
+                                                Self.batteryChar], for: s)
         }
     }
 
@@ -432,6 +437,7 @@ extension ESPLink: CBPeripheralDelegate {
             case Self.textChar: textCharacteristic = c
             case Self.controlChar: controlCharacteristic = c
             case Self.infoChar: info = c
+            case Self.batteryChar: batteryCharacteristic = c
             default: break
             }
         }
@@ -480,6 +486,10 @@ extension ESPLink: CBPeripheralDelegate {
     private func completeSetup(_ peripheral: CBPeripheral) {
         if let audioCharacteristic { peripheral.setNotifyValue(true, for: audioCharacteristic) }
         if let controlCharacteristic { peripheral.setNotifyValue(true, for: controlCharacteristic) }
+        if let batteryCharacteristic {
+            peripheral.setNotifyValue(true, for: batteryCharacteristic)
+            peripheral.readValue(for: batteryCharacteristic)
+        }
         finishSetup(peripheral, boardInfo: pendingInfo)
         pendingInfo = nil
         onPairingEvent?(.authenticated)
@@ -590,6 +600,9 @@ extension ESPLink: CBPeripheralDelegate {
         } else if characteristic.uuid == Self.controlChar, let state = value.first {
             onMicChange?(state != 0)
             controlEvents.send(.micChanged(state != 0))
+        } else if characteristic.uuid == Self.batteryChar, characteristic === batteryCharacteristic,
+                  let battery = BoardProtocol.parseBattery(value) {
+            controlEvents.send(.battery(battery))
         }
     }
 

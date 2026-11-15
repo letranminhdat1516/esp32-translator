@@ -18,6 +18,17 @@ enum BoardControl: Hashable, Sendable {
     /// The board's mic was switched by the on-screen button (control notify, first byte non-zero = on);
     /// `ESPLink.onMicChange`.
     case micChanged(Bool)
+    /// The board's battery (…0006 read on connect, then notified when it changes, checked every 30 s)
+    case battery(BoardBattery)
+}
+
+/// The board's battery as the firmware reports it (firmware/main/battery_info.h)
+struct BoardBattery: Hashable, Sendable {
+    /// 0…100, nil when the gauge has no reading
+    var percent: Int?
+    var present: Bool
+    var charging: Bool
+    var usbPower: Bool
 }
 
 /// The phone's side of the subtitle board. Event properties are broadcast: every access returns a new `AsyncStream`

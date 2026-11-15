@@ -39,6 +39,9 @@ bool ble_link_audio_ready(void);
 uint16_t ble_link_payload_max(void);
 bool ble_link_send_audio(const uint8_t *data, uint16_t len);
 void ble_link_notify_control(uint8_t state);
+/* Notifies the battery characteristic (battery_info.h) when it changed since the app last read it. Any task
+ * (pmu.c calls it every 30 s). */
+void ble_link_notify_battery(void);
 /* Board mic tapped without the iPhone audio role: if an iPhone link waits for the app, take it back (async, NimBLE
  * host task) and request lang again; false: no such link */
 bool ble_link_wake_phone(rec_lang_t lang);

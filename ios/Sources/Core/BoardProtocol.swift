@@ -20,6 +20,9 @@ enum BoardProtocol {
     static let controlUUID = "A7C00004-3B2F-4C1E-9D8A-5F6E7D8C9B0A"
     /// Read: `[version u8][fontSets u32 LE]`. Absent on older firmware.
     static let infoUUID = "A7C00005-3B2F-4C1E-9D8A-5F6E7D8C9B0A"
+    /// Read + notify (protected like control): `[percent u8, 0xFF unknown][flags]`, firmware/main/battery_info.h.
+    /// Absent on older firmware.
+    static let batteryUUID = "A7C00006-3B2F-4C1E-9D8A-5F6E7D8C9B0A"
 
     /// The round screen shows about 5 lines, so only this many bytes are sent.
     static let maxTextBytes = 150
@@ -76,6 +79,15 @@ enum BoardProtocol {
         guard b.count >= 5 else { return nil }
         let sets = UInt32(b[1]) | UInt32(b[2]) << 8 | UInt32(b[3]) << 16 | UInt32(b[4]) << 24
         return BoardInfo(protocolVersion: Int(b[0]), fontSets: FontSets(rawValue: sets))
+    }
+
+    /// Parses the battery characteristic; nil when shorter than 2 bytes. A percent above 100 (0xFF = the gauge has
+    /// no reading) is nil.
+    static func parseBattery(_ data: Data) -> BoardBattery? {
+        let b = Array(data)
+        guard b.count >= 2 else { return nil }
+        return BoardBattery(percent: b[0] <= 100 ? Int(b[0]) : nil, present: b[1] & 0x01 != 0,
+                            charging: b[1] & 0x02 != 0, usbPower: b[1] & 0x04 != 0)
     }
 
     /// Mirrors `ESPLink.tail(of:maxBytes:)`: keeps the tail within `maxTextBytes` without splitting a character, then
