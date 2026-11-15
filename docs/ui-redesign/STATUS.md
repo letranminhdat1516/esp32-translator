@@ -25,6 +25,5 @@ Nhánh `ui-redesign` (đã push). Kiến trúc trong `ARCHITECTURE.md`, kế ho�
 
 ## Còn mở
 - Board giả khai phiên bản 2 nhưng không mã hoá thì iOS không phân biệt được; dấu hiệu là không có hộp thoại ghép kèm mã (đã nhắc trên màn ghép). Sửa tận gốc cần challenge-response.
-- % pin board để trống: firmware chưa gửi pin qua BLE.
 - Ở chế độ board, recognizer chết khi board im lặng chỉ được phát hiện ở gói audio kế tiếp.
 - Server nhận dữ liệu chia sẻ: chưa làm (đang xuất file).
