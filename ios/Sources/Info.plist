@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connects to the ESP32 display to receive audio and show subtitles.</string>
 	<key>NSMicrophoneUsageDescription</key>
