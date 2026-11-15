@@ -93,7 +93,7 @@ struct LanguageRows: View {
         // "Tải" sits over the row, not inside its label: a Button nested in the row's Button never gets the tap
         // (the row only picked the language). The label keeps a hidden copy so the layout is unchanged.
         .overlay(alignment: .trailing) {
-            if case let .notDownloaded(mb) = st { downloadButton(mb, code: code) }
+            if case let .notDownloaded(mb) = st { downloadButton(mb, code: code, onInk: selected) }
         }
         // Not `.disabled`: that fades the row below the canvas' muted #5D5A55
         .allowsHitTesting(st != .unsupported)
@@ -112,11 +112,11 @@ struct LanguageRows: View {
                 Text(p.map { Copy.t("lang.downloading", ["percent": String(Int((ProgressRule.clamped($0) * 100).rounded()))]) }
                      ?? Copy.t("readiness.downloading"))
                     .ds(.caption)
-                ProgressRule(fraction: p ?? 0)
+                ProgressRule(fraction: p ?? 0, color: selected ? DS.Color.stone : DS.Color.ink)
             }
             .frame(width: 96)
         case let .notDownloaded(mb):
-            downloadButton(mb, code: code).hidden().accessibilityHidden(true)
+            downloadButton(mb, code: code, onInk: selected).hidden().accessibilityHidden(true)
         case .unsupported:
             Text(Copy.t("lang.unsupported")).ds(.caption)
         }
@@ -125,12 +125,14 @@ struct LanguageRows: View {
 
 extension LanguageRows {
     /// Picks the language and downloads what it misses (the session downloads only the picked language)
-    func downloadButton(_ megabytes: Int?, code: String) -> some View {
+    /// `onInk`: the row is selected (ink fill), where the outlined button would vanish; it is drawn stone instead
+    func downloadButton(_ megabytes: Int?, code: String, onInk: Bool) -> some View {
         Button(megabytes.map { Copy.t("lang.download", ["size": String($0)]) } ?? Copy.t("lang.downloadNoSize")) {
             ui.pickLanguage(code)
             ui.download()
         }
-        .buttonStyle(.instrumentCompact(.secondary, height: 36, radius: DS.Radius.chipButton, type: .buttonSmall))
+        .buttonStyle(.instrumentCompact(onInk ? .inverse : .secondary, height: 36, radius: DS.Radius.chipButton,
+                                        type: .buttonSmall))
     }
 }
 
