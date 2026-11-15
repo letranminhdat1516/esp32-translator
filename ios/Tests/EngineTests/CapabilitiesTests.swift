@@ -150,9 +150,18 @@ final class MissingAssemblyTests: XCTestCase {
 
     func testUnsupportedItemsAreNotOfferedAsDownloads() {
         let missing = MissingAssembly.assemble(
-            pair: pair, speech: [("en", nil), ("vi", .unsupported)],
+            pair: pair, speech: [("en", nil), ("vi", .installed)],
             translation: [("en", "vi", .unsupported)], hasVoice: true)
         XCTAssertEqual(missing, [])
+    }
+
+    /// A recognizer exists for the locale but its model reports unsupported until the locale is reserved
+    /// (iPhone 17 Pro, iOS 26.6, vi_VN): start would fail with notReady, so it must be offered as a download.
+    func testSpeechModelNotInstalledIsMissingWhateverItsStatus() {
+        let missing = MissingAssembly.assemble(
+            pair: pair, speech: [("en", .installed), ("vi", .unsupported)],
+            translation: [("en", "vi", .installed), ("vi", "en", .installed)], hasVoice: true)
+        XCTAssertEqual(missing, [MissingMsg(kind: .speechModel, language: "vi")])
     }
 }
 

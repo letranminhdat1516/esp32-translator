@@ -60,6 +60,8 @@ final class UIStateTests: XCTestCase {
     func testFailureReason() {
         XCTAssertEqual(ReadinessText.failureReason("recognizer stopped"), "Bộ nhận giọng đã dừng.")
         XCTAssertEqual(ReadinessText.failureReason("mic busy"), "mic busy")
+        XCTAssertEqual(ReadinessText.failureReason("notReady"), Copy.t("failed.notReady"))
+        XCTAssertEqual(ReadinessText.failureReason("translateFailed"), Copy.t("failed.other"))
     }
 
     func testFooterText() {

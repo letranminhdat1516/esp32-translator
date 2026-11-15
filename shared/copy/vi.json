@@ -33,6 +33,8 @@
   "failed.title": "Không khởi động được",
   "failed.retry": "Thử lại",
   "failed.recognizerStopped": "Bộ nhận giọng đã dừng.",
+  "failed.notReady": "Chưa có đủ dữ liệu giọng nói trên máy. Bấm Thử lại để kiểm tra và tải về.",
+  "failed.other": "Có lỗi khi khởi động. Bấm Thử lại.",
   "readiness.choose": "Chọn ngôn ngữ",
   "readiness.unavailable": "Ngôn ngữ đã chọn trước đó không còn dùng được trên máy này.",
   "readiness.needsDownloadTitle": "Cần tải về trước khi dùng",

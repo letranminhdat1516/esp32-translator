@@ -64,8 +64,11 @@ enum MissingAssembly {
                          translation: [(from: String, to: String, status: LanguageAvailability.Status)],
                          hasVoice: Bool) -> [MissingMsg] {
         var missing: [MissingMsg] = []
+        // Anything short of installed fails `start` (RecognizerPair), so it is offered as a download; the install
+        // reserves the locale first, which is what turns a reported `.unsupported` into a downloadable model.
+        // nil (no recognizer for the language) cannot be downloaded.
         for (language, status) in speech {
-            if let status, status == .supported || status == .downloading {
+            if let status, status != .installed {
                 missing.append(MissingMsg(kind: .speechModel, language: language))
             }
         }
@@ -81,7 +84,9 @@ enum MissingAssembly {
         var speech: [(language: String, status: AssetInventory.Status?)] = []
         for language in [pair.other, pair.home] {
             let recognizer = await LiveTranscriber.resolve(locales.speechLocale(language).identifier)
-            speech.append((language, await recognizer?.assetStatus))
+            let status = await recognizer?.assetStatus
+            Diag.log("capabilities: speech \(language) \(recognizer.map { "\($0.locale.identifier) \($0.engine)" } ?? "none") \(status.map { "\($0)" } ?? "-")")
+            speech.append((language, status))
         }
         let availability = LanguageAvailability()
         let other = locales.translationLanguage(pair.other), home = locales.translationLanguage(pair.home)

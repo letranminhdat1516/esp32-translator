@@ -34,7 +34,7 @@ struct ESPTranslatorApp: App {
         let services = demo == nil ? Self.liveServices(liveActivity: liveActivity, pairing: pairing)
             : AppServices(history: InMemoryHistoryStore(DemoData.history),
                           feedback: InMemoryFeedbackQueue(DemoData.feedback),
-                          liveActivity: liveActivity, appVersion: "0.9")
+                          liveActivity: liveActivity, appVersion: "0.1.0")
         self.demo = demo
         let data = DataCoordinator(ui: ui, services: services, defaults: demo == nil ? .standard : nil)
         data.bind(observeHistory: demo == nil)

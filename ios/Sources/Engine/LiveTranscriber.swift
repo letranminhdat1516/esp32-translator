@@ -64,13 +64,22 @@ final class LiveTranscriber: @unchecked Sendable {
     /// it supports it, else DictationTranscriber; nil when neither does
     static func resolve(_ language: String) async -> LiveTranscriber? {
         let wanted = Locale(identifier: language)
+        var speech: LiveTranscriber?
         if SpeechTranscriber.isAvailable, let locale = await SpeechTranscriber.supportedLocale(equivalentTo: wanted) {
-            return LiveTranscriber(locale: locale, engine: .speech)
+            speech = LiveTranscriber(locale: locale, engine: .speech)
         }
+        var dictation: LiveTranscriber?
         if let locale = await DictationTranscriber.supportedLocale(equivalentTo: wanted) {
-            return LiveTranscriber(locale: locale, engine: .dictation)
+            dictation = LiveTranscriber(locale: locale, engine: .dictation)
         }
-        return nil
+        // SpeechTranscriber can claim a locale whose model it cannot download (vi_VN on iOS 26.6: status
+        // unsupported, install ends "Not Installing"); DictationTranscriber then is the one that works.
+        if let s = speech, let d = dictation, await s.assetStatus == .unsupported {
+            let dStatus = await d.assetStatus
+            Diag.log("transcriber: \(language) speech model unsupported, dictation \(dStatus)")
+            if dStatus != .unsupported { return d }
+        }
+        return speech ?? dictation
     }
 
     var assetStatus: AssetInventory.Status {

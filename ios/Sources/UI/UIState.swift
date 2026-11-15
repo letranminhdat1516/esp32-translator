@@ -129,7 +129,13 @@ enum ReadinessText {
 
     /// The reason shown under "Không khởi động được"; the machine's own reason for a dead recognizer is English.
     static func failureReason(_ reason: String) -> String {
-        reason == "recognizer stopped" ? Copy.t("failed.recognizerStopped") : reason
+        switch reason {
+        case "recognizer stopped": Copy.t("failed.recognizerStopped")
+        case "notReady": Copy.t("failed.notReady")
+        // Engine codes are lowerCamel identifiers, never something to show; free text passes through
+        case _ where !reason.contains(" "): Copy.t("failed.other")
+        default: reason
+        }
     }
 }
 

@@ -88,7 +88,7 @@ final class RecognizerPair {
             let status = await r.assetStatus
             try await checkCurrent()
             if status != .installed {
-                throw EngineErrors.notReady("speech model for \(r.locale.identifier) is not installed")
+                throw EngineErrors.notReady("speech model for \(r.locale.identifier) is not installed (\(status))")
             }
         }
 

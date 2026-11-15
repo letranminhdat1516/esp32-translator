@@ -36,7 +36,7 @@ final class AppServices {
          pairing: (any PairingModeling)? = nil,
          level: LevelModel? = nil,
          partials: PartialModel? = nil,
-         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") {
+         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0") {
         self.history = history
         self.feedback = feedback
         self.recorder = recorder
