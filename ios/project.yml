@@ -36,8 +36,8 @@ targets:
       - target: ESPTranslatorWidgets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.esptranslator
-        DEVELOPMENT_TEAM: G79B3VPVR9  # replace with your own team ID
+        PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.livetranslator
+        DEVELOPMENT_TEAM: 7VDASDUN25  # replace with your own team ID
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
@@ -70,8 +70,8 @@ targets:
         UIAppFonts: [SpaceGrotesk.ttf, JetBrainsMono.ttf]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.esptranslator.widgets
-        DEVELOPMENT_TEAM: G79B3VPVR9  # replace with your own team ID
+        PRODUCT_BUNDLE_IDENTIFIER: dev.cicca.livetranslator.widgets
+        DEVELOPMENT_TEAM: 7VDASDUN25  # replace with your own team ID
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
