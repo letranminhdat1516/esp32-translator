@@ -176,7 +176,7 @@ final class Rig {
                                       translatable: ["en", "ja", "vi"], vietnameseVoice: true)
 
     init(caps: Capabilities = Rig.allCaps, missing: [MissingMsg] = [], defaults: UserDefaults? = nil,
-         glossaryDirectory: URL? = nil,
+         glossaryDirectory: URL? = nil, refiner: TranslationRefiner? = nil,
          tuning: ConversationController.Tuning = ConversationController.Tuning()) async throws {
         fake = FakeVoiceEngine(capabilities: caps)
         await fake.setMissing(missing)
@@ -187,7 +187,7 @@ final class Rig {
         let clock = self.clock
         controller = ConversationController(engine: engine, board: board, packs: packs, glossary: glossary,
                                             defaults: self.defaults, boardText: BoardText(glyphs: BoardGlyphSets()),
-                                            ui: ui, now: { clock.now }, tuning: tuning)
+                                            ui: ui, now: { clock.now }, tuning: tuning, refiner: refiner)
     }
 
     static func freshDefaults() -> UserDefaults {

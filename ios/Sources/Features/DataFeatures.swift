@@ -9,11 +9,14 @@ import Foundation
 enum DataSettings {
     static let saveHistoryKey = "settings.saveHistory"
     static let shareKey = "settings.shareToImprove"
+    static let refineKey = "settings.refineTranslations"
 
     /// Default on.
     static func saveHistory(_ d: UserDefaults?) -> Bool { d?.object(forKey: saveHistoryKey) as? Bool ?? true }
     /// Default off.
     static func share(_ d: UserDefaults?) -> Bool { d?.object(forKey: shareKey) as? Bool ?? false }
+    /// Default on.
+    static func refine(_ d: UserDefaults?) -> Bool { d?.object(forKey: refineKey) as? Bool ?? true }
 }
 
 /// A "Báo dịch sai" report waiting in the sheet: the line, and whether sharing must be turned on first.
@@ -52,8 +55,10 @@ final class DataCoordinator {
     func bind(observeHistory: Bool = true) {
         ui.saveHistory = DataSettings.saveHistory(defaults)
         ui.shareToImprove = DataSettings.share(defaults)
+        ui.refineTranslations = DataSettings.refine(defaults)
         ui.setSaveHistory = { [weak self] in self?.setSaveHistory($0) }
         ui.setShareToImprove = { [weak self] in self?.setShare($0) }
+        ui.setRefineTranslations = { [weak self] in self?.setRefine($0) }
         ui.reportWrong = { [weak self] in self?.report($0) }
         ui.recordCorrection = { [weak self] line, corrected in self?.recordCorrection(line, corrected) }
         ui.enableSharingForFeedback = { [weak self] in self?.enableSharingForDraft() }
@@ -78,6 +83,11 @@ final class DataCoordinator {
         defaults?.set(on, forKey: DataSettings.saveHistoryKey)
         let store = services.history
         Task { await store.setEnabled(on) }
+    }
+
+    func setRefine(_ on: Bool) {
+        ui.refineTranslations = on
+        defaults?.set(on, forKey: DataSettings.refineKey)
     }
 
     /// Off also drops the audio the clip rings hold.

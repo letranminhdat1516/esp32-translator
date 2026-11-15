@@ -210,6 +210,7 @@
   "settings.languagesInstalled": "Đã tải {count} ngôn ngữ",
   "settings.boardMic": "Mic của board",
   "settings.saveHistory": "Lưu lịch sử",
+  "settings.refine": "Sửa bản dịch bằng Apple Intelligence",
   "settings.share": "Chia sẻ để cải thiện",
   "settings.on": "Bật",
   "settings.off": "Tắt",
