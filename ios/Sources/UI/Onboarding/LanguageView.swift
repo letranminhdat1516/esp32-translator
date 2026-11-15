@@ -90,6 +90,11 @@ struct LanguageRows: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // "Tải" sits over the row, not inside its label: a Button nested in the row's Button never gets the tap
+        // (the row only picked the language). The label keeps a hidden copy so the layout is unchanged.
+        .overlay(alignment: .trailing) {
+            if case let .notDownloaded(mb) = st { downloadButton(mb, code: code) }
+        }
         // Not `.disabled`: that fades the row below the canvas' muted #5D5A55
         .allowsHitTesting(st != .unsupported)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -111,14 +116,21 @@ struct LanguageRows: View {
             }
             .frame(width: 96)
         case let .notDownloaded(mb):
-            Button(mb.map { Copy.t("lang.download", ["size": String($0)]) } ?? Copy.t("lang.downloadNoSize")) {
-                ui.pickLanguage(code)
-                ui.download()
-            }
-            .buttonStyle(.instrumentCompact(.secondary, height: 36, radius: DS.Radius.chipButton, type: .buttonSmall))
+            downloadButton(mb, code: code).hidden().accessibilityHidden(true)
         case .unsupported:
             Text(Copy.t("lang.unsupported")).ds(.caption)
         }
+    }
+}
+
+extension LanguageRows {
+    /// Picks the language and downloads what it misses (the session downloads only the picked language)
+    func downloadButton(_ megabytes: Int?, code: String) -> some View {
+        Button(megabytes.map { Copy.t("lang.download", ["size": String($0)]) } ?? Copy.t("lang.downloadNoSize")) {
+            ui.pickLanguage(code)
+            ui.download()
+        }
+        .buttonStyle(.instrumentCompact(.secondary, height: 36, radius: DS.Radius.chipButton, type: .buttonSmall))
     }
 }
 

@@ -401,6 +401,24 @@ struct ConversationControllerTests {
         rig.controller.shutdown()
     }
 
+    /// "Tải" on a language row picks the language and taps download in one go, while the pick is still being
+    /// checked: the download must run when the check reports what is missing, not be dropped.
+    @Test func downloadTappedWhileCheckingRunsWhenTheCheckEnds() async throws {
+        let vi = MissingMsg(kind: .speechModel, language: "vi")
+        let rig = try await Rig()
+        rig.engine.setMissing(byLanguage: ["en": [vi], "ja": [vi]])
+        await rig.controller.start()
+        #expect(await eventually { rig.ui.session == .needsDownload("en", missing: [vi]) })
+        let latch = Latch()
+        rig.engine.holdMissing(latch)
+        rig.ui.pickLanguage("ja")
+        rig.ui.download()
+        latch.open()
+        #expect(await eventually { rig.ui.session == .running("ja") })
+        #expect(await rig.fake.downloaded == [vi])
+        rig.controller.shutdown()
+    }
+
     @Test func languageListIsRefreshedAfterADownload() async throws {
         // The Vietnamese model serves every pair: downloading it for English makes Japanese ready too
         let vi = MissingMsg(kind: .speechModel, language: "vi")

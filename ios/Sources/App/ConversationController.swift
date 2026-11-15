@@ -70,6 +70,8 @@ final class ConversationController {
     private var onlineAllowed: Set<String>
     /// The last non-empty missing list: what the Download button fetches.
     private var pendingMissing: [MissingMsg] = []
+    /// "Tải" was tapped while the picked language was still being checked: download when the check ends
+    private var downloadWhenChecked = false
     /// The language the pipelines and the board label are for.
     private var activeCode: String?
     private var pipeline: TextPipeline?
@@ -233,7 +235,15 @@ final class ConversationController {
     private func bindIntents() {
         ui.pickLanguage = { [weak self] in self?.pick($0) }
         ui.setOnlineAllowed = { [weak self] code, on in self?.setOnlineAllowed(code, on) }
-        ui.download = { [weak self] in self?.apply(.downloadTapped) }
+        ui.download = { [weak self] in
+            guard let self else { return }
+            // "Tải" on a language row picks it first, so the check is usually still running: download once it
+            // reports what is missing instead of dropping the tap.
+            switch session.state {
+            case .checking, .switching: downloadWhenChecked = true
+            default: apply(.downloadTapped)
+            }
+        }
         ui.retry = { [weak self] in self?.apply(.retry) }
         ui.startStop = { [weak self] in
             guard let self else { return }
@@ -310,16 +320,21 @@ final class ConversationController {
     private func enter(_ state: SessionState) {
         switch state {
         case .loading, .choosing, .failed:
-            break
+            downloadWhenChecked = false
         case .checking(let code):
             show(code)
             check(code)
         case .needsDownload(_, let missing, _):
             if !missing.isEmpty { pendingMissing = missing }
             ui.downloadProgress = nil
+            if downloadWhenChecked {
+                downloadWhenChecked = false
+                Task { @MainActor [weak self] in self?.apply(.downloadTapped) }
+            }
         case .downloading:
             downloadMissing()
         case .preparing(let code, let restarts):
+            downloadWhenChecked = false
             ui.packStatus[code] = .installed   // nothing missing any more (track A: the language list)
             prepare(code, restarts: restarts)
         case .running(let code, let restarts):
