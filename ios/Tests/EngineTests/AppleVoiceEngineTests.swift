@@ -496,6 +496,57 @@ final class AppleVoiceEngineTests: XCTestCase {
         XCTAssertTrue(dead.stopped)
     }
 
+    // MARK: Cross-talk (CrossTalkArbiter)
+
+    /// `frames` 20 ms frames of a constant-level signal (±amplitude) at 16 kHz
+    private func boardFrames(_ amplitude: Int16, _ frames: Int) -> [[Int16]] {
+        (0..<frames).map { _ in (0..<320).map { $0 % 2 == 0 ? amplitude : -amplitude } }
+    }
+
+    private func micFrames(_ amplitude: Int16, _ frames: Int, format: AVAudioFormat) throws -> [AVAudioPCMBuffer] {
+        try (0..<frames).map { _ in
+            let b = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 320))
+            b.frameLength = 320
+            let p = try XCTUnwrap(b.floatChannelData?[0])
+            for i in 0..<320 { p[i] = Float(i % 2 == 0 ? amplitude : -amplitude) / 32768 }
+            return b
+        }
+    }
+
+    /// The user speaks into the AirPods (my gate passes them loud); the board hears them faintly: their
+    /// recognizer gets the same amount of audio, as silence, and my recognizer all of mine
+    func testMyVoiceOnTheBoardIsFedAsSilenceWhileISpeak() async throws {
+        let x = FakeRecognizer("en"), home = FakeRecognizer("vi")
+        let r = rig(en: [x], vi: [home])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        let mic = try XCTUnwrap(r.mics.last), format = try XCTUnwrap(home.audioFormat)
+        for b in try micFrames(10, 15, format: format) + micFrames(3000, 20, format: format) { mic.sink(b) }
+        for f in boardFrames(30, 15) + boardFrames(160, 20) {
+            try await r.engine.feedTheirAudio(f, sampleRate: 16_000)
+        }
+        XCTAssertGreaterThanOrEqual(x.fedFrames, 35 * 320, "their recognizer keeps its timing")
+        XCTAssertEqual(x.loudSamples, 0, "the board's copy of my voice is silenced")
+        XCTAssertEqual(home.loudSamples, 20 * 320, "my words all reach my recognizer")
+    }
+
+    /// The other person speaks into the board; my mic's gate lets them through faintly: my recognizer gets
+    /// silence, theirs all of their words
+    func testTheirVoiceOnMyMicIsFedAsSilenceWhileTheySpeak() async throws {
+        let x = FakeRecognizer("en"), home = FakeRecognizer("vi")
+        let r = rig(en: [x], vi: [home])
+        try await r.engine.start(pair: enVi, recognizerX: onDevice, hints: [])
+        try await r.engine.micOn(true)
+        let mic = try XCTUnwrap(r.mics.last), format = try XCTUnwrap(home.audioFormat)
+        for f in boardFrames(30, 15) + boardFrames(1000, 20) {
+            try await r.engine.feedTheirAudio(f, sampleRate: 16_000)
+        }
+        for b in try micFrames(10, 15, format: format) + micFrames(100, 20, format: format) { mic.sink(b) }
+        XCTAssertEqual(home.fedFrames, 35 * 320, "my recognizer keeps its timing")
+        XCTAssertEqual(home.loudSamples, 0, "my mic's copy of their voice is silenced")
+        XCTAssertEqual(x.loudSamples, 20 * 320, "their words all reach their recognizer")
+    }
+
     func testHintsGoToTheirRecognizer() async throws {
         let x = FakeRecognizer("en")
         let r = rig(en: [x])

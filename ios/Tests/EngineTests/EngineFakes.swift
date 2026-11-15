@@ -20,6 +20,7 @@ final class FakeRecognizer: Recognizer, @unchecked Sendable {
     private(set) var stopped = false
     private(set) var entered = false
     private var _fedFrames = 0
+    private var _loudSamples = 0
     private var _finalized = 0
     private var _hints: [[String]] = []
 
@@ -46,13 +47,21 @@ final class FakeRecognizer: Recognizer, @unchecked Sendable {
 
     var isHeld: Bool { lock.withLock { gate != nil } }
     var fedFrames: Int { lock.withLock { _fedFrames } }
+    /// Fed samples above -60 dBFS: speech, not the digital silence of padding or cross-talk suppression
+    var loudSamples: Int { lock.withLock { _loudSamples } }
     var finalized: Int { lock.withLock { _finalized } }
     var hints: [[String]] { lock.withLock { _hints } }
 
     func emit(_ event: TranscriptEvent) { lock.withLock { onEvent }?(event) }
 
     func setHints(_ hints: [String]) async { lock.withLock { _hints.append(hints) } }
-    func feed(_ buffer: AVAudioPCMBuffer) { lock.withLock { _fedFrames += Int(buffer.frameLength) } }
+    func feed(_ buffer: AVAudioPCMBuffer) {
+        let loud = VoiceGate.floats(buffer).filter { abs($0) > 0.001 }.count
+        lock.withLock {
+            _fedFrames += Int(buffer.frameLength)
+            _loudSamples += loud
+        }
+    }
     func finalizeNow() { lock.withLock { _finalized += 1 } }
     func stop() async { lock.withLock { stopped = true } }
 

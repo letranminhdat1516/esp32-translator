@@ -85,6 +85,9 @@ final class AppleVoiceEngine: VoiceEngine {
     private let platform: AppleEnginePlatform
     private var session: EngineAudioSession { platform.session }
     private let voiceGate = VoiceGate()
+    /// Both mics hear both people: while one side's own talker speaks, the other side's audio is fed as silence
+    /// (board PCM in `feedTheirAudio`, my gated mic audio in the mic's sink)
+    private let crossTalk = CrossTalkGuard()
 
     /// Both recognizers; serializes start/stop across their awaits
     private let recognizers: RecognizerPair
@@ -207,6 +210,7 @@ final class AppleVoiceEngine: VoiceEngine {
     /// replaced by `RecognizerPair.start` or stopped by `stop`.
     private func tearDown() {
         theirPadder.stop()
+        crossTalk.reset()
         releaseMic()
         speaker?.stop()
         speaker = nil
@@ -261,10 +265,14 @@ final class AppleVoiceEngine: VoiceEngine {
         let fresh: EngineMic
         switch route.target {
         case .mine:
+            // A new mic (AirPods ↔ iPhone) has its own floor and level
+            let crossTalk = self.crossTalk
+            crossTalk.reset(.mine)
             // DictationTranscriber needs finalizeNow (input stops while the gate is closed). It comes at the gate's
             // early point (VoiceGate.Config.finalizeAfter, 0.4 s of non-speech), not at its close (0.8 s); ungated
-            // ("Giữ để nói") at the release.
-            fresh = platform.makeMic(format, route.gated ? voiceGate : nil, { home.feed($0) },
+            // ("Giữ để nói") at the release. The other person's voice on this mic is fed as silence while they
+            // speak into the board (`CrossTalkGuard`).
+            fresh = platform.makeMic(format, route.gated ? voiceGate : nil, { home.feed(crossTalk.mine($0)) },
                                      { sink.send(.gate(true)) },
                                      { home.finalizeNow() },
                                      { sink.send(.gate(false)) })
@@ -338,6 +346,8 @@ final class AppleVoiceEngine: VoiceEngine {
     /// it hears speech, the wearer's included, so a dead home recognizer is noticed as soon as anyone talks.
     func feedTheirAudio(_ pcm: [Int16], sampleRate: Int) async throws {
         try await checkRecognizers()
+        // My own voice on the board mic is fed as silence while I speak (same length: the padder's timing holds)
+        let pcm = crossTalk.theirs(pcm)
         guard let x = theirRecognizer, let converter = theirConverter,
               let buffer = EngineMapping.pcm16Buffer(pcm, sampleRate: Double(sampleRate)),
               let converted = converter.convert(buffer) else { return }
