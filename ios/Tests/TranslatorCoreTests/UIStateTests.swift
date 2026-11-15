@@ -64,6 +64,13 @@ final class UIStateTests: XCTestCase {
         XCTAssertEqual(ReadinessText.failureReason("translateFailed"), Copy.t("failed.other"))
     }
 
+    func testBoardTileShowsBatteryElseStateNeverADash() {
+        XCTAssertEqual(BoardTileText.value(.ready, battery: 82), "82%")
+        XCTAssertEqual(BoardTileText.value(.ready, battery: nil), "Bật")
+        XCTAssertEqual(BoardTileText.value(.off, battery: 82), "Tắt")
+        XCTAssertEqual(BoardTileText.value(.scanning, battery: nil), "Đang tìm")
+    }
+
     func testFooterText() {
         XCTAssertNil(LanguageFooterText.why(missing: []))
         let fr = LanguagePack(code: "fr", appleLocale: "fr-FR", label: "Français", labelLatin: "Français", script: .latin)

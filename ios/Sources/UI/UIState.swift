@@ -317,3 +317,15 @@ final class UIState {
 
     var readiness: ReadinessKind { session.map(ReadinessKind.of) ?? .none }
 }
+
+/// The Settings board tile's big value: the battery when the board reports it (the firmware does not yet), else
+/// its state in a word, never a bare dash.
+enum BoardTileText {
+    static func value(_ board: BoardState, battery: Int?) -> String {
+        switch board {
+        case .ready: battery.map { "\($0)%" } ?? Copy.t("settings.boardOn")
+        case .off: Copy.t("settings.boardOff")
+        case .scanning, .connecting: Copy.t("settings.boardWaiting")
+        }
+    }
+}

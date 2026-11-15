@@ -64,10 +64,7 @@ struct SettingsView: View {
         }.count
     }
 
-    private var boardValue: String {
-        guard ui.board == .ready else { return "–" }
-        return ui.boardBattery.map { "\($0)%" } ?? "–"
-    }
+    private var boardValue: String { BoardTileText.value(ui.board, battery: ui.boardBattery) }
 
     private var boardCaption: String {
         switch ui.board {
