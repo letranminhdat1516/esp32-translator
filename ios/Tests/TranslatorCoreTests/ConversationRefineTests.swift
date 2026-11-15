@@ -16,14 +16,14 @@ struct ConversationRefineTests {
     }
 
     @Test func theirLineIsReplacedAfterTheDraftWasSpoken() async throws {
-        let model = Self.model(delay: .milliseconds(150), ["Hello there": "Xin chào bạn"])
+        let model = Self.model(delay: .milliseconds(150), ["Hello there": "[vi]Hello there, bạn ơi"])
         let rig = try await Rig(refiner: TranslationRefiner(model: model))
         #expect(await rig.startRunning())
         rig.theirs("Hello there")
         // The draft is spoken without waiting for the model
         #expect(await eventually { await rig.spoken() == ["[vi]Hello there"] })
         #expect(rig.ui.lines.contains { !$0.mine && $0.target == "[vi]Hello there" })
-        #expect(await eventually { rig.ui.lines.contains { !$0.mine && $0.target == "Xin chào bạn" } })
+        #expect(await eventually { rig.ui.lines.contains { !$0.mine && $0.target == "[vi]Hello there, bạn ơi" } })
         #expect(rig.ui.lines.filter { !$0.mine }.count == 1)
         #expect(await rig.spoken() == ["[vi]Hello there"])
         rig.controller.shutdown()
@@ -32,11 +32,12 @@ struct ConversationRefineTests {
     @Test func myLineAndBoardSubtitleAreReplaced() async throws {
         let model = Self.model(["tôi muốn đi chợ": "I want to go to the market"])
         let rig = try await Rig(refiner: TranslationRefiner(model: model))
+        rig.engine.script { text, _, to in to == "en" ? "I want go market" : "[\(to)]\(text)" }
         #expect(await rig.startRunning())
         rig.mine("tôi muốn đi chợ", final: true)
         #expect(await eventually { rig.ui.lines.contains { $0.mine && $0.target == "I want to go to the market" } })
         #expect(await eventually { rig.sent(.subtitle).last == "I want to go to the market" })
-        #expect(rig.sent(.subtitle).contains("[en]tôi muốn đi chợ"))
+        #expect(rig.sent(.subtitle).contains("I want go market"))
         rig.controller.shutdown()
     }
 
@@ -61,7 +62,7 @@ struct ConversationRefineTests {
     }
 
     @Test func correctedLineIsNotOverwrittenByALateFix() async throws {
-        let model = Self.model(delay: .milliseconds(150), ["Hello there": "Xin chào bạn"])
+        let model = Self.model(delay: .milliseconds(150), ["Hello there": "[vi]Hello there, bạn ơi"])
         let rig = try await Rig(refiner: TranslationRefiner(model: model))
         #expect(await rig.startRunning())
         rig.theirs("Hello there")
@@ -71,6 +72,20 @@ struct ConversationRefineTests {
         #expect(await eventually { model.prompts.count == 1 })
         try await Task.sleep(for: .milliseconds(300))
         #expect(rig.ui.lines.first { !$0.mine }?.target == "Chào anh")
+        rig.controller.shutdown()
+    }
+
+    @Test func switchedOffAsksNothing() async throws {
+        let model = Self.model(["Hello there": "[vi]Hello there, bạn ơi"])
+        let rig = try await Rig(refiner: TranslationRefiner(model: model))
+        rig.ui.refineTranslations = false
+        #expect(await rig.startRunning())
+        rig.theirs("Hello there")
+        rig.mine("tôi muốn đi chợ", final: true)
+        #expect(await eventually { await rig.spoken() == ["[vi]Hello there"] })
+        #expect(await eventually { rig.sent(.subtitle).contains("[en]tôi muốn đi chợ") })
+        await settle()
+        #expect(model.prompts.isEmpty)
         rig.controller.shutdown()
     }
 

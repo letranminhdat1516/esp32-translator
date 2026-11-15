@@ -577,6 +577,16 @@ private final class ManualClock: @unchecked Sendable {
         #expect(DataSettings.saveHistory(nil) == true && DataSettings.share(nil) == false)
     }
 
+    @Test func refineSwitchDefaultsOnAndPersists() {
+        let (data, ui, _, defaults, _, _) = rig(share: false)
+        defer { withExtendedLifetime(data) {} }
+        #expect(ui.refineTranslations == true)
+        ui.setRefineTranslations(false)
+        #expect(ui.refineTranslations == false)
+        #expect(DataSettings.refine(defaults) == false)
+        #expect(DataSettings.refine(nil) == true)
+    }
+
     @Test func reportWithSharingOffAsksFirstAndKeepsNothing() async {
         let (data, ui, services, defaults, _, recorder) = rig(share: false)
         recorder.append([Int16](repeating: 1, count: 32_000), sampleRate: 16_000, side: .theirs, endingAt: 102)

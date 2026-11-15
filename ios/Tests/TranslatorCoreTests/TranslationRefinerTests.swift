@@ -124,6 +124,17 @@ private func request(source: String = "渋谷駅で会いましょう。", draft
         #expect(RefineCheck.accept("渋谷駅で会おうね。", for: ja) == "渋谷駅で会おうね。")
     }
 
+    @Test func rejectsARewriteFarFromTheDraft() {
+        // Seen on the Mac with the real model: an English draft for Japanese came back as "almond" for "peanut"
+        let ja = request(source: "Tôi bị dị ứng với đậu phộng", draft: "ピーナッツアレルギーがあります", from: "vi", to: "ja")
+        #expect(RefineCheck.accept("私はアーモンドアレルギーです", for: ja) == nil)
+        let en = request(source: "Em cảm ơn chị nhiều ạ", draft: "I thank sister a lot", from: "vi", to: "en")
+        #expect(RefineCheck.accept("I thank you very much", for: en) == "I thank you very much")
+        #expect(RefineCheck.accept("The weather is nice today", for: en) == nil)
+        #expect(RefineCheck.similarity("abc", "abc") == 1)
+        #expect(RefineCheck.similarity("abc", "xyz") == 0)
+    }
+
     @Test func glossaryOutputsMayKeepTheirOwnScript() {
         // A fixed term written in Vietnamese inside an English sentence is not "Vietnamese came back"
         let r = request(source: "Phở Thìn bát đặc biệt sáu mươi nghìn.", draft: "Phở Thìn special bowl sixty thousand.",

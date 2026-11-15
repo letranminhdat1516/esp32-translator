@@ -233,6 +233,8 @@ final class UIState {
     var boardCharging = false
     /// "Lưu lịch sử" (default on).
     var saveHistory = true
+    /// "Sửa bản dịch bằng Apple Intelligence" (default on): the refine step after the machine translation.
+    var refineTranslations = true
     /// "Chia sẻ để cải thiện" (default off): gates audio capture for "Báo dịch sai".
     var shareToImprove = false
     /// The Vietnamese voice's name ("Linh"); nil when unknown.
@@ -277,6 +279,7 @@ final class UIState {
     /// Settings switches (persisted by track C).
     var setSaveHistory: (Bool) -> Void = { _ in }
     var setShareToImprove: (Bool) -> Void = { _ in }
+    var setRefineTranslations: (Bool) -> Void = { _ in }
 
     // Line actions and phone-only (track B binds them in the controller)
     /// "Nghe lại": their line is spoken again; my line's translation is sent to the board again.

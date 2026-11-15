@@ -52,7 +52,8 @@ enum RefinePrompt {
         lines of the conversation and required terms. Reply with the corrected translation only: one line, no \
         quotes, no notes. Keep the meaning of the source exactly; do not add, explain, answer or summarize. Use \
         the conversation to choose pronouns, names and the level of politeness. Write every required term \
-        exactly as given and keep names as they are. If the draft is already right, reply with the draft unchanged.
+        exactly as given and keep names as they are. Change only what is wrong and keep the rest of the draft's \
+        wording. If the draft is already right, reply with the draft unchanged.
         """
 
     static func prompt(_ r: RefineRequest) -> String {
@@ -117,6 +118,8 @@ enum RefineCheck {
         guard text.count <= max(r.draft.count * 2, r.draft.count + 24) else { return nil }
         // A copy of the source
         if r.from != r.to, fold(text) == fold(r.source) { return nil }
+        // A rewrite rather than a fix: the small model can drift in meaning, the draft is the safer line
+        guard similarity(text, r.draft) >= minSimilarity else { return nil }
         // A required term the draft had must survive
         for term in r.terms where contains(r.draft, term.target) && !contains(text, term.target) { return nil }
         return inTargetLanguage(text, r) ? text : nil
@@ -149,6 +152,24 @@ enum RefineCheck {
             let vietnamese = words.filter { looksVietnamese(String($0)) }.count
             return !(vietnamese >= 2 && Double(vietnamese) >= Double(words.count) * 0.25)
         }
+    }
+
+    /// Least `similarity` between a fix and its draft
+    static let minSimilarity = 0.35
+
+    /// Dice coefficient of the character bigrams (letters and digits, case folded): 1 for the same text, 0 for
+    /// nothing in common. Works for scripts without spaces too.
+    static func similarity(_ a: String, _ b: String) -> Double {
+        func bigrams(_ s: String) -> [String: Int] {
+            let chars = Array(fold(s))
+            guard chars.count > 1 else { return chars.isEmpty ? [:] : [String(chars): 1] }
+            return zip(chars, chars.dropFirst()).reduce(into: [:]) { $0[String([$1.0, $1.1]), default: 0] += 1 }
+        }
+        let x = bigrams(a), y = bigrams(b)
+        let total = x.values.reduce(0, +) + y.values.reduce(0, +)
+        guard total > 0 else { return 1 }
+        let shared = x.reduce(0) { $0 + min($1.value, y[$1.key] ?? 0) }
+        return 2 * Double(shared) / Double(total)
     }
 
     private static func fold(_ s: String) -> String {

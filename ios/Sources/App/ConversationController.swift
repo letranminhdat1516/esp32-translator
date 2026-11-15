@@ -876,7 +876,7 @@ final class ConversationController {
     /// The request for a phrase: the source with the pack rules applied, the terms the pipeline protects in it, and
     /// the lines before `line`. Nil when the model does not handle the pair.
     private func refineRequest(source: String, draft: String, _ direction: Direction, line: String) -> RefineRequest? {
-        guard let refiner, let pipeline else { return nil }
+        guard let refiner, let pipeline, ui.refineTranslations else { return nil }
         let (from, to) = direction == .theirs ? (pipeline.other.code, pipeline.home.code)
                                               : (pipeline.home.code, pipeline.other.code)
         guard refiner.supports(from: from, to: to) else { return nil }

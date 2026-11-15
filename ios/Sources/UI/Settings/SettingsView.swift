@@ -30,6 +30,7 @@ struct SettingsView: View {
                     toggleRow(Copy.t("settings.boardMic"), isOn: ui.boardMicOn) { _ in ui.toggleBoardMic() }
                         .disabled(ui.board != .ready)
                     toggleRow(Copy.t("settings.saveHistory"), isOn: ui.saveHistory, set: ui.setSaveHistory)
+                    toggleRow(Copy.t("settings.refine"), isOn: ui.refineTranslations, set: ui.setRefineTranslations)
                     linkRow(Copy.t("settings.share"), value: Copy.t(ui.shareToImprove ? "settings.on" : "settings.off")) {
                         router.push(.sharing)
                     }

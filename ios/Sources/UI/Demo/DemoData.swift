@@ -134,6 +134,7 @@ enum DemoData {
         }
         ui.setSaveHistory = { ui.saveHistory = $0 }
         ui.setShareToImprove = { ui.shareToImprove = $0 }
+        ui.setRefineTranslations = { ui.refineTranslations = $0 }
         ui.glossaryAdd = { text in
             ui.glossaryTerms.append(Term(id: UUID().uuidString, text: text))
         }
