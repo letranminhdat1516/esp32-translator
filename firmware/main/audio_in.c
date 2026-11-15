@@ -5,7 +5,10 @@
  * Encoding and sending happen only in this task, never in the NimBLE host task (its stack is 6 KB).
  *
  * Translator power: silence costs no radio time on the board and no recognition work on the iPhone.
- * A 300 ms pre-roll keeps the first syllable; an 800 ms hangover keeps pauses inside a sentence.
+ * A 300 ms pre-roll keeps the first syllable; a 400 ms hangover keeps pauses inside a sentence.
+ *
+ * Near field only: the other person holds the board, so only speech at the holder's level opens a phrase and the
+ * user's own voice, from farther away, is not streamed as theirs (near_vad.h has the rule and its thresholds).
  */
 #include <math.h>
 #include <string.h>
@@ -18,6 +21,7 @@
 
 #include "adpcm.h"
 #include "app.h"
+#include "near_vad.h"
 
 static const char *TAG = "audio";
 
@@ -28,11 +32,8 @@ static const char *TAG = "audio";
 #define WARMUP_FRAMES 10           /* drop the first 200 ms: codec start-up pop */
 
 #define VAD_PREROLL_FRAMES  15     /* 300 ms sent before the detected start */
-#define VAD_HANGOVER_FRAMES 20     /* keep streaming 400 ms after the last speech frame (latency harness: the app pads silence, so 800 ms only cost airtime) */
-#define VAD_START_FRAMES    2      /* 40 ms above threshold to open */
-#define VAD_MARGIN_DB       10.0f  /* speech must be this far above the noise floor */
-#define VAD_MIN_DB          -58.0f /* and above this absolute level */
-#define FLOOR_RISE_DB       0.01f  /* per frame (0.5 dB/s): floor follows slowly rising noise */
+/* Start, hangover (400 ms; latency harness: the app pads silence, so 800 ms only cost airtime), margin and the
+ * near-field levels: near_vad.h */
 
 /* Level ring: -55 dBFS (faint, far) .. -25 dBFS (close, clear) → 1..100 */
 #define RING_MIN_DB   -55.0f
@@ -47,10 +48,9 @@ typedef struct {
 
 /* Translator VAD (the iPhone stream) */
 typedef struct {
-    float floor_db;
-    int above;
-    int hangover;
-    bool speaking;
+    near_vad_t vad;
+    float open_db;     /* level of the frame that opened the last phrase (diagnostics) */
+    unsigned phrases;
 } translator_t;
 
 static int16_t s_preroll[VAD_PREROLL_FRAMES][FRAME_SAMPLES];
@@ -98,25 +98,17 @@ static int ring_percent(float db)
 /* A fresh phrase: nothing held back, nothing half sent */
 static void translator_reset(translator_t *t)
 {
-    t->above = 0;
-    t->hangover = 0;
-    t->speaking = false;
+    near_vad_reset(&t->vad);
     s_preroll_count = s_preroll_head = 0;
 }
 
 static void translator_step(translator_t *t, stream_t *phone, const int16_t *mono, float db, uint32_t frames)
 {
-    /* Noise floor: drops immediately to quieter frames, rises slowly so speech doesn't lift it */
-    if (db < t->floor_db) {
-        t->floor_db = db;
-    } else {
-        t->floor_db += FLOOR_RISE_DB;
-    }
-    bool voiced = db > t->floor_db + VAD_MARGIN_DB && db > VAD_MIN_DB;
-    t->above = voiced ? t->above + 1 : 0;
+    near_vad_event_t ev = near_vad_step(&t->vad, db);
 
-    if (!t->speaking && t->above >= VAD_START_FRAMES) {
-        t->speaking = true;
+    if (ev == NEAR_VAD_START) {
+        t->open_db = db;
+        t->phrases++;
         app_on_speech_activity();
         /* Flush the pre-roll oldest first, then continue live */
         int start = (s_preroll_head - s_preroll_count + VAD_PREROLL_FRAMES) % VAD_PREROLL_FRAMES;
@@ -126,15 +118,11 @@ static void translator_step(translator_t *t, stream_t *phone, const int16_t *mon
         s_preroll_count = 0;
     }
 
-    if (t->speaking) {
+    if (ev != NEAR_VAD_QUIET) {
         send_frame(phone, mono);
-        if (voiced) {
-            t->hangover = VAD_HANGOVER_FRAMES;
-        } else if (--t->hangover <= 0) {
-            t->speaking = false;
+        if (ev == NEAR_VAD_END) {
             ui_set_level(0);
-        }
-        if (t->speaking && frames % RING_EVERY == 0) {
+        } else if (frames % RING_EVERY == 0) {
             ui_set_level(ring_percent(db));
         }
     } else {
@@ -160,7 +148,8 @@ static void audio_task(void *arg)
 
     bool open = false;
     stream_t phone = { 0 };
-    translator_t tr = { .floor_db = -60.0f };
+    translator_t tr = { 0 };
+    near_vad_init(&tr.vad, -60.0f);
     uint32_t frames = 0, warmup = 0;
     float peak_db = -100.0f;
 
@@ -220,8 +209,12 @@ static void audio_task(void *arg)
         }
 
         if (++frames % 250 == 0) {   /* every 5 s */
-            ESP_LOGI(TAG, "peak %.0f dB, floor %.0f dB, sent %lu, dropped %lu", peak_db, tr.floor_db,
+            /* far: frames that stood out like speech but stayed under NEAR_VAD_OPEN_DB (the user, others nearby);
+             * open: the level that opened the last phrase. Both are for tuning the near-field levels. */
+            ESP_LOGI(TAG, "peak %.0f dB, floor %.0f dB, far %u, phrases %u (last opened at %.0f dB), sent %lu, dropped %lu",
+                     peak_db, tr.vad.floor_db, tr.vad.far_frames, tr.phrases, tr.open_db,
                      (unsigned long)phone.sent, (unsigned long)phone.dropped);
+            tr.vad.far_frames = 0;
             peak_db = -100.0f;
         }
     }
