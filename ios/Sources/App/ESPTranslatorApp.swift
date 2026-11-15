@@ -82,7 +82,8 @@ struct ESPTranslatorApp: App {
             let packs = BundledPacks.load()
             controller = ConversationController(engine: AppleVoiceEngine.live(packs: packs), board: link, packs: packs,
                                                 glossary: glossary, boardText: BoardText(glyphs: glyphs), ui: ui,
-                                                level: services.level, partials: services.partials)
+                                                level: services.level, partials: services.partials,
+                                                refiner: TranslationRefiner.onDevice())
             ui.forgetBoard = { link.forgetBoard() }   // P9: the link pins the first board; this lets a new one in
             _router = State(initialValue: AppRouter())
             // Midnight, a time zone or daylight-saving change, or a clock set: keep the board's lock-face clock right

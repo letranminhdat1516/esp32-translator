@@ -52,6 +52,8 @@ final class ConversationController {
     /// The audio clock of `UILine.audioRange`: the same clock the clip recorder stamps its rings with
     private let clock: any SessionClock
     private let tuning: Tuning
+    /// The refine step (on-device language model after the machine translation); nil: drafts stay as they are
+    private let refiner: TranslationRefiner?
 
     /// The session state and their-side generation (`SessionMachine.advance`).
     private(set) var session = Session(state: .loading, generation: 0)
@@ -130,7 +132,7 @@ final class ConversationController {
     init(engine: any VoiceEngine, board: any BoardLink, packs: [LanguagePack], glossary: GlossaryStore?,
          defaults: UserDefaults = .standard, boardText: BoardText = BoardText(), ui: UIState,
          level: LevelModel? = nil, partials: PartialModel? = nil, clock: any SessionClock = MonotonicSessionClock(),
-         now: @escaping () -> Date = { Date() }, tuning: Tuning = Tuning()) {
+         now: @escaping () -> Date = { Date() }, tuning: Tuning = Tuning(), refiner: TranslationRefiner? = nil) {
         self.engine = engine
         self.board = board
         self.packs = Dictionary(packs.map { ($0.code, $0) }, uniquingKeysWith: { first, _ in first })
@@ -144,6 +146,7 @@ final class ConversationController {
         self.clock = clock
         self.now = now
         self.tuning = tuning
+        self.refiner = refiner
         onlineAllowed = Set(defaults.stringArray(forKey: Self.onlineAllowedKey) ?? [])
         bindIntents()
     }
@@ -500,6 +503,7 @@ final class ConversationController {
 
     private func running(_ code: String, restarts: Int) {
         sendLabel()
+        if let refiner, refiner.supports(from: code, to: LanguageCatalog.homeCode) { refiner.prewarm() }
         if !openedOnce {
             // Opening the app starts a conversation (as the Swift app)
             openedOnce = true
@@ -794,12 +798,15 @@ final class ConversationController {
         }
         // Switched meanwhile: nothing of the old pair is shown or spoken (Review Focus 2)
         guard msg.generation == session.generation, !translated.isEmpty else { return }
-        addTheirLine(source: msg.text, target: translated, unclear: false, range: range)
-        say(translated)
+        let id = addTheirLine(source: msg.text, target: translated, unclear: false, range: range)
+        say(translated, line: id)
+        refineTheirs(id, source: msg.text, draft: translated)
     }
 
     /// Every utterance goes through one chain (ids in order); one queued before a switch is not spoken after it.
-    private func say(_ text: String) {
+    /// With `line`, the line's translation as it is when its turn to be spoken comes is said (a refined version
+    /// that arrived while earlier lines were spoken), `text` when the line is gone.
+    private func say(_ text: String, line: String? = nil) {
         note(.ttsStart)
         let id = nextSpeechId
         nextSpeechId += 1
@@ -812,6 +819,8 @@ final class ConversationController {
                 speechEnded(id)
                 return
             }
+            let current = line.flatMap { id in ui.lines.last { $0.id == id }?.target }
+            let text = current.map { $0.isEmpty ? text : $0 } ?? text
             do {
                 try await engine.speak(text, id: id)
             } catch {
@@ -832,11 +841,52 @@ final class ConversationController {
         for id in outstandingSpeech.sorted() { speechEnded(id) }
     }
 
-    private func addTheirLine(source: String, target: String, unclear: Bool, range: ClosedRange<TimeInterval>?) {
-        ui.lines.append(UILine(id: "t-\(nextTheirLine)", mine: false, source: source, target: target,
+    @discardableResult
+    private func addTheirLine(source: String, target: String, unclear: Bool,
+                              range: ClosedRange<TimeInterval>?) -> String {
+        let id = "t-\(nextTheirLine)"
+        ui.lines.append(UILine(id: id, mine: false, source: source, target: target,
                                unclear: unclear, at: now(), audioRange: range))
         nextTheirLine += 1
         trimLines()
+        return id
+    }
+
+    // MARK: Refine step (docs/translation-refine.md)
+
+    /// Their line `id` shows `draft`; the model's fix replaces it if the line still shows the draft (not corrected,
+    /// not trimmed, same pair).
+    private func refineTheirs(_ id: String, source: String, draft: String) {
+        guard let refiner, let request = refineRequest(source: source, draft: draft, .theirs, line: id) else { return }
+        let generation = session.generation
+        oneOff { [weak self] in
+            guard let better = await refiner.refine(request), let self, generation == session.generation,
+                  let i = RefineApply.index(of: id, draft: draft, in: ui.lines, edited: editedLines) else { return }
+            ui.lines[i].target = better
+        }
+    }
+
+    /// My final phrase of `turn` (SubtitleTranslator places the result and the board gets it via `showSubtitle`).
+    private func refineMine(turn: Int, source: String, draft: String) async -> String? {
+        guard let refiner, let request = refineRequest(source: source, draft: draft, .mine, line: "m-\(turn)")
+        else { return nil }
+        return await refiner.refine(request)
+    }
+
+    /// The request for a phrase: the source with the pack rules applied, the terms the pipeline protects in it, and
+    /// the lines before `line`. Nil when the model does not handle the pair.
+    private func refineRequest(source: String, draft: String, _ direction: Direction, line: String) -> RefineRequest? {
+        guard let refiner, let pipeline else { return nil }
+        let (from, to) = direction == .theirs ? (pipeline.other.code, pipeline.home.code)
+                                              : (pipeline.home.code, pipeline.other.code)
+        guard refiner.supports(from: from, to: to) else { return nil }
+        let prepared = try? pipeline.prepare(source, direction)
+        var seen = Set<RefineTerm>()
+        let terms = (prepared?.masked.replacements ?? [])
+            .map { RefineTerm(source: $0.surface, target: $0.output) }
+            .filter { seen.insert($0).inserted }
+        return RefineRequest(source: prepared?.unmasked ?? source, draft: draft, from: from, to: to,
+                             context: RefinePrompt.context(ui.lines, before: line), terms: terms)
     }
 
     private func trimLines() {
@@ -851,6 +901,9 @@ final class ConversationController {
         let token = subtitleToken
         subtitles = SubtitleTranslator(
             translate: { [weak self] text in await self?.translateMine(text, to: code) ?? text },
+            refine: refiner == nil ? nil : { [weak self] turn, source, draft in
+                await self?.refineMine(turn: turn, source: source, draft: draft)
+            },
             onResult: { [weak self] turn, translated in
                 guard let self, subtitleToken == token else { return }
                 showSubtitle(translated, turn: turn)

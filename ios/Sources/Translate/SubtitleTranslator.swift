@@ -23,8 +23,8 @@ final class SubtitleTranslator {
 
     private let translate: (String) async throws -> String
     private let onResult: (_ turn: Int, _ english: String) -> Void
-    /// The refine step for a final phrase: (source, draft) → a better translation, nil to keep the draft
-    private let refine: ((_ source: String, _ draft: String) async -> String?)?
+    /// The refine step for a final phrase: (turn, source, draft) → a better translation, nil to keep the draft
+    private let refine: ((_ turn: Int, _ source: String, _ draft: String) async -> String?)?
     private var turns: [Int: TurnState] = [:]
     private var finalJobs: [(turn: Int, index: Int, text: String)] = []
     private var partialJob: (turn: Int, text: String)?
@@ -36,7 +36,7 @@ final class SubtitleTranslator {
     /// `translate` is the VI→EN translator (`Translator.translate`; a stub in tests). `refine`, when given, runs
     /// after each final phrase's translation is shown; its result replaces that phrase if it still shows the draft.
     init(translate: @escaping (String) async throws -> String,
-         refine: ((_ source: String, _ draft: String) async -> String?)? = nil,
+         refine: ((_ turn: Int, _ source: String, _ draft: String) async -> String?)? = nil,
          onResult: @escaping (_ turn: Int, _ english: String) -> Void) {
         self.translate = translate
         self.refine = refine
@@ -134,7 +134,7 @@ final class SubtitleTranslator {
         let id = UUID()
         refines[id] = Task {
             defer { refines[id] = nil }
-            guard let better = await refine(job.text, draft), !Task.isCancelled,
+            guard let better = await refine(job.turn, job.text, draft), !Task.isCancelled,
                   var state = turns[job.turn], job.index < state.finals.count, state.finals[job.index] == draft
             else { return }
             state.finals[job.index] = better

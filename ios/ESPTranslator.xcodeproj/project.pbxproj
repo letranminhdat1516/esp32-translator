@@ -46,6 +46,7 @@
 		4DC0947EBDD5969DFE3D02BB /* OFL-JetBrainsMono.txt in Resources */ = {isa = PBXBuildFile; fileRef = 3E69C9F5572FCCD73AE55BD3 /* OFL-JetBrainsMono.txt */; };
 		50B85CFA2E31D9021C5CED5B /* copy in Resources */ = {isa = PBXBuildFile; fileRef = 2502D98B095CE8A272D6237C /* copy */; };
 		5226EC587C7B93490A0F3C16 /* SharingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F16EE5FAE56D2A685D3B9A0 /* SharingView.swift */; };
+		52609E68FAAADEBA378DABF7 /* FoundationRefineModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78581F95DBF55EB3CC9272C /* FoundationRefineModel.swift */; };
 		540A201D37D9BD48E02887A9 /* BoardGlyphSets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D01EB81CF1F5A34D959AA6 /* BoardGlyphSets.swift */; };
 		55C2B3D15EAFAC2FC0650A63 /* PairingModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43C4770768D6E78E32BB0C6 /* PairingModel.swift */; };
 		56A05E32B0495EA333B2636E /* WarningBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4D709D3D0EF346B93AA428 /* WarningBox.swift */; };
@@ -84,6 +85,7 @@
 		9E4CEF84E878F88DC06860EA /* InstrumentToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7CDA6B0BC702AEC81717F3 /* InstrumentToggle.swift */; };
 		9ECD45BA1EEDCFD5D4403158 /* Tokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = D277D90555328C55B5FE3E14 /* Tokens.swift */; };
 		A26118AB84CB1B89B51CC07B /* GlossaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9C9A2162A8C4E5660FBF7 /* GlossaryView.swift */; };
+		A44C1D182D20E4D202C8AAE6 /* TranslationRefiner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB0581B3FFE7C1819F70B85 /* TranslationRefiner.swift */; };
 		A646C681DC9C7856853435F1 /* TranslatorActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */; };
 		A7D4EB3BB0A992D0CBB15179 /* Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA56EAB5FB91A561FBBF15AB /* Model.swift */; };
 		A9789BFDA93D00FD8C05649D /* TranslatorActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49E4FE4E09FDAAAA82042A78 /* TranslatorActivityAttributes.swift */; };
@@ -203,6 +205,7 @@
 		5924CC641FE6BEB6BA61633D /* LevelModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LevelModel.swift; sourceTree = "<group>"; };
 		5A2444940233161E3F68060D /* TranslationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationSheet.swift; sourceTree = "<group>"; };
 		5B0BDAE169D3EB3BF6FCFE25 /* TranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptView.swift; sourceTree = "<group>"; };
+		5CB0581B3FFE7C1819F70B85 /* TranslationRefiner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranslationRefiner.swift; sourceTree = "<group>"; };
 		5EF556EAAC6CFE226C46B208 /* VietnameseFixup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VietnameseFixup.swift; sourceTree = "<group>"; };
 		5F197DB4657594D6482DB95D /* AudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSession.swift; sourceTree = "<group>"; };
 		672D6DBE0831DC54A2C1D741 /* BoardLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardLink.swift; sourceTree = "<group>"; };
@@ -264,6 +267,7 @@
 		EDDD0244854947584AA177BC /* SharedResources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedResources.swift; sourceTree = "<group>"; };
 		F1BE60AFFCCE23DB73EFF3FF /* ESPTranslatorWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ESPTranslatorWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F779D636AD143A9C13FBB1D8 /* Icons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Icons.swift; sourceTree = "<group>"; };
+		F78581F95DBF55EB3CC9272C /* FoundationRefineModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundationRefineModel.swift; sourceTree = "<group>"; };
 		F8B8FB70E040C1718B647173 /* LiveSignals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSignals.swift; sourceTree = "<group>"; };
 		FA90FE55BAE42F8267CD97AC /* BoardProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardProtocol.swift; sourceTree = "<group>"; };
 		FD72E60F341261CD5B3377A9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -384,6 +388,7 @@
 				8BDC0069391B9BD9EC2CA596 /* Capabilities.swift */,
 				C97CE2685BA5739EE0CE32F3 /* Downloads.swift */,
 				2D6F8ED68676431B024E4E24 /* EngineMapping.swift */,
+				F78581F95DBF55EB3CC9272C /* FoundationRefineModel.swift */,
 				1ECB44B15C94E8BE9A210B15 /* InputRouting.swift */,
 				CE16ADC6EC045CFBB6900A87 /* LiveTranscriber.swift */,
 				2CD40E547DF0A21EA4409D00 /* RecognizerPair.swift */,
@@ -497,6 +502,7 @@
 				EDDD0244854947584AA177BC /* SharedResources.swift */,
 				2DE02E90E9DCE249F07A7967 /* TermProtector.swift */,
 				EBDA6DB65733535938AD2B0E /* TextPipeline.swift */,
+				5CB0581B3FFE7C1819F70B85 /* TranslationRefiner.swift */,
 				6B74F774CC1C2A43CEB87415 /* Translit.swift */,
 				04E37529FB854096F4F28288 /* UnicodeText.swift */,
 				22F135961F8511A66D39EAD6 /* VoiceEngine.swift */,
@@ -745,6 +751,7 @@
 				2CE863EF151D2B13E62DB271 /* FakeVoiceEngine.swift in Sources */,
 				DE8EBD03F3CDEB5E778BE0E4 /* FeedbackQueue.swift in Sources */,
 				D8CCDD9A1AA3DC5EE05F5A37 /* Fonts.swift in Sources */,
+				52609E68FAAADEBA378DABF7 /* FoundationRefineModel.swift in Sources */,
 				6623B38F5C6BB9395B9D36C2 /* Glossary.swift in Sources */,
 				A26118AB84CB1B89B51CC07B /* GlossaryView.swift in Sources */,
 				B078770B47E992D1BF70F0AD /* HistoryDetailView.swift in Sources */,
@@ -795,6 +802,7 @@
 				11C2F9099183702DCEE49705 /* Tokens.swift in Sources */,
 				0E7D845450F7ED2300F52147 /* TopBar.swift in Sources */,
 				6C9EE36E798BC5BBB7BB347F /* TranscriptView.swift in Sources */,
+				A44C1D182D20E4D202C8AAE6 /* TranslationRefiner.swift in Sources */,
 				44550F720815B37734136827 /* TranslationSheet.swift in Sources */,
 				ADDFC881852C44CB7CA33DDE /* Translator.swift in Sources */,
 				A9789BFDA93D00FD8C05649D /* TranslatorActivityAttributes.swift in Sources */,

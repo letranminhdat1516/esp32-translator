@@ -120,7 +120,7 @@ final class Results {
         let results = Results()
         var history: [String] = []
         let st = SubtitleTranslator(translate: { try await fake.translate($0) },
-                                    refine: { source, draft in source == "hai" ? "Two (refined)" : nil }) {
+                                    refine: { _, source, draft in source == "hai" ? "Two (refined)" : nil }) {
             results.byTurn[$0] = $1
             history.append($1)
         }
@@ -137,7 +137,7 @@ final class Results {
         let results = Results()
         let gate = AsyncGate()
         let st = SubtitleTranslator(translate: { try await fake.translate($0) },
-                                    refine: { _, draft in await gate.wait(); return draft + "!" }) {
+                                    refine: { _, _, draft in await gate.wait(); return draft + "!" }) {
             results.byTurn[$0] = $1
         }
         st.addFinal("một", turn: 1)
@@ -155,7 +155,7 @@ final class Results {
         let results = Results()
         let gate = AsyncGate()
         let st = SubtitleTranslator(translate: { try await fake.translate($0) },
-                                    refine: { _, _ in await gate.wait(); return "late" }) { results.byTurn[$0] = $1 }
+                                    refine: { _, _, _ in await gate.wait(); return "late" }) { results.byTurn[$0] = $1 }
         st.addFinal("một", turn: 1)
         for _ in 0..<200 where results.byTurn[1] != "MỘT" { try await Task.sleep(for: .milliseconds(5)) }
         st.reset()
